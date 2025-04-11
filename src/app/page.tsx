@@ -1,6 +1,8 @@
 "use client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button, Text, Container } from "@/theme/components";
+import { Container } from "@/theme/components";
+import { Button } from "@/components/ui/button";
+import { Typography } from "@/components/ui/typography";
 
 export default function Home() {
   const { isConnecting, error, connectWallet } = useAuth();
@@ -10,30 +12,28 @@ export default function Home() {
       <header className="w-full border-b border-[#E5E5E5] fixed top-0 bg-white/95 backdrop-blur-sm z-50">
         <Container className="max-w-7xl mx-auto px-6">
           <div className="flex justify-between items-center h-20">
-            <Text
+            <Typography
               variant="h1"
               color="black"
               className="font-mono tracking-tight text-2xl relative group cursor-pointer"
             >
               Filecoin Web Services
               <div className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-500 group-hover:w-full transition-all duration-300" />
-            </Text>
+            </Typography>
             <div className="flex items-center gap-6">
               {error && (
-                <Text
+                <Typography
                   color="black"
                   variant="small"
                   className="text-red-600 animate-fade-in"
                 >
                   {error}
-                </Text>
+                </Typography>
               )}
               <Button
-                variant="blue"
                 size="sm"
                 onClick={connectWallet}
                 disabled={isConnecting}
-                className="min-w-[140px] font-medium hover:scale-105 transform transition-all duration-300 shadow-sm hover:shadow-md"
               >
                 {isConnecting ? (
                   <span className="flex items-center gap-2">
@@ -75,22 +75,22 @@ export default function Home() {
               <div className="md:col-span-7 space-y-8 animate-fade-in-up">
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <Text
+                    <Typography
                       variant="h2"
                       color="black"
                       className="text-5xl md:text-7xl font-mono tracking-tight leading-[1.1] bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600"
                     >
                       Filecoin Web Services
-                    </Text>
+                    </Typography>
                   </div>
-                  <Text
+                  <Typography
                     variant="body"
                     color="black"
                     className="text-lg md:text-2xl leading-relaxed text-gray-600 max-w-3xl"
                   >
                     Decentralized infrastructure for the next generation of web
                     applications.
-                  </Text>
+                  </Typography>
                 </div>
               </div>
               <div className="hidden md:block md:col-span-5 relative animate-fade-in">
@@ -145,22 +145,22 @@ export default function Home() {
                   className="space-y-6 group hover:translate-y-[-4px] transition-all duration-300"
                 >
                   <div className="space-y-4">
-                    <Text
+                    <Typography
                       variant="h3"
                       color="black"
                       className="font-mono text-2xl group-hover:text-blue-600 transition-colors"
                     >
                       {feature.title}
-                    </Text>
+                    </Typography>
                     <div className="h-1 w-16 bg-blue-500 group-hover:w-24 transition-all duration-300" />
                   </div>
-                  <Text
+                  <Typography
                     variant="body"
                     color="black"
                     className="text-lg leading-relaxed text-gray-600"
                   >
                     {feature.description}
-                  </Text>
+                  </Typography>
                 </div>
               ))}
             </div>
@@ -192,69 +192,39 @@ export default function Home() {
               },
             ].map((section, index) => (
               <div key={index} className="space-y-6">
-                <Text
+                <Typography
                   variant="h4"
                   color="black"
                   className="font-mono text-sm uppercase tracking-wider"
                 >
                   {section.title}
-                </Text>
+                </Typography>
                 <ul className="space-y-4">
                   {section.links.map((link, linkIndex) => (
                     <li key={linkIndex}>
-                      <Text
+                      <Typography
                         variant="small"
                         color="black"
                         className="hover:text-blue-500 transition-colors cursor-pointer hover:translate-x-1 inline-block transform duration-200"
                       >
                         {link}
-                      </Text>
+                      </Typography>
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
-          <Text
+          <Typography
             variant="small"
             color="black"
             className="mt-20 pt-8 border-t border-[#E5E5E5] font-mono text-sm text-gray-500"
           >
             © {new Date().getFullYear()} Filecoin Web Services. All rights
             reserved.
-          </Text>
+          </Typography>
         </Container>
       </footer>
-
-      <style jsx global>{`
-        @keyframes fade-in-up {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .animate-fade-in-up {
-          animation: fade-in-up 0.6s ease-out;
-        }
-
-        .animate-fade-in {
-          animation: fade-in 0.6s ease-out;
-        }
-
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-      `}</style>
     </div>
   );
 }

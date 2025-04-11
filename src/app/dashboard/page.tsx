@@ -3,15 +3,13 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatePresence } from "framer-motion";
 import { useState } from "react";
-import { DASHBOARD_SECTIONS, DashboardSection, Rail } from "./types";
-import { useDashboard } from "./hooks/useDashboard";
-import {
-  DashboardHeader,
-  QuickStats,
-  TokensTab,
-  RailsTab,
-  ActivityTab,
-} from "./components";
+import { DASHBOARD_SECTIONS, DashboardSection, Rail } from "@/types/dashboard";
+import { useDashboard } from "@/hooks/useDashboard";
+import { DashboardHeader } from "./_components/DashboardHeader";
+import { QuickStats } from "./_components/QuickStats";
+import { TokensTab } from "./_components/TokensTab";
+import { RailsTab } from "./_components/RailsTab";
+import { ActivityTab } from "./_components/ActivityTab";
 
 export default function Dashboard() {
   const { account, handleAccountSwitch, disconnectWallet } = useAuth();

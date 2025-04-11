@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import { ERC20_ABI, PAYMENTS_ABI } from "@/contracts";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
+import { Input } from "@/components/ui/input";
 
 interface TokenAllowanceProps {
   tokenAddress: string;
@@ -486,7 +487,7 @@ export default function TokenAllowance({
           whileHover={{ y: -1 }}
           transition={{ type: "spring", stiffness: 500 }}
         >
-          <input
+          <Input
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
