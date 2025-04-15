@@ -38,7 +38,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		protected := v1.Group("")
 		protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
 		{
-			// Add protected routes
+			protected.POST("/upload", handlers.UploadFile)
 		}
 	}
 
