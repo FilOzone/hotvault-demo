@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { TokenData } from "@/contracts";
 import { Rail } from "@/types/dashboard";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Skeleton from "react-loading-skeleton";
 import { RailDetailsModal } from "@/app/dashboard/_components/RailDetailsModal";
 import { RailCreationModal } from "@/app/dashboard/_components/RailCreationModal";
+import { useDropzone } from "react-dropzone";
 
 interface RailsTabProps {
   isLoading: boolean;
@@ -34,9 +35,55 @@ export const RailsTab: React.FC<RailsTabProps> = ({
   const [activeView, setActiveView] = useState<"active" | "terminated">(
     "active"
   );
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const activeRails = rails.filter((rail) => !rail.terminationEpoch);
   const terminatedRails = rails.filter((rail) => rail.terminationEpoch);
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      "image/*": [".jpeg", ".jpg", ".png", ".gif"],
+    },
+    maxFiles: 1,
+  });
+
+  const handleSubmitImage = async () => {
+    if (!selectedImage) return;
+
+    const formData = new FormData();
+    formData.append("image", selectedImage);
+
+    try {
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Upload failed");
+      }
+
+      // Reset the form after successful upload
+      setSelectedImage(null);
+      setPreviewUrl(null);
+    } catch (error) {
+      console.error("Error uploading image:", error);
+    }
+  };
 
   const handleCreateRailSubmit = async (
     token: string,
@@ -178,43 +225,20 @@ export const RailsTab: React.FC<RailsTabProps> = ({
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <div>
           <Typography variant="h2" className="text-xl font-mono">
-            Payment Rails
+            Upload Image
           </Typography>
           <Typography variant="body" className="text-gray-500 mt-1">
-            View and manage your payment rails
+            Upload images to the blockchain
           </Typography>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex rounded-lg border border-gray-200 p-1 shadow-sm">
-            <button
-              onClick={() => setActiveView("active")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                activeView === "active"
-                  ? "bg-blue-500 text-white shadow-sm"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }`}
-            >
-              Active ({activeRails.length})
-            </button>
-            <button
-              onClick={() => setActiveView("terminated")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                activeView === "terminated"
-                  ? "bg-red-500 text-white shadow-sm"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }`}
-            >
-              Terminated ({terminatedRails.length})
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-            >
-              Create New Rail
-            </Button>
-          </div>
+          <Button
+            onClick={handleSubmitImage}
+            disabled={!selectedImage}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Submit Image
+          </Button>
         </div>
       </div>
 
@@ -226,39 +250,72 @@ export const RailsTab: React.FC<RailsTabProps> = ({
             </div>
           ))}
         </div>
-      ) : rails.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(activeView === "active" ? activeRails : terminatedRails).map(
-            (rail, index) => (
-              <RailCard key={rail.id} rail={rail} index={index} />
-            )
+      ) : (
+        <div
+          {...getRootProps()}
+          className={`text-center py-12 rounded-xl border-2 border-dashed ${
+            isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-200"
+          } transition-colors duration-200 cursor-pointer`}
+        >
+          <input {...getInputProps()} />
+          {previewUrl ? (
+            <div className="relative">
+              <img
+                src={previewUrl}
+                alt="Preview"
+                className="max-h-64 mx-auto rounded-lg shadow-sm"
+              />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedImage(null);
+                  setPreviewUrl(null);
+                }}
+                className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-50 flex items-center justify-center">
+                <svg
+                  className="w-8 h-8 text-blue-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <Typography variant="body" className="text-gray-500">
+                {isDragActive
+                  ? "Drop the image here"
+                  : "Drag and drop an image here, or click to select"}
+              </Typography>
+              <Typography variant="small" className="text-gray-400 mt-2">
+                Supports: JPG, PNG, GIF
+              </Typography>
+            </>
           )}
         </div>
-      ) : (
-        <motion.div
-          className="text-center py-12 rounded-xl border-2 border-dashed border-gray-200"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-50 flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-blue-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-              />
-            </svg>
-          </div>
-          <Typography variant="body" className="text-gray-500">
-            No payment rails found. Create a new rail to get started.
-          </Typography>
-        </motion.div>
       )}
 
       <RailCreationModal
