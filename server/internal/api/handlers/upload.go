@@ -3,12 +3,14 @@ package handlers
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fws/backend/internal/models"
 	"github.com/fws/backend/pkg/logger"
@@ -34,16 +36,25 @@ func Initialize(database *gorm.DB) {
 	log.Info("Upload handler initialized with database connection")
 }
 
-// @Summary Upload a file to PDP service
-// @Description Upload a file to the PDP service with piece preparation
+type UploadProgress struct {
+	Status    string `json:"status"`
+	Progress  int    `json:"progress,omitempty"`
+	Message   string `json:"message,omitempty"`
+	CID       string `json:"cid,omitempty"`
+	Error     string `json:"error,omitempty"`
+	Filename  string `json:"filename,omitempty"`
+	TotalSize int64  `json:"totalSize,omitempty"`
+}
+
+// @Summary Upload a file to PDP service with progress updates
+// @Description Upload a file to the PDP service with piece preparation and real-time progress updates
 // @Tags upload
 // @Accept multipart/form-data
 // @Param file formData file true "File to upload"
-// @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Produce text/event-stream
+// @Success 200 {object} UploadProgress
 // @Router /api/v1/upload [post]
 func UploadFile(c *gin.Context) {
-	// Check if database is initialized
 	if db == nil {
 		log.Error("Database connection not initialized")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -79,21 +90,44 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
+	// Set up SSE headers
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Transfer-Encoding", "chunked")
+
+	sendProgress := func(progress UploadProgress) {
+		data, _ := json.Marshal(progress)
+		c.SSEvent("progress", string(data))
+		c.Writer.Flush()
+	}
+
 	serviceName := "pdp-artemis"
 	serviceURL := "https://yablu.net"
 
+	sendProgress(UploadProgress{
+		Status:    "starting",
+		Message:   "Starting upload process",
+		Filename:  file.Filename,
+		TotalSize: file.Size,
+	})
+
 	if _, err := os.Stat("pdpservice.json"); os.IsNotExist(err) {
+		sendProgress(UploadProgress{
+			Status:  "preparing",
+			Message: "Creating service secret",
+		})
+
 		createSecretCmd := exec.Command(pdptoolPath, "create-service-secret")
 		var createSecretOutput bytes.Buffer
 		var createSecretError bytes.Buffer
 		createSecretCmd.Stdout = &createSecretOutput
 		createSecretCmd.Stderr = &createSecretError
 		if err := createSecretCmd.Run(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to create service secret",
-				"details": err.Error(),
-				"stdout":  createSecretOutput.String(),
-				"stderr":  createSecretError.String(),
+			sendProgress(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to create service secret",
+				Message: createSecretError.String(),
 			})
 			return
 		}
@@ -101,8 +135,10 @@ func UploadFile(c *gin.Context) {
 
 	tempDir, err := os.MkdirTemp("", "pdp-upload-*")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": fmt.Sprintf("Failed to create temp directory: %v", err),
+		sendProgress(UploadProgress{
+			Status:  "error",
+			Error:   "Failed to create temp directory",
+			Message: err.Error(),
 		})
 		return
 	}
@@ -110,11 +146,18 @@ func UploadFile(c *gin.Context) {
 
 	tempFilePath := filepath.Join(tempDir, file.Filename)
 	if err := c.SaveUploadedFile(file, tempFilePath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": fmt.Sprintf("Failed to save uploaded file: %v", err),
+		sendProgress(UploadProgress{
+			Status:  "error",
+			Error:   "Failed to save uploaded file",
+			Message: err.Error(),
 		})
 		return
 	}
+
+	sendProgress(UploadProgress{
+		Status:  "preparing",
+		Message: "Preparing piece",
+	})
 
 	var prepareOutput bytes.Buffer
 	var prepareError bytes.Buffer
@@ -124,15 +167,18 @@ func UploadFile(c *gin.Context) {
 	prepareCmd.Dir = filepath.Dir(pdptoolPath)
 
 	if err := prepareCmd.Run(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to prepare piece",
-			"details": err.Error(),
-			"stdout":  prepareOutput.String(),
-			"stderr":  prepareError.String(),
-			"command": prepareCmd.String(),
+		sendProgress(UploadProgress{
+			Status:  "error",
+			Error:   "Failed to prepare piece",
+			Message: prepareError.String(),
 		})
 		return
 	}
+
+	sendProgress(UploadProgress{
+		Status:  "uploading",
+		Message: "Starting file upload",
+	})
 
 	uploadCmd := exec.Command(
 		pdptoolPath,
@@ -145,27 +191,29 @@ func UploadFile(c *gin.Context) {
 
 	stdoutPipe, err := uploadCmd.StdoutPipe()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create stdout pipe",
-			"details": err.Error(),
+		sendProgress(UploadProgress{
+			Status:  "error",
+			Error:   "Failed to create stdout pipe",
+			Message: err.Error(),
 		})
 		return
 	}
 
 	stderrPipe, err := uploadCmd.StderrPipe()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create stderr pipe",
-			"details": err.Error(),
+		sendProgress(UploadProgress{
+			Status:  "error",
+			Error:   "Failed to create stderr pipe",
+			Message: err.Error(),
 		})
 		return
 	}
 
 	if err := uploadCmd.Start(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to start upload command",
-			"details": err.Error(),
-			"command": uploadCmd.String(),
+		sendProgress(UploadProgress{
+			Status:  "error",
+			Error:   "Failed to start upload command",
+			Message: err.Error(),
 		})
 		return
 	}
@@ -176,26 +224,32 @@ func UploadFile(c *gin.Context) {
 	go func() {
 		scanner := bufio.NewScanner(stdoutPipe)
 		for scanner.Scan() {
-			outputLines = append(outputLines, scanner.Text())
+			line := scanner.Text()
+			outputLines = append(outputLines, line)
+			sendProgress(UploadProgress{
+				Status:  "uploading",
+				Message: line,
+			})
 		}
 	}()
 
 	go func() {
 		scanner := bufio.NewScanner(stderrPipe)
 		for scanner.Scan() {
-			errorLines = append(errorLines, scanner.Text())
+			line := scanner.Text()
+			errorLines = append(errorLines, line)
+			sendProgress(UploadProgress{
+				Status:  "warning",
+				Message: line,
+			})
 		}
 	}()
 
 	if err := uploadCmd.Wait(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":        "Failed to upload to PDP service",
-			"details":      err.Error(),
-			"stdout":       strings.Join(outputLines, "\n"),
-			"stderr":       strings.Join(errorLines, "\n"),
-			"command":      uploadCmd.String(),
-			"service_url":  serviceURL,
-			"service_name": serviceName,
+		sendProgress(UploadProgress{
+			Status:  "error",
+			Error:   "Failed to upload to PDP service",
+			Message: strings.Join(errorLines, "\n"),
 		})
 		return
 	}
@@ -209,7 +263,6 @@ func UploadFile(c *gin.Context) {
 			WithField("service_url", serviceURL).
 			Info(fmt.Sprintf("File uploaded successfully with CID: %s", cid))
 
-		// Save piece information to database
 		piece := &models.Piece{
 			UserID:      userID.(uint),
 			CID:         cid,
@@ -221,25 +274,23 @@ func UploadFile(c *gin.Context) {
 
 		if result := db.Create(piece); result.Error != nil {
 			log.WithField("error", result.Error.Error()).Error("Failed to save piece information")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to save piece information",
-				"details": result.Error.Error(),
+			sendProgress(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to save piece information",
+				Message: result.Error.Error(),
 			})
 			return
 		}
 
 		log.WithField("pieceId", piece.ID).Info("Piece information saved successfully")
+
+		sendProgress(UploadProgress{
+			Status:   "complete",
+			Message:  "Upload completed successfully",
+			CID:      cid,
+			Filename: file.Filename,
+		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":         "File uploaded successfully to PDP service",
-		"filename":        file.Filename,
-		"size":            file.Size,
-		"prepare_output":  prepareOutput.String(),
-		"upload_output":   strings.Join(outputLines, "\n"),
-		"upload_progress": outputLines,
-		"cid":             cid,
-		"service_url":     serviceURL,
-		"service_name":    serviceName,
-	})
+	time.Sleep(100 * time.Millisecond)
 }
