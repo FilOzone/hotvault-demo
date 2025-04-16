@@ -13,6 +13,9 @@ import (
 )
 
 func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
+	// Initialize handlers with database connection
+	handlers.Initialize(db)
+
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -39,6 +42,13 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
 		{
 			protected.POST("/upload", handlers.UploadFile)
+
+			pieces := protected.Group("/pieces")
+			{
+				pieces.GET("", handlers.GetUserPieces)
+				pieces.GET("/:id", handlers.GetPieceByID)
+				pieces.GET("/cid/:cid", handlers.GetPieceByCID)
+			}
 		}
 	}
 
