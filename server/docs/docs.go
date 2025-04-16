@@ -35,6 +35,152 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/download/{cid}": {
+            "get": {
+                "description": "Download a file from the PDP service using its CID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "download"
+                ],
+                "summary": "Download a file from PDP service",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CID of the file to download",
+                        "name": "cid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "File content",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/pieces": {
+            "get": {
+                "description": "Get all pieces uploaded by the authenticated user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pieces"
+                ],
+                "summary": "Get user's pieces",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_fws_backend_internal_models.Piece"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/pieces/cid/{cid}": {
+            "get": {
+                "description": "Get a specific piece by its CID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pieces"
+                ],
+                "summary": "Get piece by CID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Piece CID",
+                        "name": "cid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fws_backend_internal_models.Piece"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/pieces/{id}": {
+            "get": {
+                "description": "Get a specific piece by its ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pieces"
+                ],
+                "summary": "Get piece by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Piece ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fws_backend_internal_models.Piece"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/upload": {
+            "post": {
+                "description": "Upload a file to the PDP service with piece preparation",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "upload"
+                ],
+                "summary": "Upload a file to PDP service",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "File to upload",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/auth/nonce": {
             "post": {
                 "description": "Generates a nonce for wallet signature authentication",
@@ -155,6 +301,143 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_fws_backend_internal_models.Piece": {
+            "type": "object",
+            "properties": {
+                "cid": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "filename": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "serviceName": {
+                    "type": "string"
+                },
+                "serviceUrl": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_fws_backend_internal_models.User"
+                },
+                "userId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_fws_backend_internal_models.Transaction": {
+            "type": "object",
+            "properties": {
+                "blockHash": {
+                    "type": "string"
+                },
+                "blockNumber": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "txHash": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "userId": {
+                    "type": "integer"
+                },
+                "value": {
+                    "type": "string"
+                },
+                "walletAddress": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_fws_backend_internal_models.User": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "nonce": {
+                    "type": "string"
+                },
+                "transactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_fws_backend_internal_models.Transaction"
+                    }
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "walletAddress": {
+                    "type": "string"
+                },
+                "wallets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_fws_backend_internal_models.Wallet"
+                    }
+                }
+            }
+        },
+        "github_com_fws_backend_internal_models.Wallet": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isPrimary": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "userId": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handlers.ErrorResponse": {
             "type": "object",
             "properties": {
