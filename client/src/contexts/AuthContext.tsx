@@ -61,17 +61,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       if (!nonceResponse.ok) {
-        console.error("❌ Failed to get nonce. Status:", nonceResponse.status);
+        console.error(
+          "[AuthContext.tsx:authenticateWithBackend] ❌ Failed to get nonce. Status:",
+          nonceResponse.status
+        );
         const errorData = await nonceResponse.json();
-        console.error("Error details:", errorData);
+        console.error(
+          "[AuthContext.tsx:authenticateWithBackend] Error details:",
+          errorData
+        );
         throw new Error("Failed to get nonce");
       }
 
       const { nonce } = await nonceResponse.json();
-      console.log("✅ Received nonce from backend:", nonce);
+      console.log(
+        "[AuthContext.tsx:authenticateWithBackend] ✅ Received nonce from backend:",
+        nonce
+      );
 
       // Step 2: Sign the nonce with MetaMask
-      console.log("🦊 Requesting MetaMask signature...");
+      console.log(
+        "[AuthContext.tsx:authenticateWithBackend] 🦊 Requesting MetaMask signature..."
+      );
       const message = `Sign this message to authenticate: ${nonce}`;
       const signature = await window.ethereum?.request({
         method: "personal_sign",
@@ -79,44 +90,84 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       if (!signature) {
-        console.error("❌ Failed to get signature from MetaMask");
+        console.error(
+          "[AuthContext.tsx:authenticateWithBackend] ❌ Failed to get signature from MetaMask"
+        );
         throw new Error("Failed to sign message");
       }
-      console.log("✅ Received signature from MetaMask:", signature);
+      console.log(
+        "[AuthContext.tsx:authenticateWithBackend] ✅ Received signature from MetaMask:",
+        signature
+      );
 
       // Step 3: Verify signature and get JWT token
-      console.log("📡 Verifying signature with backend...");
+      console.log(
+        "[AuthContext.tsx:authenticateWithBackend] 📡 Verifying signature with backend..."
+      );
 
-      console.log(`address: ${address}`);
-      console.log(`signature: ${signature}`);
-      const verifyResponse = await fetch(`${API_BASE_URL}/auth/verify`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          address,
-          signature,
-        }),
-      });
+      console.log(
+        `[AuthContext.tsx:authenticateWithBackend] address: ${address}`
+      );
+      console.log(
+        `[AuthContext.tsx:authenticateWithBackend] signature: ${signature}`
+      );
 
-      const verifyResponseData = await verifyResponse.json();
-      console.log("Verify response:", verifyResponseData);
+      try {
+        const verifyResponse = await fetch(`${API_BASE_URL}/auth/verify`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            address,
+            signature,
+          }),
+        });
 
-      if (!verifyResponse.ok) {
-        console.error(
-          "❌ Failed to verify signature. Status:",
-          verifyResponse.status
+        const verifyResponseData = await verifyResponse.json();
+        console.log(
+          "[AuthContext.tsx:authenticateWithBackend] Verify response:",
+          verifyResponseData
         );
-        console.error("Error details:", verifyResponseData);
-        throw new Error("Failed to verify signature");
-      }
 
-      const { token } = verifyResponseData;
-      console.log("✅ Received JWT token from backend");
-      console.log("🔑    preview:", token.substring(0, 20) + "...");
-      localStorage.setItem(JWT_STORAGE_KEY, token);
-      return token;
+        if (!verifyResponse.ok) {
+          console.error(
+            "[AuthContext.tsx:authenticateWithBackend] ❌ Failed to verify signature. Status:",
+            verifyResponse.status
+          );
+          console.error(
+            "[AuthContext.tsx:authenticateWithBackend] Error details:",
+            verifyResponseData
+          );
+          throw new Error(
+            verifyResponseData.error || "Failed to verify signature"
+          );
+        }
+
+        if (!verifyResponseData.token) {
+          console.error(
+            "[AuthContext.tsx:authenticateWithBackend] ❌ No token in response"
+          );
+          throw new Error("No token received from server");
+        }
+
+        const { token } = verifyResponseData;
+        console.log(
+          "[AuthContext.tsx:authenticateWithBackend] ✅ Received JWT token from backend"
+        );
+        console.log(
+          "[AuthContext.tsx:authenticateWithBackend] 🔑 Token preview:",
+          token.substring(0, 20) + "..."
+        );
+        localStorage.setItem(JWT_STORAGE_KEY, token);
+        return token;
+      } catch (error) {
+        console.error(
+          "[AuthContext.tsx:authenticateWithBackend] 🚨 Verification error:",
+          error
+        );
+        throw error;
+      }
     } catch (error) {
       console.error("🚨 Authentication error:", error);
       throw error;
@@ -125,13 +176,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Handle account changes
   const handleAccountsChanged = async (newAccounts: string[]) => {
-    console.log("👛 Account change detected:", newAccounts);
+    console.log(
+      "[AuthContext.tsx:handleAccountsChanged] 👛 Account change detected:",
+      newAccounts
+    );
     const newAccount = newAccounts[0] || "";
     setAccount(newAccount);
 
     if (!newAccount) {
       console.log(
-        "🔓 No account found, clearing storage and redirecting to home"
+        "[AuthContext.tsx:handleAccountsChanged] 🔓 No account found, clearing storage and redirecting to home"
       );
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(JWT_STORAGE_KEY);
@@ -139,13 +193,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       router.push("/");
     } else {
       try {
-        console.log("🔒 New account connected, starting authentication");
+        console.log(
+          "[AuthContext.tsx:handleAccountsChanged] 🔒 New account connected, starting authentication"
+        );
         await authenticateWithBackend(newAccount);
         localStorage.setItem(STORAGE_KEY, "true");
-        console.log("✅ Authentication successful, redirecting to dashboard");
+        console.log(
+          "[AuthContext.tsx:handleAccountsChanged] ✅ Authentication successful, redirecting to dashboard"
+        );
         router.push("/dashboard");
       } catch (error) {
-        console.error("❌ Authentication failed:", error);
+        console.error(
+          "[AuthContext.tsx:handleAccountsChanged] ❌ Authentication failed:",
+          error
+        );
         setError("Failed to authenticate with the backend");
         setAccount("");
         localStorage.removeItem(STORAGE_KEY);
@@ -276,7 +337,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const handleAccountSwitch = async () => {
-    console.log("🔄 Initiating account switch...");
+    console.log("�� Initiating account switch...");
     try {
       await window.ethereum?.request({
         method: "wallet_requestPermissions",
