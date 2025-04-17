@@ -53,15 +53,7 @@ export default function Dashboard() {
 
       <div className="pt-16">
         <main className="container mx-auto px-4 py-8">
-          <QuickStats
-            userTokens={userTokens}
-            rails={rails}
-            isLoading={isLoading || isLoadingRails}
-            calculateTotalDeposited={calculateTotalDeposited}
-            calculateTotalLocked={calculateTotalLocked}
-            calculateWithdrawable={calculateWithdrawable}
-            handleWithdraw={handleWithdraw}
-          />
+          <QuickStats isLoading={isLoading || isLoadingRails} />
 
           <div className="mt-8 bg-white rounded-xl shadow-sm overflow-hidden">
             <AnimatePresence mode="wait">
@@ -77,21 +69,7 @@ export default function Dashboard() {
               )}
 
               {activeTab === DASHBOARD_SECTIONS.RAILS && (
-                <RailsTab
-                  isLoading={isLoadingRails}
-                  rails={rails}
-                  userTokens={userTokens}
-                  handleCreateRail={async (params: {
-                    token: string;
-                    to: string;
-                    arbiter?: string;
-                  }) => {
-                    await handleCreateRail(params);
-                  }}
-                  handleTerminate={async (rail: Rail) => {
-                    await handleTerminate(rail);
-                  }}
-                />
+                <RailsTab isLoading={isLoadingRails} />
               )}
 
               {activeTab === DASHBOARD_SECTIONS.ACTIVITY && (

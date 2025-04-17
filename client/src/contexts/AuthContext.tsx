@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_BASE_URL } from "@/lib/constants";
 
 interface EthereumProvider {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -32,6 +33,7 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const STORAGE_KEY = "fws_wallet_connected";
+const JWT_STORAGE_KEY = "jwt_token";
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -42,30 +44,128 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [error, setError] = useState<string>("");
   const router = useRouter();
 
+  const authenticateWithBackend = async (address: string) => {
+    console.log("🔐 Starting authentication process for address:", address);
+    try {
+      // Step 1: Get nonce from backend
+      console.log("📡 Requesting nonce from backend...");
+      const nonceResponse = await fetch(`${API_BASE_URL}/auth/nonce`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address }),
+      });
+
+      if (!nonceResponse.ok) {
+        console.error("❌ Failed to get nonce. Status:", nonceResponse.status);
+        const errorData = await nonceResponse.json();
+        console.error("Error details:", errorData);
+        throw new Error("Failed to get nonce");
+      }
+
+      const { nonce } = await nonceResponse.json();
+      console.log("✅ Received nonce from backend:", nonce);
+
+      // Step 2: Sign the nonce with MetaMask
+      console.log("🦊 Requesting MetaMask signature...");
+      const message = `Sign this message to authenticate: ${nonce}`;
+      const signature = await window.ethereum?.request({
+        method: "personal_sign",
+        params: [message, address],
+      });
+
+      if (!signature) {
+        console.error("❌ Failed to get signature from MetaMask");
+        throw new Error("Failed to sign message");
+      }
+      console.log("✅ Received signature from MetaMask:", signature);
+
+      // Step 3: Verify signature and get JWT token
+      console.log("📡 Verifying signature with backend...");
+
+      console.log(`address: ${address}`);
+      console.log(`signature: ${signature}`);
+      const verifyResponse = await fetch(`${API_BASE_URL}/auth/verify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address,
+          signature,
+        }),
+      });
+
+      console.log(`verifyResponse: ${verifyResponse}`);
+
+      if (!verifyResponse.ok) {
+        console.error(
+          "❌ Failed to verify signature. Status:",
+          verifyResponse.status
+        );
+        const errorData = await verifyResponse.json();
+        console.error("Error details:", errorData);
+        throw new Error("Failed to verify signature");
+      }
+
+      const { token } = await verifyResponse.json();
+      console.log("✅ Received JWT token from backend");
+      console.log("🔑 Token preview:", token.substring(0, 20) + "...");
+      localStorage.setItem(JWT_STORAGE_KEY, token);
+      return token;
+    } catch (error) {
+      console.error("🚨 Authentication error:", error);
+      throw error;
+    }
+  };
+
   // Handle account changes
-  const handleAccountsChanged = (newAccounts: string[]) => {
+  const handleAccountsChanged = async (newAccounts: string[]) => {
+    console.log("👛 Account change detected:", newAccounts);
     const newAccount = newAccounts[0] || "";
     setAccount(newAccount);
+
     if (!newAccount) {
+      console.log(
+        "🔓 No account found, clearing storage and redirecting to home"
+      );
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(JWT_STORAGE_KEY);
       setError("");
       router.push("/");
     } else {
-      localStorage.setItem(STORAGE_KEY, "true");
+      try {
+        console.log("🔒 New account connected, starting authentication");
+        await authenticateWithBackend(newAccount);
+        localStorage.setItem(STORAGE_KEY, "true");
+        console.log("✅ Authentication successful, redirecting to dashboard");
+        router.push("/dashboard");
+      } catch (error) {
+        console.error("❌ Authentication failed:", error);
+        setError("Failed to authenticate with the backend");
+        setAccount("");
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(JWT_STORAGE_KEY);
+      }
     }
   };
 
   // Handle disconnect
   const handleDisconnect = () => {
+    console.log("🔌 Wallet disconnected");
     setAccount("");
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(JWT_STORAGE_KEY);
     setError("");
     router.push("/");
   };
 
   useEffect(() => {
     const checkConnection = async () => {
+      console.log("🔍 Checking existing connection...");
       if (!window.ethereum) {
+        console.log("❌ MetaMask not found");
         setIsLoading(false);
         return;
       }
@@ -73,14 +173,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         // Only check accounts if we were previously connected
         if (localStorage.getItem(STORAGE_KEY)) {
+          console.log("💾 Found stored connection, checking accounts...");
           const accounts = (await window.ethereum.request({
             method: "eth_accounts",
           })) as string[];
 
+          if (accounts[0]) {
+            console.log("👤 Found connected account:", accounts[0]);
+            // If we have an account but no JWT, try to re-authenticate
+            if (!localStorage.getItem(JWT_STORAGE_KEY)) {
+              console.log("🔄 No JWT found, re-authenticating...");
+              await authenticateWithBackend(accounts[0]);
+            } else {
+              console.log("✅ JWT token found in storage");
+            }
+          }
+
           handleAccountsChanged(accounts);
+        } else {
+          console.log("💾 No stored connection found");
         }
       } catch (err) {
-        console.error("Failed to get accounts:", err);
+        console.error("❌ Connection check failed:", err);
+        // Clear storage if authentication fails
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(JWT_STORAGE_KEY);
       } finally {
         setIsLoading(false);
       }
@@ -89,12 +206,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     checkConnection();
 
     if (window.ethereum) {
+      console.log("🦊 Setting up MetaMask event listeners");
       // Add event listeners
       window.ethereum.on("accountsChanged", handleAccountsChanged);
       window.ethereum.on("disconnect", handleDisconnect);
 
       // Cleanup event listeners
       return () => {
+        console.log("🧹 Cleaning up MetaMask event listeners");
         window.ethereum?.removeListener(
           "accountsChanged",
           handleAccountsChanged
@@ -105,7 +224,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [router]);
 
   const connectWallet = async () => {
+    console.log("🔌 Initiating wallet connection...");
     if (!window.ethereum) {
+      console.error("❌ MetaMask not found");
       setError("Please install MetaMask to continue");
       return;
     }
@@ -113,32 +234,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       setIsConnecting(true);
       setError("");
+      console.log("🦊 Requesting MetaMask accounts...");
 
       const accounts = (await window.ethereum.request({
         method: "eth_requestAccounts",
       })) as string[];
 
-      handleAccountsChanged(accounts);
+      console.log("✅ Accounts received:", accounts);
+      await handleAccountsChanged(accounts);
     } catch (err) {
+      console.error("❌ Wallet connection failed:", err);
       setError("Failed to connect to MetaMask");
-      console.error(err);
     } finally {
       setIsConnecting(false);
     }
   };
 
   const disconnectWallet = () => {
+    console.log("🔌 Initiating wallet disconnect...");
     handleDisconnect();
   };
 
   const handleAccountSwitch = async () => {
+    console.log("🔄 Initiating account switch...");
     try {
       await window.ethereum?.request({
         method: "wallet_requestPermissions",
         params: [{ eth_accounts: {} }],
       });
+      console.log("✅ Account switch dialog opened");
     } catch (error) {
-      console.error("Failed to switch accounts:", error);
+      console.error("❌ Account switch failed:", error);
     }
   };
 
