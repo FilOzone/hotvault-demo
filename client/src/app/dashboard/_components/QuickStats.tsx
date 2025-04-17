@@ -2,7 +2,7 @@
 
 import { Typography } from "@/components/ui/typography";
 import { motion } from "framer-motion";
-import { TokenData } from "@/contracts";
+import { TokenData } from "@/types/dashboard";
 import { Rail } from "@/types/dashboard";
 import Skeleton from "react-loading-skeleton";
 import { useState } from "react";
@@ -19,14 +19,20 @@ interface QuickStatsProps {
 }
 
 export const QuickStats: React.FC<QuickStatsProps> = ({
-  userTokens,
-  rails,
+  userTokens = [],
+  rails = [],
   isLoading,
   calculateTotalDeposited,
   calculateTotalLocked,
   calculateWithdrawable,
   handleWithdraw,
 }) => {
+  console.log("🎯 Rendering QuickStats", {
+    userTokensLength: userTokens?.length,
+    railsLength: rails?.length,
+    isLoading,
+  });
+
   const [selectedToken, setSelectedToken] = useState<TokenData | null>(null);
   const [isWithdrawalModalOpen, setIsWithdrawalModalOpen] = useState(false);
 
@@ -34,7 +40,7 @@ export const QuickStats: React.FC<QuickStatsProps> = ({
     {
       id: "deposited",
       label: "Token Deposits",
-      value: userTokens
+      value: (userTokens || [])
         .map(
           (token) =>
             `${token.symbol}: ${calculateTotalDeposited(token.address).toFixed(
@@ -60,8 +66,8 @@ export const QuickStats: React.FC<QuickStatsProps> = ({
     },
     {
       id: "locked",
-      label: "Total Locked",
-      value: userTokens
+      label: "Locked in Rails",
+      value: (userTokens || [])
         .map(
           (token) =>
             `${token.symbol}: ${calculateTotalLocked(token.address).toFixed(4)}`
@@ -85,8 +91,8 @@ export const QuickStats: React.FC<QuickStatsProps> = ({
     },
     {
       id: "withdrawable",
-      label: "Withdrawable",
-      value: userTokens
+      label: "Available to Withdraw",
+      value: (userTokens || [])
         .map(
           (token) =>
             `${token.symbol}: ${calculateWithdrawable(token.address).toFixed(
@@ -237,8 +243,8 @@ export const QuickStats: React.FC<QuickStatsProps> = ({
             setSelectedToken(null);
           }}
           token={selectedToken}
-          withdrawable={calculateWithdrawable(selectedToken.address)}
-          onSubmit={handleWithdraw}
+          withdrawableAmount={calculateWithdrawable(selectedToken.address)}
+          onWithdraw={handleWithdraw}
         />
       )}
     </>

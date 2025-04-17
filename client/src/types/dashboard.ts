@@ -1,4 +1,10 @@
-import { TokenData } from "@/contracts";
+export interface TokenData {
+  address: string;
+  symbol: string;
+  decimals: number;
+  balance: bigint;
+  allowance: bigint;
+}
 
 export interface Rail {
   id: number;

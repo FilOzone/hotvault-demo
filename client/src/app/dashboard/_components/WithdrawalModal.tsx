@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Typography } from "@/components/ui/typography";
 import toast from "react-hot-toast";
 import { BUTTON_STYLES, INPUT_STYLES } from "@/types/dashboard";
-import { TokenData } from "@/contracts";
+import { TokenData } from "@/types/dashboard";
 import { ethers } from "ethers";
 
 interface WithdrawalModalProps {
@@ -138,7 +138,10 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                 className={INPUT_STYLES.base}
                 disabled={isWithdrawing}
               />
-              <Typography variant="small" className="text-gray-400 text-xs mt-1">
+              <Typography
+                variant="small"
+                className="text-gray-400 text-xs mt-1"
+              >
                 Leave empty to withdraw to your wallet
               </Typography>
             </motion.div>

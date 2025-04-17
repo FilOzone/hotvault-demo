@@ -1,9 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
-import { ERC20_ABI, PAYMENTS_ABI } from "@/contracts";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
+
+// Basic ERC20 ABI for the functions we need
+const ERC20_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address,address) view returns (uint256)",
+  "function approve(address,uint256) returns (bool)",
+];
+
+// Basic Payments ABI for the functions we need
+const PAYMENTS_ABI = [
+  "function deposit(address,uint256) payable returns (bool)",
+];
 
 interface TokenAllowanceProps {
   tokenAddress: string;

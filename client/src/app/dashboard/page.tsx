@@ -53,7 +53,15 @@ export default function Dashboard() {
 
       <div className="pt-16">
         <main className="container mx-auto px-4 py-8">
-          <QuickStats isLoading={isLoading || isLoadingRails} />
+          <QuickStats
+            isLoading={isLoading || isLoadingRails}
+            userTokens={userTokens}
+            rails={rails}
+            calculateTotalDeposited={calculateTotalDeposited}
+            calculateTotalLocked={calculateTotalLocked}
+            calculateWithdrawable={calculateWithdrawable}
+            handleWithdraw={handleWithdraw}
+          />
 
           <div className="mt-8 bg-white rounded-xl shadow-sm overflow-hidden">
             <AnimatePresence mode="wait">

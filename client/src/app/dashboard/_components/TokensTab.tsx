@@ -3,12 +3,15 @@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { TokenData } from "@/contracts";
-import TokenAllowance from "@/components/TokenAllowance";
-import { CONTRACTS } from "@/contracts";
+import { TokenData } from "@/types/dashboard";
 import { useAuth } from "@/contexts/AuthContext";
 import Skeleton from "react-loading-skeleton";
 import { Typography } from "@/components/ui/typography";
+import { useState } from "react";
+import { Card } from "@/components/ui/card";
+import TokenAllowance from "@/components/TokenAllowance";
+
+const PAYMENTS_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_PAYMENTS_PROXY || "";
 
 interface TokensTabProps {
   isLoading: boolean;
@@ -59,10 +62,7 @@ export const TokensTab: React.FC<TokensTabProps> = ({
               className="flex w-70 min-w-0 bg-background border-input px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-background/5"
             />
           </div>
-          <Button
-            onClick={addToken}
-            disabled={!newTokenAddress}
-          >
+          <Button onClick={addToken} disabled={!newTokenAddress}>
             Add Token
           </Button>
         </div>
@@ -121,15 +121,18 @@ export const TokensTab: React.FC<TokensTabProps> = ({
               {token.address !==
                 "0x0000000000000000000000000000000000000000" && (
                 <TokenAllowance
-                  tokenAddress={token.address}
-                  paymentsAddress={CONTRACTS.PAYMENTS_PROXY}
                   account={account}
+                  tokenAddress={token.address}
+                  paymentsAddress={PAYMENTS_ADDRESS}
                 />
               )}
               {/* Show message for FIL */}
               {token.address ===
                 "0x0000000000000000000000000000000000000000" && (
-                <Typography variant="small" className="text-sm text-gray-500 mt-2">
+                <Typography
+                  variant="small"
+                  className="text-sm text-gray-500 mt-2"
+                >
                   Native FIL does not require allowance. Use WFIL for payments.
                 </Typography>
               )}

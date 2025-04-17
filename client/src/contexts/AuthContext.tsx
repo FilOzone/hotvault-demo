@@ -44,6 +44,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [error, setError] = useState<string>("");
   const router = useRouter();
 
+  // Add connection lock
+  const [isConnectionLocked, setIsConnectionLocked] = useState(false);
+
   const authenticateWithBackend = async (address: string) => {
     console.log("🔐 Starting authentication process for address:", address);
     try {
@@ -97,21 +100,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }),
       });
 
-      console.log(`verifyResponse: ${verifyResponse}`);
+      const verifyResponseData = await verifyResponse.json();
+      console.log("Verify response:", verifyResponseData);
 
       if (!verifyResponse.ok) {
         console.error(
           "❌ Failed to verify signature. Status:",
           verifyResponse.status
         );
-        const errorData = await verifyResponse.json();
-        console.error("Error details:", errorData);
+        console.error("Error details:", verifyResponseData);
         throw new Error("Failed to verify signature");
       }
 
-      const { token } = await verifyResponse.json();
+      const { token } = verifyResponseData;
       console.log("✅ Received JWT token from backend");
-      console.log("🔑 Token preview:", token.substring(0, 20) + "...");
+      console.log("🔑    preview:", token.substring(0, 20) + "...");
       localStorage.setItem(JWT_STORAGE_KEY, token);
       return token;
     } catch (error) {
@@ -231,8 +234,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
+    if (isConnectionLocked) {
+      console.log("🔒 Connection request already in progress");
+      setError("Please check MetaMask for the connection request");
+      return;
+    }
+
     try {
       setIsConnecting(true);
+      setIsConnectionLocked(true);
       setError("");
       console.log("🦊 Requesting MetaMask accounts...");
 
@@ -242,11 +252,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       console.log("✅ Accounts received:", accounts);
       await handleAccountsChanged(accounts);
-    } catch (err) {
+    } catch (err: any) {
       console.error("❌ Wallet connection failed:", err);
-      setError("Failed to connect to MetaMask");
+      if (err.code === -32002) {
+        setError(
+          "Connection request already pending in MetaMask. Please check your MetaMask extension."
+        );
+      } else {
+        setError("Failed to connect to MetaMask");
+      }
     } finally {
       setIsConnecting(false);
+      // Add a delay before unlocking to prevent rapid reconnection attempts
+      setTimeout(() => {
+        setIsConnectionLocked(false);
+      }, 1000);
     }
   };
 
