@@ -50,6 +50,11 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 				pieces.GET("/:id", handlers.GetPieceByID)
 				pieces.GET("/cid/:cid", handlers.GetPieceByCID)
 			}
+
+			roots := protected.Group("/roots")
+			{
+				roots.POST("/remove", handlers.RemoveRoot)
+			}
 		}
 	}
 

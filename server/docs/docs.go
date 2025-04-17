@@ -148,19 +148,54 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/upload": {
+        "/api/v1/roots/remove": {
             "post": {
-                "description": "Upload a file to the PDP service with piece preparation",
+                "description": "Remove a specific root from the PDP service",
                 "consumes": [
-                    "multipart/form-data"
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
+                    "roots"
+                ],
+                "summary": "Remove roots using pdptool",
+                "parameters": [
+                    {
+                        "description": "Remove root request data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.RemoveRootRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/upload": {
+            "post": {
+                "description": "Upload a file to the PDP service with piece preparation and real-time progress updates",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
                     "upload"
                 ],
-                "summary": "Upload a file to PDP service",
+                "summary": "Upload a file to PDP service with progress updates",
                 "parameters": [
                     {
                         "type": "file",
@@ -174,8 +209,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api_handlers.UploadProgress"
                         }
                     }
                 }
@@ -476,6 +510,55 @@ const docTemplate = `{
                 "nonce": {
                     "type": "string",
                     "example": "7a39f642c2608fd2bded0c35b1612d8716757326f870b6bd3f6cb7824f2b5c6d"
+                }
+            }
+        },
+        "internal_api_handlers.RemoveRootRequest": {
+            "type": "object",
+            "required": [
+                "proofSetId",
+                "rootId",
+                "serviceName",
+                "serviceUrl"
+            ],
+            "properties": {
+                "proofSetId": {
+                    "type": "integer"
+                },
+                "rootId": {
+                    "type": "string"
+                },
+                "serviceName": {
+                    "type": "string"
+                },
+                "serviceUrl": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handlers.UploadProgress": {
+            "type": "object",
+            "properties": {
+                "cid": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "filename": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "totalSize": {
+                    "type": "integer"
                 }
             }
         },
