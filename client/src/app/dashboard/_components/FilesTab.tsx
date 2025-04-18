@@ -43,7 +43,7 @@ interface Piece {
   updatedAt: string;
   pendingRemoval?: boolean;
   removalDate?: string;
-  proofSetId?: number;
+  proofSetId?: string;
   rootId?: string;
 }
 
@@ -74,6 +74,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     isStalled?: boolean;
     filename?: string; // store original filename for polling
     jobId?: string; // store job ID for polling
+    proofSetId?: string; // store proof set ID
   } | null>(null);
   // Add state for tracking downloads in progress
   const [downloadsInProgress, setDownloadsInProgress] = useState<{
@@ -85,7 +86,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   const [selectedProof, setSelectedProof] = useState<{
     pieceId: number;
     pieceFilename: string;
-    proofSetId: number;
+    proofSetId: string;
     cid: string;
   } | null>(null);
 
@@ -514,6 +515,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       starting: "text-gray-500 bg-gray-50 border-gray-200",
       cancelled: "text-gray-500 bg-gray-50 border-gray-200",
       finalizing: "text-emerald-500 bg-emerald-50 border-emerald-200",
+      adding_root: "text-purple-500 bg-purple-50 border-purple-200",
     };
 
     const statusColor =
@@ -530,6 +532,8 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           return "Uploading...";
         case "finalizing":
           return "Finalizing...";
+        case "adding_root":
+          return "Adding to proof set...";
         case "complete":
           return "Upload complete!";
         case "error":
@@ -586,6 +590,20 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                   {uploadProgress.filename}
                 </div>
               )}
+              {uploadProgress.proofSetId && (
+                <div className="text-xs mt-2 flex items-center">
+                  <span className="mr-2">Proof Set ID:</span>
+                  <a
+                    href={`https://pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.proofSetId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline flex items-center"
+                  >
+                    {uploadProgress.proofSetId}
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </a>
+                </div>
+              )}
             </div>
             {uploadProgress.progress !== undefined && (
               <div className="text-sm font-medium ml-2">
@@ -608,6 +626,75 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                 }`}
                 style={{ width: `${uploadProgress.progress}%` }}
               ></div>
+            </div>
+          )}
+
+          {/* Display completed upload info with links */}
+          {uploadProgress.status === "complete" && uploadProgress.cid && (
+            <div className="mt-3 pt-3 border-t border-green-200">
+              <div className="flex flex-col gap-2">
+                {uploadProgress.proofSetId && (
+                  <a
+                    href={`https://pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.proofSetId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm flex items-center justify-between bg-green-100 text-green-800 p-2 rounded hover:bg-green-200 transition-colors"
+                  >
+                    <span className="flex items-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-4 w-4 mr-2"
+                      >
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                      </svg>
+                      View Proof Set
+                    </span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+                <a
+                  href={`https://ipfs.io/ipfs/${
+                    uploadProgress.cid.split(":")[0]
+                  }`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm flex items-center justify-between bg-blue-100 text-blue-800 p-2 rounded hover:bg-blue-200 transition-colors"
+                >
+                  <span className="flex items-center">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="mr-2"
+                    >
+                      <rect
+                        x="3"
+                        y="3"
+                        width="18"
+                        height="18"
+                        rx="2"
+                        ry="2"
+                      ></rect>
+                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                      <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                    View on IPFS
+                  </span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
             </div>
           )}
         </div>
@@ -971,7 +1058,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
           {hasProof ? (
-            <div className="flex items-center">
+            <div className="flex items-center flex-wrap gap-2">
               <div className="flex space-x-1 items-center">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -985,16 +1072,27 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                 >
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                 </svg>
-                <span className="text-green-600">Available</span>
+                <span className="text-green-600">Set #{piece.proofSetId}</span>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-2 px-2 py-1 text-xs"
-                onClick={() => openProofDetails(piece)}
-              >
-                View
-              </Button>
+              <div className="flex items-center gap-1">
+                <a
+                  href={`https://pdp-explorer.eng.filoz.org/proofsets/${piece.proofSetId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:text-blue-700 flex items-center"
+                >
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  <span className="text-xs">Explorer</span>
+                </a>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="px-2 py-1 text-xs"
+                  onClick={() => openProofDetails(piece)}
+                >
+                  Details
+                </Button>
+              </div>
             </div>
           ) : (
             <span className="text-gray-400">Not available</span>
@@ -1154,13 +1252,14 @@ export const FilesTab: React.FC<FilesTabProps> = ({
         >
           <input {...getInputProps()} />
           {previewUrl ? (
-            <div className="relative">
+            <div className="relative inline-block max-h-64 mx-auto">
               <Image
                 src={previewUrl}
                 alt="Preview"
-                className="max-h-64 mx-auto rounded-lg shadow-sm"
-                width={256}
-                height={256}
+                className="block max-h-64 w-auto h-auto rounded-lg shadow-sm object-contain"
+                width={0}
+                height={0}
+                sizes="100vw"
               />
               <button
                 onClick={(e) => {
@@ -1168,10 +1267,10 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                   setSelectedImage(null);
                   setPreviewUrl(null);
                 }}
-                className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none"
               >
                 <svg
-                  className="w-4 h-4"
+                  className="w-3 h-3"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -1179,7 +1278,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    strokeWidth={2}
+                    strokeWidth={3}
                     d="M6 18L18 6M6 6l12 12"
                   />
                 </svg>
@@ -1430,7 +1529,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     variant="outline"
                     onClick={() =>
                       window.open(
-                        `https://pdp-explorer.eng.filoz.org/proofsets/${selectedProof.proofSetId}`,
+                        `https://pdp-explorer.eng.filoz.org/proofsets/${selectedProof?.proofSetId}`,
                         "_blank"
                       )
                     }
@@ -1447,15 +1546,20 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     >
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                     </svg>
-                    View Proof Set #{selectedProof.proofSetId}
+                    View Proof Set #{selectedProof?.proofSetId}
                   </Button>
                   <Button
                     variant="secondary"
                     className="gap-2 justify-start"
                     onClick={() => {
-                      // Extract first part of CID if it has a colon
-                      const firstCid = selectedProof.cid.split(":")[0];
-                      window.open(`https://ipfs.io/ipfs/${firstCid}`, "_blank");
+                      if (selectedProof?.cid) {
+                        // Extract first part of CID if it has a colon
+                        const firstCid = selectedProof.cid.split(":")[0];
+                        window.open(
+                          `https://ipfs.io/ipfs/${firstCid}`,
+                          "_blank"
+                        );
+                      }
                     }}
                   >
                     <svg
