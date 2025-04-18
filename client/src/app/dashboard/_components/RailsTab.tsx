@@ -9,12 +9,14 @@ import { useDropzone } from "react-dropzone";
 import { API_BASE_URL } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
 
+/* Unused type definition
 interface UploadResponse {
   cid: string;
   size: number;
   status: string;
   message?: string;
 }
+*/
 
 interface Piece {
   id: number;
@@ -37,7 +39,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [pieces, setPieces] = useState<Piece[]>([]);
-  const [isLoading, setIsLoading] = useState(initialLoading);
+  const [isLoading] = useState(initialLoading);
   const [uploadProgress, setUploadProgress] = useState<{
     status: string;
     progress?: number;
@@ -53,7 +55,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
         throw new Error("Authentication required");
       }
 
-      const response = await fetch(`${API_BASE_URL}/pieces`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/pieces`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -109,9 +111,13 @@ export const RailsTab: React.FC<RailsTabProps> = ({
         throw new Error("Authentication required");
       }
 
-      setUploadProgress({ status: "uploading", progress: 0 });
+      setUploadProgress({
+        status: "uploading",
+        progress: 0,
+        message: "Initiating upload...",
+      });
 
-      const response = await fetch(`${API_BASE_URL}/upload`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -121,68 +127,121 @@ export const RailsTab: React.FC<RailsTabProps> = ({
 
       if (!response.ok) {
         const errorText = await response.text();
-        let errorMessage = "Upload failed";
+        let errorMessage = `Upload failed (${response.status})`;
         try {
           const errorData = JSON.parse(errorText);
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch /*(e)*/ {
+          // Error is already logged if parsing fails
           console.error(
-            "[RailsTab.tsx:handleSubmitImage] Failed to parse error response:",
+            "[RailsTab.tsx:handleSubmitImage] Raw error response:",
             errorText
           );
         }
         throw new Error(errorMessage);
       }
 
-      try {
-        const data = await response.json();
+      // Check if the response is SSE
+      const contentType = response.headers.get("content-type");
+      if (
+        contentType &&
+        contentType.includes("text/event-stream") &&
+        response.body
+      ) {
         console.log(
-          "[RailsTab.tsx:handleSubmitImage] 📊 Upload response:",
-          data
+          "[RailsTab.tsx:handleSubmitImage] SSE stream detected, processing..."
         );
+        // Process SSE stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-        if (data.status === "complete" || data.cid) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log(
+              "[RailsTab.tsx:handleSubmitImage] SSE stream finished."
+            );
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n"); // SSE messages end with \n\n
+          buffer = lines.pop() || ""; // Keep the last partial line
+
+          for (const line of lines) {
+            if (line.startsWith("data:")) {
+              const jsonData = line.substring(5).trim(); // Remove 'data:' prefix
+              try {
+                const progressData = JSON.parse(jsonData);
+                console.log(
+                  "[RailsTab.tsx:handleSubmitImage] Progress update:",
+                  progressData
+                );
+                setUploadProgress(progressData);
+
+                if (progressData.status === "complete" || progressData.cid) {
+                  console.log(
+                    "[RailsTab.tsx:handleSubmitImage] ✅ Upload complete event received! CID:",
+                    progressData.cid
+                  );
+                  setSelectedImage(null);
+                  setPreviewUrl(null);
+                  setUploadProgress(null);
+                  fetchPieces(); // Refresh the pieces list
+                  reader.cancel(); // Stop reading the stream
+                  return; // Exit the function
+                } else if (progressData.status === "error") {
+                  console.error(
+                    "[RailsTab.tsx:handleSubmitImage] ❌ Upload error event received:",
+                    progressData.error
+                  );
+                  throw new Error(
+                    progressData.error || "Upload failed during stream"
+                  );
+                }
+              } catch (parseError) {
+                console.error(
+                  "[RailsTab.tsx:handleSubmitImage] ❌ Failed to parse SSE data:",
+                  jsonData,
+                  parseError
+                );
+              }
+            }
+          }
+        }
+        // If loop finishes without 'complete' or 'error' status, consider it potentially incomplete
+        if (uploadProgress?.status !== "complete") {
+          console.warn(
+            "[RailsTab.tsx:handleSubmitImage] SSE stream ended without a final 'complete' or 'error' status."
+          );
+          // Optionally set an indeterminate/timeout state here
+        }
+      } else {
+        // Handle non-SSE responses if necessary (e.g., fallback or different endpoint)
+        console.warn(
+          "[RailsTab.tsx:handleSubmitImage] Received non-SSE response."
+        );
+        // Attempt to parse as JSON as a fallback, though the backend isn't designed for this
+        try {
+          const fallbackData = await response.json();
           console.log(
-            "[RailsTab.tsx:handleSubmitImage] ✅ Upload complete! CID:",
-            data.cid
+            "[RailsTab.tsx:handleSubmitImage] Fallback JSON response:",
+            fallbackData
           );
-          setSelectedImage(null);
-          setPreviewUrl(null);
-          setUploadProgress(null);
-          // Refresh the pieces list
-          fetchPieces();
-        } else if (data.status === "error") {
+          // Handle fallback data if needed
+        } catch /*(fallbackJsonError)*/ {
+          const fallbackText = await response.text(); // Read body again if json fails
           console.error(
-            "[RailsTab.tsx:handleSubmitImage] ❌ Upload error:",
-            data.error
+            "[RailsTab.tsx:handleSubmitImage] Non-SSE response body:",
+            fallbackText
           );
-          throw new Error(data.error || "Upload failed");
+          throw new Error("Received unexpected response format from server.");
         }
-
-        // Update progress if available
-        if (data.progress !== undefined) {
-          setUploadProgress({
-            status: data.status || "uploading",
-            progress: data.progress,
-            message: data.message,
-            cid: data.cid,
-          });
-        }
-      } catch (error) {
-        console.error(
-          "[RailsTab.tsx:handleSubmitImage] ❌ Error parsing response:",
-          error
-        );
-        const rawResponse = await response.text();
-        console.error(
-          "[RailsTab.tsx:handleSubmitImage] ❌ Raw response:",
-          rawResponse
-        );
-        throw new Error("Failed to parse server response");
       }
     } catch (error) {
       console.error(
-        "[RailsTab.tsx:handleSubmitImage] ❌ Error uploading image:",
+        "[RailsTab.tsx:handleSubmitImage] ❌ Error in handleSubmitImage:",
         error
       );
       setUploadProgress({

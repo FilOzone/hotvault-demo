@@ -3,7 +3,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatePresence } from "framer-motion";
 import { useState } from "react";
-import { DASHBOARD_SECTIONS, DashboardSection, Rail } from "@/types/dashboard";
+import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { useDashboard } from "@/hooks/useDashboard";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { QuickStats } from "./_components/QuickStats";
@@ -27,8 +27,6 @@ export default function Dashboard() {
     rails,
     isLoadingRails,
     addToken,
-    handleCreateRail,
-    handleTerminate,
     calculateTotalDeposited,
     calculateTotalLocked,
     calculateWithdrawable,

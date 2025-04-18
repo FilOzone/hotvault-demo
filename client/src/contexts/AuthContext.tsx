@@ -51,8 +51,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     console.log("🔐 Starting authentication process for address:", address);
     try {
       // Step 1: Get nonce from backend
-      console.log("📡 Requesting nonce from backend...");
-      const nonceResponse = await fetch(`${API_BASE_URL}/auth/nonce`, {
+      console.log("Requesting nonce from backend...");
+      console.log("API_BASE_URL just before fetch:", API_BASE_URL);
+      const nonceUrl = `${API_BASE_URL}/api/v1/auth/nonce`;
+      console.log("Full request URL:", nonceUrl);
+      const nonceResponse = await fetch(nonceUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -113,7 +116,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       );
 
       try {
-        const verifyResponse = await fetch(`${API_BASE_URL}/auth/verify`, {
+        console.log("🕵️  API_BASE_URL just before verify fetch:", API_BASE_URL);
+        const verifyUrl = `${API_BASE_URL}/api/v1/auth/verify`;
+        console.log("🔗 Full verify URL:", verifyUrl);
+        const verifyResponse = await fetch(verifyUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -313,9 +319,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       console.log("✅ Accounts received:", accounts);
       await handleAccountsChanged(accounts);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("❌ Wallet connection failed:", err);
-      if (err.code === -32002) {
+      if (err instanceof Error && "code" in err && err.code === -32002) {
         setError(
           "Connection request already pending in MetaMask. Please check your MetaMask extension."
         );
