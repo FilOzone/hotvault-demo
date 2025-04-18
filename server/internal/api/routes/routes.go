@@ -16,12 +16,14 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	// Initialize handlers with database connection
 	handlers.Initialize(db)
 
+	// Configure CORS to accept credentials
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
+		AllowOrigins:     []string{"http://localhost:3000", "https://fws-demo-app.yourdomain.com"}, // Update with your domains
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
+		AllowCredentials: true,         // This is crucial for cookies to work across domains
+		MaxAge:           12 * 60 * 60, // Cache preflight requests for 12 hours
 	}))
 
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -36,6 +38,8 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		{
 			auth.POST("/nonce", authHandler.GenerateNonce)
 			auth.POST("/verify", authHandler.VerifySignature)
+			auth.GET("/status", authHandler.CheckAuthStatus) // New endpoint for checking auth status
+			auth.POST("/logout", authHandler.Logout)         // New endpoint for logging out
 		}
 
 		protected := v1.Group("")

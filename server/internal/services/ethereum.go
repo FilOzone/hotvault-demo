@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"errors"
-	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
@@ -54,8 +53,8 @@ func NewEthereumService(config config.EthereumConfig) *EthereumService {
 	}
 }
 
-func (s *EthereumService) VerifySignature(address, nonce, signature string) (bool, error) {
-	message := fmt.Sprintf("Sign this message to authenticate: %s", nonce)
+func (s *EthereumService) VerifySignature(address, message, signature string) (bool, error) {
+	// Use the full message as provided
 	prefix := "\x19Ethereum Signed Message:\n"
 	prefixedMessage := prefix + strconv.Itoa(len(message)) + message
 
