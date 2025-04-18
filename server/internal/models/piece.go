@@ -16,6 +16,8 @@ type Piece struct {
 	ServiceURL     string         `gorm:"not null" json:"serviceUrl"`
 	PendingRemoval bool           `gorm:"default:false" json:"pendingRemoval"`
 	RemovalDate    *time.Time     `json:"removalDate"`
+	ProofSetID     *uint          `json:"proofSetId"`
+	RootID         *string        `json:"rootId"`
 	CreatedAt      time.Time      `json:"createdAt"`
 	UpdatedAt      time.Time      `json:"updatedAt"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`

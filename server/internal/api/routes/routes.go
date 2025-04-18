@@ -54,6 +54,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 				pieces.GET("", handlers.GetUserPieces)
 				pieces.GET("/:id", handlers.GetPieceByID)
 				pieces.GET("/cid/:cid", handlers.GetPieceByCID)
+				pieces.GET("/proofs", handlers.GetPieceProofs)
 			}
 
 			roots := protected.Group("/roots")

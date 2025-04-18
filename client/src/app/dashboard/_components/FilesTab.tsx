@@ -80,6 +80,18 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     [cid: string]: boolean;
   }>({});
 
+  // Add new state for proof dialog
+  const [isProofDialogOpen, setIsProofDialogOpen] = useState(false);
+  const [selectedProof, setSelectedProof] = useState<{
+    pieceId: number;
+    pieceFilename: string;
+    proofSetId: number;
+    cid: string;
+  } | null>(null);
+
+  // Add state to track if proofs are being loaded
+  const [loadingProofs, setLoadingProofs] = useState(false);
+
   // Refs for upload state management
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -93,16 +105,20 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   // Clean up all timeouts when component unmounts
   useEffect(() => {
     return () => {
-      if (uploadTimeoutRef.current) {
-        clearTimeout(uploadTimeoutRef.current);
+      // Capture current ref values to avoid stale refs in cleanup
+      const currentUploadTimeout = uploadTimeoutRef.current;
+      const currentPollInterval = pollIntervalRef.current;
+
+      if (currentUploadTimeout) {
+        clearTimeout(currentUploadTimeout);
       }
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
+      if (currentPollInterval) {
+        clearInterval(currentPollInterval);
       }
     };
   }, []);
 
-  const fetchPieces = async () => {
+  const fetchPieces = useCallback(async () => {
     try {
       setIsLoading(true);
       const token = localStorage.getItem("jwt_token");
@@ -140,6 +156,66 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  // Add new function to fetch proofs
+  const fetchProofs = async () => {
+    try {
+      setLoadingProofs(true);
+      const token = localStorage.getItem("jwt_token");
+      if (!token) {
+        setAuthError("Authentication required. Please login again.");
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/pieces/proofs`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.status === 401) {
+        setAuthError("Your session has expired. Please login again.");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch proofs: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Update the pieces with proof data
+      setPieces((prevPieces) =>
+        prevPieces.map((piece) => {
+          // Find the matching piece with proof data
+          const pieceWithProof = data.find((p: Piece) => p.id === piece.id);
+          if (pieceWithProof && pieceWithProof.proofSetId) {
+            // Update with proof data
+            return {
+              ...piece,
+              proofSetId: pieceWithProof.proofSetId,
+              rootId: pieceWithProof.rootId,
+            };
+          }
+          return piece;
+        })
+      );
+
+      console.log("[FilesTab.tsx:fetchProofs] ✅ Proofs loaded:", data);
+    } catch (error) {
+      console.error(
+        "[FilesTab.tsx:fetchProofs] ❌ Error fetching proofs:",
+        error
+      );
+      toast.error(
+        `Failed to fetch proof data: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setLoadingProofs(false);
+    }
   };
 
   // Add this useEffect to check token on component mount and set up periodic token check
@@ -166,20 +242,31 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   }, [authError]);
 
   useEffect(() => {
-    fetchPieces().catch((error) => {
-      // If there was an error that wasn't auth-related, show it
-      if (!authError) {
-        toast.error(`Error loading files: ${error.message}`);
-      }
-    });
-  }, []);
+    fetchPieces()
+      .catch((error) => {
+        // If there was an error that wasn't auth-related, show it
+        if (!authError) {
+          toast.error(`Error loading files: ${error.message}`);
+        }
+      })
+      .then(() => {
+        // After fetching pieces, fetch proofs
+        fetchProofs().catch((error) => {
+          console.error(
+            "[FilesTab.tsx:useEffect] ❌ Error in fetchProofs:",
+            error
+          );
+        });
+      });
+  }, [authError]);
 
   // Poll for upload status updates
   const startPollingUploadStatus = useCallback(
     (jobId: string, initialDelay = 0) => {
       // Clear any existing poll interval
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
+      const currentPollInterval = pollIntervalRef.current;
+      if (currentPollInterval) {
+        clearInterval(currentPollInterval);
         pollIntervalRef.current = null;
       }
 
@@ -222,8 +309,9 @@ export const FilesTab: React.FC<FilesTabProps> = ({
 
             // If upload is complete or failed, stop polling and handle completion
             if (data.status === "complete" || data.status === "error") {
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
+              const currentInterval = pollIntervalRef.current;
+              if (currentInterval) {
+                clearInterval(currentInterval);
                 pollIntervalRef.current = null;
               }
 
@@ -283,14 +371,17 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   });
 
   const handleCancelUpload = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    const currentAbortController = abortControllerRef.current;
+    const currentPollInterval = pollIntervalRef.current;
+
+    if (currentAbortController) {
+      currentAbortController.abort();
       abortControllerRef.current = null;
     }
 
     // Clear any polling interval
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
+    if (currentPollInterval) {
+      clearInterval(currentPollInterval);
       pollIntervalRef.current = null;
     }
 
@@ -798,10 +889,24 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     }
   };
 
+  // Add a function to open the proof details dialog
+  const openProofDetails = (piece: Piece) => {
+    if (piece.proofSetId === undefined) return;
+
+    setSelectedProof({
+      pieceId: piece.id,
+      pieceFilename: piece.filename,
+      proofSetId: piece.proofSetId,
+      cid: piece.cid,
+    });
+    setIsProofDialogOpen(true);
+  };
+
   // Render a piece row with conditional styling for pending removal
   const renderPieceRow = (piece: Piece) => {
     const isPendingRemoval = piece.pendingRemoval;
     const isDownloading = downloadsInProgress[piece.cid];
+    const hasProof = piece.proofSetId !== undefined;
     const rowClasses = isPendingRemoval
       ? "hover:bg-gray-50 bg-red-50"
       : "hover:bg-gray-50";
@@ -864,6 +969,37 @@ export const FilesTab: React.FC<FilesTabProps> = ({
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
           {piece.serviceName}
         </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+          {hasProof ? (
+            <div className="flex items-center">
+              <div className="flex space-x-1 items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4 text-green-500 mr-1"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                <span className="text-green-600">Available</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-2 px-2 py-1 text-xs"
+                onClick={() => openProofDetails(piece)}
+              >
+                View
+              </Button>
+            </div>
+          ) : (
+            <span className="text-gray-400">Not available</span>
+          )}
+        </td>
         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
           {isDownloading ? (
             <div className="flex items-center justify-end gap-2 text-blue-600">
@@ -886,6 +1022,26 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                   <ExternalLink className="h-4 w-4 mr-2" />
                   View
                 </DropdownMenuItem>
+                {piece.proofSetId !== undefined && (
+                  <DropdownMenuItem
+                    onClick={() => openProofDetails(piece)}
+                    className="cursor-pointer"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4 mr-2"
+                    >
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    View Proof
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={() => handleDownload(piece)}
                   className="cursor-pointer"
@@ -953,11 +1109,32 @@ export const FilesTab: React.FC<FilesTabProps> = ({
             <Typography variant="h2" className="text-xl font-mono">
               My Files
             </Typography>
-            <Typography variant="body" className="text-gray-500 mt-1">
-              Upload and manage your files on IPFS
-            </Typography>
           </div>
           <div className="flex items-center gap-4">
+            <Button
+              onClick={() => fetchProofs()}
+              disabled={loadingProofs}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              {loadingProofs ? (
+                <div className="animate-spin h-4 w-4 border-2 border-current rounded-full border-t-transparent mr-1"></div>
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4 mr-1"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+              )}
+              {loadingProofs ? "Loading Proofs..." : "Refresh Proofs"}
+            </Button>
             <Button
               onClick={handleSubmitImage}
               disabled={!selectedImage}
@@ -1056,6 +1233,9 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Service
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Proof
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -1162,6 +1342,157 @@ export const FilesTab: React.FC<FilesTabProps> = ({
             </Button>
             <Button onClick={submitRemoveRoot} variant="destructive">
               Schedule Removal
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Proof Details Dialog */}
+      <Dialog open={isProofDialogOpen} onOpenChange={setIsProofDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Proof Details</DialogTitle>
+            <DialogDescription>
+              View verification proof information for this file
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedProof && (
+            <div className="py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-1">
+                    File
+                  </h3>
+                  <p className="text-sm font-medium">
+                    {selectedProof.pieceFilename}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-1">
+                    Proof Set ID
+                  </h3>
+                  <p className="text-sm font-medium">
+                    {selectedProof.proofSetId}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <h3 className="text-sm font-medium text-gray-500 mb-1">
+                    Content ID (CID)
+                  </h3>
+                  <div className="flex items-center gap-1 bg-gray-50 rounded p-2 text-sm font-mono break-all">
+                    {selectedProof.cid}
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedProof.cid);
+                        toast.success("CID copied to clipboard");
+                      }}
+                      className="ml-1 text-blue-500 hover:text-blue-700"
+                      title="Copy CID"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                        <rect
+                          x="8"
+                          y="2"
+                          width="8"
+                          height="4"
+                          rx="1"
+                          ry="1"
+                        ></rect>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h3 className="text-sm font-semibold mb-3">
+                  View Proof in PDP Explorer
+                </h3>
+                <p className="text-sm text-gray-600 mb-3">
+                  PDP Explorer allows you to view the verification proofs and
+                  inclusion checks for your data.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    className="gap-2 justify-start"
+                    variant="outline"
+                    onClick={() =>
+                      window.open(
+                        `https://pdp-explorer.eng.filoz.org/proofsets/${selectedProof.proofSetId}`,
+                        "_blank"
+                      )
+                    }
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                    >
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    View Proof Set #{selectedProof.proofSetId}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="gap-2 justify-start"
+                    onClick={() => {
+                      // Extract first part of CID if it has a colon
+                      const firstCid = selectedProof.cid.split(":")[0];
+                      window.open(`https://ipfs.io/ipfs/${firstCid}`, "_blank");
+                    }}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect
+                        x="3"
+                        y="3"
+                        width="18"
+                        height="18"
+                        rx="2"
+                        ry="2"
+                      ></rect>
+                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                      <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                    View File on IPFS
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              onClick={() => setIsProofDialogOpen(false)}
+              variant="outline"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
