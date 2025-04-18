@@ -7,10 +7,11 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	JWT      JWTConfig
-	Ethereum EthereumConfig
+	Server      ServerConfig
+	Database    DatabaseConfig
+	JWT         JWTConfig
+	Ethereum    EthereumConfig
+	PdptoolPath string
 }
 
 type ServerConfig struct {
@@ -72,5 +73,6 @@ func LoadConfig() *Config {
 			ChainID:         chainID,
 			ContractAddress: os.Getenv("CONTRACT_ADDRESS"),
 		},
+		PdptoolPath: os.Getenv("PDPTOOL_PATH"),
 	}
 }

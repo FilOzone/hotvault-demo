@@ -46,14 +46,15 @@ func Initialize(database *gorm.DB) {
 }
 
 type UploadProgress struct {
-	Status    string `json:"status"`
-	Progress  int    `json:"progress,omitempty"`
-	Message   string `json:"message,omitempty"`
-	CID       string `json:"cid,omitempty"`
-	Error     string `json:"error,omitempty"`
-	Filename  string `json:"filename,omitempty"`
-	TotalSize int64  `json:"totalSize,omitempty"`
-	JobID     string `json:"jobId,omitempty"`
+	Status     string `json:"status"`
+	Progress   int    `json:"progress,omitempty"`
+	Message    string `json:"message,omitempty"`
+	CID        string `json:"cid,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Filename   string `json:"filename,omitempty"`
+	TotalSize  int64  `json:"totalSize,omitempty"`
+	JobID      string `json:"jobId,omitempty"`
+	ProofSetID string `json:"proofSetId,omitempty"`
 }
 
 // @Summary Upload a file to PDP service
@@ -312,7 +313,21 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		"--service-name", serviceName,
 		tempFilePath,
 	)
-	uploadCmd.Dir = filepath.Dir(pdptoolPath)
+
+	// craete new proof set for a new user
+	// must have min  fo 10usdfccurrentProgressthen allowance of 10
+	// then deposit 10usdfc in payments contract
+	// create a new proof set for user
+	// add the root to the proof set
+	// remove the root from the proof set after add-root
+
+	// TODO: call add-root after upload-file
+	// TODO: create a new proof set
+	// TODO: remove the root from the proof set after add-root
+
+	//
+
+	// abi encode the struct and the convert it to hex
 
 	// Capture stdout and stderr from the command
 	var uploadOutput bytes.Buffer
@@ -440,13 +455,110 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("service_url", serviceURL).
 		Info(fmt.Sprintf("File uploaded successfully with CID: %s", cid))
 
-	currentProgress = 95 // Almost done, just need to save to DB
+	// After successful upload, we need to add the root to the proof set
+	currentProgress = 95
+	currentStage = "adding_root"
 
 	updateStatus(UploadProgress{
-		Status:   "finalizing",
-		Progress: 98,
-		Message:  "Saving file information",
+		Status:   currentStage,
+		Progress: currentProgress,
+		Message:  "Locating user proof set",
 		CID:      cid,
+	})
+
+	// Get the user's existing proof set from the database
+	var proofSet models.ProofSet
+	if err := db.Where("user_id = ?", userID).First(&proofSet).Error; err != nil {
+		errMsg := "Failed to query proof set for user."
+		if err == gorm.ErrRecordNotFound {
+			errMsg = "Proof set initialization is pending. Please wait or re-authenticate if this persists."
+			log.WithField("userID", userID).Warning(errMsg) // Log as warning, it might just be pending
+		} else {
+			log.WithField("userID", userID).WithField("error", err).Error("Database error fetching proof set")
+		}
+		updateStatus(UploadProgress{
+			Status:  "error",
+			Error:   errMsg,
+			Message: "Upload cannot proceed without a ready proof set.",
+			CID:     cid,
+		})
+		return
+	}
+
+	// Ensure the ProofSetID from the service is populated (meaning creation is complete)
+	if proofSet.ProofSetID == "" {
+		errMsg := "Proof set creation pending. Please wait."
+		log.WithField("userID", userID).WithField("dbProofSetID", proofSet.ID).Info(errMsg) // Info level, as this is expected during creation
+		updateStatus(UploadProgress{
+			Status:  "error", // Use 'error' status to stop the job progress UI
+			Error:   errMsg,
+			Message: "The proof set is being initialized. Upload will be available shortly.",
+			CID:     cid,
+		})
+		return
+	}
+
+	log.WithField("userID", userID).WithField("proofSetID", proofSet.ProofSetID).Info("Found ready proof set for user")
+
+	updateStatus(UploadProgress{
+		Status:     currentStage,
+		Progress:   currentProgress,
+		Message:    fmt.Sprintf("Adding root to proof set %s", proofSet.ProofSetID),
+		CID:        cid,
+		ProofSetID: proofSet.ProofSetID,
+	})
+
+	// Now add the root to the proof set
+	addRootsArgs := []string{
+		"add-roots",
+		"--service-url", serviceURL,
+		"--service-name", serviceName,
+		"--proof-set-id", proofSet.ProofSetID,
+		"--root", cid,
+	}
+	addRootCmd := exec.Command(pdptoolPath, addRootsArgs...)
+
+	log.WithField("command", pdptoolPath).
+		WithField("args", strings.Join(addRootsArgs, " ")).
+		Info("Executing add-roots command")
+
+	var addRootOutput bytes.Buffer
+	var addRootError bytes.Buffer
+	addRootCmd.Stdout = &addRootOutput
+	addRootCmd.Stderr = &addRootError
+	addRootCmd.Dir = filepath.Dir(pdptoolPath)
+
+	if err := addRootCmd.Run(); err != nil {
+		stderrStr := addRootError.String()
+		stdoutStr := addRootOutput.String()
+		log.WithField("error", err.Error()).
+			WithField("stderr", stderrStr).
+			WithField("stdout", stdoutStr).
+			WithField("commandArgs", strings.Join(addRootsArgs, " ")).
+			Error("pdptool add-roots command failed")
+
+		updateStatus(UploadProgress{
+			Status:  "error",
+			Error:   "Failed to add root to proof set",
+			Message: stderrStr, // Use stderr for more specific error from the tool
+			CID:     cid,
+		})
+		return
+	}
+
+	log.WithField("proofSetID", proofSet.ProofSetID).
+		WithField("cid", cid).
+		WithField("stdout", addRootOutput.String()).
+		Info("Root added to proof set successfully")
+
+	currentProgress = 98
+
+	updateStatus(UploadProgress{
+		Status:     "finalizing",
+		Progress:   98,
+		Message:    "Root added to proof set successfully",
+		CID:        cid,
+		ProofSetID: proofSet.ProofSetID,
 	})
 
 	piece := &models.Piece{
@@ -456,6 +568,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Size:        file.Size,
 		ServiceName: serviceName,
 		ServiceURL:  serviceURL,
+		ProofSetID:  &proofSet.ID, // Link piece to the DB ID of the proof set
 	}
 
 	if result := db.Create(piece); result.Error != nil {
@@ -474,11 +587,12 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	// Final completion update
 	updateStatus(UploadProgress{
-		Status:   "complete",
-		Progress: currentProgress,
-		Message:  "Upload completed successfully",
-		CID:      cid,
-		Filename: file.Filename,
+		Status:     "complete",
+		Progress:   currentProgress,
+		Message:    "Upload completed successfully",
+		CID:        cid,
+		Filename:   file.Filename,
+		ProofSetID: proofSet.ProofSetID,
 	})
 
 	// Keep the job status for 1 hour then clean it up

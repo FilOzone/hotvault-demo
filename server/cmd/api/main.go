@@ -20,20 +20,25 @@ func main() {
 		log.Warning("No .env file found, using environment variables")
 	}
 
+	log.Info("Loading configuration...")
+	cfg := config.LoadConfig()
+
+	log.Info("Attempting to connect to database...")
+	db, err := database.NewPostgresConnection(cfg.Database)
+	if err != nil {
+		log.Fatal(fmt.Sprintf("Failed to connect to database: %v", err))
+	}
+	log.Info("Successfully connected to database.")
+
+	log.Info("Attempting to run database migrations...")
+	if err := database.MigrateDB(db); err != nil {
+		log.Fatal(fmt.Sprintf("Failed to migrate database: %v", err))
+	}
+	log.Info("Database migrations completed successfully.")
+
 	env := os.Getenv("ENV")
 	if env == "production" {
 		gin.SetMode(gin.ReleaseMode)
-	}
-
-	cfg := config.LoadConfig()
-
-	db, err := database.NewPostgresConnection(cfg.Database)
-	if err != nil {
-		log.Fatal("Failed to connect to database: " + err.Error())
-	}
-
-	if err := database.MigrateDB(db); err != nil {
-		log.Fatal("Failed to migrate database: " + err.Error())
 	}
 
 	router := gin.Default()
@@ -48,6 +53,6 @@ func main() {
 	serverAddr := fmt.Sprintf(":%s", port)
 	log.Info("Server starting on " + serverAddr)
 	if err := router.Run(serverAddr); err != nil {
-		log.Fatal("Failed to start server: " + err.Error())
+		log.Fatal(fmt.Sprintf("Failed to start server: %v", err))
 	}
 }
