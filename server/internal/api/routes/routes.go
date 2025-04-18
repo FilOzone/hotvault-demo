@@ -46,6 +46,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
 		{
 			protected.POST("/upload", handlers.UploadFile)
+			protected.GET("/upload/status/:jobId", handlers.GetUploadStatus)
 			protected.GET("/download/:cid", handlers.DownloadFile)
 
 			pieces := protected.Group("/pieces")
