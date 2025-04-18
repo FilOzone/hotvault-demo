@@ -110,9 +110,6 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     rootId?: string; // Add rootId property
   } | null>(null);
 
-  // Add state to track if proofs are being loaded
-  const [loadingProofs, setLoadingProofs] = useState(false);
-
   // Refs for upload state management
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -122,6 +119,9 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   // Add new state for root removal dialog
   const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
   const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
+
+  // Add state for the user's proof set ID
+  const [userProofSetId, setUserProofSetId] = useState<string | null>(null);
 
   // Clean up all timeouts when component unmounts
   useEffect(() => {
@@ -180,7 +180,6 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   // Add new function to fetch proofs
   const fetchProofs = async () => {
     try {
-      setLoadingProofs(true);
       const token = localStorage.getItem("jwt_token");
       if (!token) {
         setAuthError("Authentication required. Please login again.");
@@ -232,8 +231,6 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
-    } finally {
-      setLoadingProofs(false);
     }
   };
 
@@ -289,6 +286,15 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       isMounted = false;
     };
   }, [authError, fetchPieces]);
+
+  // Add useEffect to find the user's proof set ID when pieces are loaded
+  useEffect(() => {
+    // Find the first piece with a valid proofSetId
+    const firstProofSetId =
+      pieces.find((p) => p.proofSetId)?.proofSetId || null;
+    setUserProofSetId(firstProofSetId);
+    console.log("[FilesTab.tsx] User Proof Set ID updated:", firstProofSetId);
+  }, [pieces]);
 
   // Poll for upload status updates
   const startPollingUploadStatus = useCallback(
@@ -1373,15 +1379,6 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                 Set #{piece.proofSetId}
               </div>
               <div className="flex items-center gap-1">
-                <a
-                  href={`https://pdp-explorer.eng.filoz.org/proofsets/${piece.proofSetId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:text-blue-700 flex items-center"
-                >
-                  <ExternalLink className="h-3 w-3 mr-1" />
-                  <span className="text-xs">Explorer</span>
-                </a>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1539,21 +1536,26 @@ export const FilesTab: React.FC<FilesTabProps> = ({
             <Typography variant="h2" className="text-xl font-mono">
               My Files
             </Typography>
-            <Typography variant="small" className="text-gray-500 mt-1">
+            <Typography
+              variant="small"
+              className="text-gray-500 mt-1 flex items-center gap-2"
+            >
               Upload, manage and share your files
             </Typography>
           </div>
           <div className="flex items-center gap-4">
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-              <Button
-                onClick={() => fetchProofs()}
-                disabled={loadingProofs}
-                variant="outline"
-                className="flex items-center gap-2"
+            {/* Conditionally render the user-specific proof set link */}
+            {userProofSetId && (
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
               >
-                {loadingProofs ? (
-                  <div className="animate-spin h-4 w-4 border-2 border-current rounded-full border-t-transparent mr-1"></div>
-                ) : (
+                <a
+                  href={`https://pdp-explorer.eng.filoz.org/proofsets/${userProofSetId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 24 24"
@@ -1562,14 +1564,15 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="h-4 w-4 mr-1"
+                    className="h-4 w-4"
                   >
                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                   </svg>
-                )}
-                {loadingProofs ? "Loading Proofs..." : "Refresh Proofs"}
-              </Button>
-            </motion.div>
+                  View Your Proof Set
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </motion.div>
+            )}
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
