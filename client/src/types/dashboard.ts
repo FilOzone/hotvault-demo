@@ -1,50 +1,16 @@
-export interface TokenData {
-  address: string;
-  symbol: string;
-  decimals: number;
-  balance: bigint;
-  allowance: bigint;
-}
-
-export interface Rail {
+export interface Piece {
   id: number;
-  token: string;
-  from: string;
-  to: string;
-  operator: string;
-  arbiter: string;
-  paymentRate: bigint;
-  lockupPeriod: bigint;
-  lockupFixed: bigint;
-  settledUpTo: bigint;
-  terminationEpoch: bigint;
-}
-
-export interface RailCreationModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  tokens: TokenData[];
-  onSubmit: (
-    token: string,
-    recipient: string,
-    arbiter: string,
-    paymentRate: string,
-    lockupPeriod: string,
-    lockupFixed: string
-  ) => Promise<void>;
-}
-
-export interface RailDetailsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  rail: Rail;
-  tokens: TokenData[];
-  onTerminate: (railId: string) => Promise<void>;
+  cid: string;
+  filename: string;
+  size: number;
+  serviceName: string;
+  serviceUrl: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export const DASHBOARD_SECTIONS = {
-  TOKENS: "tokens",
-  RAILS: "rails",
+  FILES: "files",
   ACTIVITY: "activity",
 } as const;
 

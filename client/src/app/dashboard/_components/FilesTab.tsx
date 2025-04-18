@@ -9,15 +9,6 @@ import { useDropzone } from "react-dropzone";
 import { API_BASE_URL } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
 
-/* Unused type definition
-interface UploadResponse {
-  cid: string;
-  size: number;
-  status: string;
-  message?: string;
-}
-*/
-
 interface Piece {
   id: number;
   cid: string;
@@ -29,11 +20,11 @@ interface Piece {
   updatedAt: string;
 }
 
-interface RailsTabProps {
+interface FilesTabProps {
   isLoading: boolean;
 }
 
-export const RailsTab: React.FC<RailsTabProps> = ({
+export const FilesTab: React.FC<FilesTabProps> = ({
   isLoading: initialLoading,
 }) => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -69,7 +60,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
       setPieces(data);
     } catch (error) {
       console.error(
-        "[RailsTab.tsx:fetchPieces] ❌ Error fetching pieces:",
+        "[FilesTab.tsx:fetchPieces] ❌ Error fetching pieces:",
         error
       );
     }
@@ -131,10 +122,10 @@ export const RailsTab: React.FC<RailsTabProps> = ({
         try {
           const errorData = JSON.parse(errorText);
           errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch /*(e)*/ {
+        } catch {
           // Error is already logged if parsing fails
           console.error(
-            "[RailsTab.tsx:handleSubmitImage] Raw error response:",
+            "[FilesTab.tsx:handleSubmitImage] Raw error response:",
             errorText
           );
         }
@@ -149,7 +140,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
         response.body
       ) {
         console.log(
-          "[RailsTab.tsx:handleSubmitImage] SSE stream detected, processing..."
+          "[FilesTab.tsx:handleSubmitImage] SSE stream detected, processing..."
         );
         // Process SSE stream
         const reader = response.body.getReader();
@@ -160,7 +151,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
           const { done, value } = await reader.read();
           if (done) {
             console.log(
-              "[RailsTab.tsx:handleSubmitImage] SSE stream finished."
+              "[FilesTab.tsx:handleSubmitImage] SSE stream finished."
             );
             break;
           }
@@ -175,14 +166,14 @@ export const RailsTab: React.FC<RailsTabProps> = ({
               try {
                 const progressData = JSON.parse(jsonData);
                 console.log(
-                  "[RailsTab.tsx:handleSubmitImage] Progress update:",
+                  "[FilesTab.tsx:handleSubmitImage] Progress update:",
                   progressData
                 );
                 setUploadProgress(progressData);
 
                 if (progressData.status === "complete" || progressData.cid) {
                   console.log(
-                    "[RailsTab.tsx:handleSubmitImage] ✅ Upload complete event received! CID:",
+                    "[FilesTab.tsx:handleSubmitImage] ✅ Upload complete event received! CID:",
                     progressData.cid
                   );
                   setSelectedImage(null);
@@ -193,7 +184,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
                   return; // Exit the function
                 } else if (progressData.status === "error") {
                   console.error(
-                    "[RailsTab.tsx:handleSubmitImage] ❌ Upload error event received:",
+                    "[FilesTab.tsx:handleSubmitImage] ❌ Upload error event received:",
                     progressData.error
                   );
                   throw new Error(
@@ -202,7 +193,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
                 }
               } catch (parseError) {
                 console.error(
-                  "[RailsTab.tsx:handleSubmitImage] ❌ Failed to parse SSE data:",
+                  "[FilesTab.tsx:handleSubmitImage] ❌ Failed to parse SSE data:",
                   jsonData,
                   parseError
                 );
@@ -213,27 +204,27 @@ export const RailsTab: React.FC<RailsTabProps> = ({
         // If loop finishes without 'complete' or 'error' status, consider it potentially incomplete
         if (uploadProgress?.status !== "complete") {
           console.warn(
-            "[RailsTab.tsx:handleSubmitImage] SSE stream ended without a final 'complete' or 'error' status."
+            "[FilesTab.tsx:handleSubmitImage] SSE stream ended without a final 'complete' or 'error' status."
           );
           // Optionally set an indeterminate/timeout state here
         }
       } else {
         // Handle non-SSE responses if necessary (e.g., fallback or different endpoint)
         console.warn(
-          "[RailsTab.tsx:handleSubmitImage] Received non-SSE response."
+          "[FilesTab.tsx:handleSubmitImage] Received non-SSE response."
         );
         // Attempt to parse as JSON as a fallback, though the backend isn't designed for this
         try {
           const fallbackData = await response.json();
           console.log(
-            "[RailsTab.tsx:handleSubmitImage] Fallback JSON response:",
+            "[FilesTab.tsx:handleSubmitImage] Fallback JSON response:",
             fallbackData
           );
           // Handle fallback data if needed
-        } catch /*(fallbackJsonError)*/ {
+        } catch {
           const fallbackText = await response.text(); // Read body again if json fails
           console.error(
-            "[RailsTab.tsx:handleSubmitImage] Non-SSE response body:",
+            "[FilesTab.tsx:handleSubmitImage] Non-SSE response body:",
             fallbackText
           );
           throw new Error("Received unexpected response format from server.");
@@ -241,7 +232,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
       }
     } catch (error) {
       console.error(
-        "[RailsTab.tsx:handleSubmitImage] ❌ Error in handleSubmitImage:",
+        "[FilesTab.tsx:handleSubmitImage] ❌ Error in handleSubmitImage:",
         error
       );
       setUploadProgress({
@@ -293,7 +284,7 @@ export const RailsTab: React.FC<RailsTabProps> = ({
 
   return (
     <motion.div
-      key="rails"
+      key="files"
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}

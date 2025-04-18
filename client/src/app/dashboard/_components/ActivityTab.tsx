@@ -25,7 +25,7 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({ isLoading }) => {
             Recent Activity
           </Typography>
           <Typography variant="body" className="text-gray-500 mt-1">
-            Track your recent transactions and rail updates
+            Track your recent file uploads and activities
           </Typography>
         </div>
       </div>
