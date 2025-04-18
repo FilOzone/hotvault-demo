@@ -3,11 +3,13 @@
 import { Typography } from "@/components/ui/typography";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Skeleton from "react-loading-skeleton";
 import { useDropzone } from "react-dropzone";
 import { API_BASE_URL } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
+import { AlertTriangle } from "lucide-react";
+import Image from "next/image";
 
 interface Piece {
   id: number;
@@ -37,7 +39,176 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     message?: string;
     cid?: string;
     error?: string;
+    lastUpdated?: number; // timestamp of last update
+    isStalled?: boolean;
+    filename?: string; // store original filename for polling
   } | null>(null);
+
+  // Refs for upload state management
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const longPollingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const uploadStartTimeRef = useRef<number | null>(null);
+
+  // Clean up all timeouts when component unmounts
+  useEffect(() => {
+    return () => {
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+      if (longPollingTimeoutRef.current) {
+        clearTimeout(longPollingTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Long polling function to check if a file was uploaded when SSE fails
+  const checkUploadCompletionWithPolling = useCallback(
+    (filename: string) => {
+      // Clear any existing polling timeout
+      if (longPollingTimeoutRef.current) {
+        clearTimeout(longPollingTimeoutRef.current);
+      }
+
+      // Only start polling if we've been waiting for at least 5 seconds
+      const timeElapsed = uploadStartTimeRef.current
+        ? Date.now() - uploadStartTimeRef.current
+        : 0;
+      if (timeElapsed < 5000) {
+        longPollingTimeoutRef.current = setTimeout(() => {
+          checkUploadCompletionWithPolling(filename);
+        }, 5000 - timeElapsed);
+        return;
+      }
+
+      // Only poll if upload is stalled or potentially incomplete
+      if (
+        !uploadProgress ||
+        uploadProgress.status === "complete" ||
+        uploadProgress.status === "error" ||
+        uploadProgress.status === "cancelled"
+      ) {
+        return;
+      }
+
+      console.log(
+        "[FilesTab.tsx:checkUploadCompletionWithPolling] Polling for upload completion:",
+        filename
+      );
+
+      // Check if the file exists in the backend
+      fetchPieces()
+        .then(() => {
+          // Look for the file in the pieces
+          const uploadedPiece = pieces.find(
+            (piece) => piece.filename.toLowerCase() === filename.toLowerCase()
+          );
+
+          if (uploadedPiece) {
+            console.log(
+              "[FilesTab.tsx:checkUploadCompletionWithPolling] ✅ Upload verified via polling! CID:",
+              uploadedPiece.cid
+            );
+
+            // Update UI with completion status
+            setUploadProgress({
+              status: "complete",
+              progress: 100,
+              message: "Upload completed successfully (verified by poll)",
+              cid: uploadedPiece.cid,
+              filename: uploadedPiece.filename,
+              lastUpdated: Date.now(),
+              isStalled: false,
+            });
+
+            // Clean up after successful upload
+            setSelectedImage(null);
+            setPreviewUrl(null);
+
+            // Clear the upload references
+            abortControllerRef.current = null;
+            uploadStartTimeRef.current = null;
+
+            // Keep the success message for a moment then clear it
+            setTimeout(() => {
+              setUploadProgress(null);
+            }, 3000);
+
+            return; // Exit the polling loop
+          }
+
+          // If the current upload status is stalled, continue polling
+          if (uploadProgress?.isStalled) {
+            console.log(
+              "[FilesTab.tsx:checkUploadCompletionWithPolling] Still checking for completion..."
+            );
+
+            // Continue polling every 5 seconds
+            longPollingTimeoutRef.current = setTimeout(() => {
+              checkUploadCompletionWithPolling(filename);
+            }, 5000);
+          }
+        })
+        .catch((error) => {
+          console.error(
+            "[FilesTab.tsx:checkUploadCompletionWithPolling] Error while polling:",
+            error
+          );
+
+          // Continue polling on error as well
+          longPollingTimeoutRef.current = setTimeout(() => {
+            checkUploadCompletionWithPolling(filename);
+          }, 5000);
+        });
+    },
+    [pieces, uploadProgress]
+  );
+
+  // When upload becomes stalled, start long polling
+  useEffect(() => {
+    if (uploadProgress?.isStalled && uploadProgress.filename) {
+      checkUploadCompletionWithPolling(uploadProgress.filename);
+    }
+  }, [
+    uploadProgress?.isStalled,
+    uploadProgress?.filename,
+    checkUploadCompletionWithPolling,
+  ]);
+
+  // Check for stalled uploads
+  useEffect(() => {
+    if (
+      uploadProgress &&
+      uploadProgress.status !== "complete" &&
+      uploadProgress.status !== "error"
+    ) {
+      // Clear any existing timeout
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+
+      // Set a new timeout to check for stalled uploads
+      uploadTimeoutRef.current = setTimeout(() => {
+        setUploadProgress((prev) => {
+          if (prev && prev.status !== "complete" && prev.status !== "error") {
+            const timeSinceLastUpdate =
+              Date.now() - (prev.lastUpdated || Date.now());
+            // If no update for 10 seconds, mark as stalled
+            if (timeSinceLastUpdate > 10000) {
+              return { ...prev, isStalled: true };
+            }
+          }
+          return prev;
+        });
+      }, 10000); // Check every 10 seconds
+    }
+
+    return () => {
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+    };
+  }, [uploadProgress]);
 
   const fetchPieces = async () => {
     try {
@@ -58,11 +229,13 @@ export const FilesTab: React.FC<FilesTabProps> = ({
 
       const data = await response.json();
       setPieces(data);
+      return data; // Return the data for possible use by the caller
     } catch (error) {
       console.error(
         "[FilesTab.tsx:fetchPieces] ❌ Error fetching pieces:",
         error
       );
+      throw error; // Rethrow so the caller can catch it
     }
   };
 
@@ -90,6 +263,34 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     maxFiles: 1,
   });
 
+  const handleCancelUpload = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    // Clear any polling timeouts
+    if (longPollingTimeoutRef.current) {
+      clearTimeout(longPollingTimeoutRef.current);
+      longPollingTimeoutRef.current = null;
+    }
+
+    uploadStartTimeRef.current = null;
+
+    setUploadProgress({
+      status: "cancelled",
+      message: "Upload cancelled by user",
+      error: "Upload cancelled",
+      progress: 0,
+    });
+
+    setTimeout(() => {
+      setUploadProgress(null);
+      setSelectedImage(null);
+      setPreviewUrl(null);
+    }, 2000);
+  };
+
   const handleSubmitImage = async () => {
     if (!selectedImage) return;
 
@@ -102,10 +303,23 @@ export const FilesTab: React.FC<FilesTabProps> = ({
         throw new Error("Authentication required");
       }
 
+      // Create a new abort controller
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+
+      // Record upload start time for polling
+      uploadStartTimeRef.current = Date.now();
+
       setUploadProgress({
         status: "uploading",
         progress: 0,
         message: "Initiating upload...",
+        lastUpdated: Date.now(),
+        isStalled: false,
+        filename: selectedImage.name,
       });
 
       const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
@@ -114,6 +328,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           Authorization: `Bearer ${token}`,
         },
         body: formData,
+        signal,
       });
 
       if (!response.ok) {
@@ -169,16 +384,48 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                   "[FilesTab.tsx:handleSubmitImage] Progress update:",
                   progressData
                 );
-                setUploadProgress(progressData);
 
+                // Add timestamp to progress data for stall detection
+                progressData.lastUpdated = Date.now();
+                progressData.isStalled = false;
+
+                // If this is a completion notification, handle it immediately
                 if (progressData.status === "complete" || progressData.cid) {
                   console.log(
                     "[FilesTab.tsx:handleSubmitImage] ✅ Upload complete event received! CID:",
                     progressData.cid
                   );
+
+                  // Update UI with completion status
+                  setUploadProgress({
+                    ...progressData,
+                    status: "complete",
+                    progress: 100,
+                    message:
+                      progressData.message || "Upload completed successfully",
+                    lastUpdated: Date.now(),
+                    isStalled: false,
+                  });
+
+                  // Clean up after successful upload
                   setSelectedImage(null);
                   setPreviewUrl(null);
-                  setUploadProgress(null);
+
+                  // Clear the upload reference after a successful upload
+                  abortControllerRef.current = null;
+                  uploadStartTimeRef.current = null;
+
+                  // Clear any polling timeouts
+                  if (longPollingTimeoutRef.current) {
+                    clearTimeout(longPollingTimeoutRef.current);
+                    longPollingTimeoutRef.current = null;
+                  }
+
+                  // Keep the success message for a moment then clear it
+                  setTimeout(() => {
+                    setUploadProgress(null);
+                  }, 3000);
+
                   fetchPieces(); // Refresh the pieces list
                   reader.cancel(); // Stop reading the stream
                   return; // Exit the function
@@ -187,9 +434,20 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     "[FilesTab.tsx:handleSubmitImage] ❌ Upload error event received:",
                     progressData.error
                   );
+
+                  // Clear the upload reference after an error
+                  abortControllerRef.current = null;
+                  uploadStartTimeRef.current = null;
+
                   throw new Error(
                     progressData.error || "Upload failed during stream"
                   );
+                } else {
+                  // Update progress for other status updates
+                  setUploadProgress({
+                    ...progressData,
+                    filename: selectedImage.name, // Ensure filename is always present for polling
+                  });
                 }
               } catch (parseError) {
                 console.error(
@@ -206,7 +464,28 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           console.warn(
             "[FilesTab.tsx:handleSubmitImage] SSE stream ended without a final 'complete' or 'error' status."
           );
-          // Optionally set an indeterminate/timeout state here
+          // Set a warning state and trigger polling
+          setUploadProgress((prev) => {
+            if (prev) {
+              const updatedProgress = {
+                ...prev,
+                status: "warning",
+                message:
+                  "Upload stream ended without completion confirmation. Checking status...",
+                isStalled: true,
+              };
+
+              // Start polling to check completion
+              if (selectedImage?.name) {
+                setTimeout(() => {
+                  checkUploadCompletionWithPolling(selectedImage.name);
+                }, 1000);
+              }
+
+              return updatedProgress;
+            }
+            return prev;
+          });
         }
       } else {
         // Handle non-SSE responses if necessary (e.g., fallback or different endpoint)
@@ -220,17 +499,57 @@ export const FilesTab: React.FC<FilesTabProps> = ({
             "[FilesTab.tsx:handleSubmitImage] Fallback JSON response:",
             fallbackData
           );
-          // Handle fallback data if needed
+
+          // If this is a JSON response with a CID, treat it as success
+          if (fallbackData.cid) {
+            setUploadProgress({
+              status: "complete",
+              progress: 100,
+              message: "Upload completed successfully",
+              cid: fallbackData.cid,
+              filename: selectedImage.name,
+              lastUpdated: Date.now(),
+            });
+
+            setSelectedImage(null);
+            setPreviewUrl(null);
+            abortControllerRef.current = null;
+            uploadStartTimeRef.current = null;
+
+            setTimeout(() => {
+              setUploadProgress(null);
+            }, 3000);
+
+            fetchPieces();
+          } else {
+            // Start polling as fallback
+            checkUploadCompletionWithPolling(selectedImage.name);
+          }
         } catch {
           const fallbackText = await response.text(); // Read body again if json fails
           console.error(
             "[FilesTab.tsx:handleSubmitImage] Non-SSE response body:",
             fallbackText
           );
+
+          // Start polling as fallback
+          checkUploadCompletionWithPolling(selectedImage.name);
           throw new Error("Received unexpected response format from server.");
         }
       }
     } catch (error) {
+      // Clear the abort controller reference on error
+      abortControllerRef.current = null;
+      uploadStartTimeRef.current = null;
+
+      // Handle AbortError specially
+      if (error instanceof DOMException && error.name === "AbortError") {
+        console.log(
+          "[FilesTab.tsx:handleSubmitImage] Upload was cancelled by user"
+        );
+        return;
+      }
+
       console.error(
         "[FilesTab.tsx:handleSubmitImage] ❌ Error in handleSubmitImage:",
         error
@@ -238,36 +557,110 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       setUploadProgress({
         status: "error",
         error: error instanceof Error ? error.message : "Upload failed",
+        lastUpdated: Date.now(),
       });
     }
   };
 
-  // Add progress indicator UI
+  // Render progress indicator with enhanced UI
   const renderUploadProgress = () => {
     if (!uploadProgress) return null;
 
+    // Common status color mapping
+    const statusColors = {
+      error: "text-red-500 bg-red-50 border-red-200",
+      warning: "text-amber-500 bg-amber-50 border-amber-200",
+      complete: "text-green-500 bg-green-50 border-green-200",
+      uploading: "text-blue-500 bg-blue-50 border-blue-200",
+      preparing: "text-indigo-500 bg-indigo-50 border-indigo-200",
+      starting: "text-gray-500 bg-gray-50 border-gray-200",
+      cancelled: "text-gray-500 bg-gray-50 border-gray-200",
+      finalizing: "text-emerald-500 bg-emerald-50 border-emerald-200",
+    };
+
+    const statusColor =
+      statusColors[uploadProgress.status as keyof typeof statusColors] ||
+      statusColors.uploading;
+
+    const getStatusText = () => {
+      switch (uploadProgress.status) {
+        case "starting":
+          return "Starting upload...";
+        case "preparing":
+          return "Preparing file...";
+        case "uploading":
+          return "Uploading...";
+        case "finalizing":
+          return "Finalizing...";
+        case "complete":
+          return "Upload complete!";
+        case "error":
+          return "Upload failed";
+        case "warning":
+          return "Warning";
+        case "cancelled":
+          return "Upload cancelled";
+        default:
+          return uploadProgress.status;
+      }
+    };
+
     return (
-      <div className="mt-4">
-        {uploadProgress.status === "error" ? (
-          <div className="text-red-500">Error: {uploadProgress.error}</div>
-        ) : (
-          <div>
-            <div className="text-sm text-gray-600">
-              Status: {uploadProgress.status}
+      <div className={`mt-4 p-4 rounded-lg border ${statusColor}`}>
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 font-medium">
+              {uploadProgress.isStalled && (
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+              )}
+              <span>{getStatusText()}</span>
+              {uploadProgress.status === "uploading" &&
+                abortControllerRef.current && (
+                  <button
+                    onClick={handleCancelUpload}
+                    className="ml-2 px-2 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
             </div>
             {uploadProgress.message && (
-              <div className="text-sm text-gray-500">
+              <div className="text-sm mt-1 opacity-80">
                 {uploadProgress.message}
               </div>
             )}
-            {uploadProgress.progress !== undefined && (
-              <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full"
-                  style={{ width: `${uploadProgress.progress}%` }}
-                ></div>
+            {uploadProgress.isStalled && (
+              <div className="text-amber-600 text-sm mt-1">
+                No updates received for a while. The upload may be stalled.
               </div>
             )}
+            {uploadProgress.error && (
+              <div className="text-red-500 text-sm mt-1">
+                Error: {uploadProgress.error}
+              </div>
+            )}
+          </div>
+          {uploadProgress.progress !== undefined && (
+            <div className="text-sm font-medium">
+              {uploadProgress.progress}%
+            </div>
+          )}
+        </div>
+
+        {uploadProgress.progress !== undefined && (
+          <div className="w-full bg-gray-200 rounded-full h-2.5 mt-3">
+            <div
+              className={`h-2.5 rounded-full ${
+                uploadProgress.status === "error"
+                  ? "bg-red-500"
+                  : uploadProgress.status === "complete"
+                  ? "bg-green-500"
+                  : uploadProgress.isStalled
+                  ? "bg-amber-500"
+                  : "bg-blue-500"
+              }`}
+              style={{ width: `${uploadProgress.progress}%` }}
+            ></div>
           </div>
         )}
       </div>
@@ -322,10 +715,12 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           <input {...getInputProps()} />
           {previewUrl ? (
             <div className="relative">
-              <img
+              <Image
                 src={previewUrl}
                 alt="Preview"
                 className="max-h-64 mx-auto rounded-lg shadow-sm"
+                width={256}
+                height={256}
               />
               <button
                 onClick={(e) => {
