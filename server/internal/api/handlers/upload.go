@@ -453,7 +453,16 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("size", file.Size).
 		WithField("service_name", serviceName).
 		WithField("service_url", serviceURL).
-		Info(fmt.Sprintf("File uploaded successfully with CID: %s", cid))
+		Info(fmt.Sprintf("File uploaded successfully, full CID: %s", cid))
+
+	// --- Introduce Delay ---
+	log.Info("Waiting 2 seconds before adding root to allow service registration...")
+	time.Sleep(2 * time.Second)
+	// ---------------------
+
+	// The full CID returned by upload-file is used as the root argument
+	rootArgument := cid
+	log.WithField("rootArgument", rootArgument).Info("Using full CID as root argument for add-roots")
 
 	// After successful upload, we need to add the root to the proof set
 	currentProgress = 95
@@ -463,7 +472,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Status:   currentStage,
 		Progress: currentProgress,
 		Message:  "Locating user proof set",
-		CID:      cid,
+		CID:      cid, // Keep full CID here for status reporting
 	})
 
 	// Get the user's existing proof set from the database
@@ -508,13 +517,13 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		ProofSetID: proofSet.ProofSetID,
 	})
 
-	// Now add the root to the proof set
+	// Now add the root to the proof set using the full CID
 	addRootsArgs := []string{
 		"add-roots",
 		"--service-url", serviceURL,
 		"--service-name", serviceName,
 		"--proof-set-id", proofSet.ProofSetID,
-		"--root", cid,
+		"--root", rootArgument, // Use the full CID here
 	}
 	addRootCmd := exec.Command(pdptoolPath, addRootsArgs...)
 
@@ -546,29 +555,35 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		return
 	}
 
+	addRootStdoutStr := addRootOutput.String()
 	log.WithField("proofSetID", proofSet.ProofSetID).
-		WithField("cid", cid).
-		WithField("stdout", addRootOutput.String()).
-		Info("Root added to proof set successfully")
+		WithField("rootUsed", rootArgument).
+		WithField("stdout", addRootStdoutStr).
+		Info("add-roots command completed successfully")
+
+	// The full CID passed to add-roots should be the RootID for the piece
+	extractedRootID := rootArgument
 
 	currentProgress = 98
+	rootId := extractedRootID // Use the validated full CID as the rootId
 
 	updateStatus(UploadProgress{
 		Status:     "finalizing",
 		Progress:   98,
 		Message:    "Root added to proof set successfully",
-		CID:        cid,
+		CID:        cid, // Keep original full CID for status reporting
 		ProofSetID: proofSet.ProofSetID,
 	})
 
 	piece := &models.Piece{
 		UserID:      userID,
-		CID:         cid,
+		CID:         cid, // Original full CID from upload
 		Filename:    file.Filename,
 		Size:        file.Size,
 		ServiceName: serviceName,
 		ServiceURL:  serviceURL,
-		ProofSetID:  &proofSet.ID, // Link piece to the DB ID of the proof set
+		ProofSetID:  &proofSet.ID,
+		RootID:      &rootId, // Save the full CID used in add-roots
 	}
 
 	if result := db.Create(piece); result.Error != nil {
