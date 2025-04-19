@@ -2,13 +2,11 @@ package handlers
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/fws/backend/internal/models"
@@ -56,7 +54,7 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	var request RemoveRootRequest
+	var request RemoveRootRequest // Request might still be useful for explicit overrides, but we prioritize DB data
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid request: " + err.Error(),
@@ -73,8 +71,9 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// Retrieve the piece from the database
+	// 1. Retrieve the piece from the database, ensuring it belongs to the user
 	var piece models.Piece
+	// Fetch Piece first
 	if err := db.Where("id = ? AND user_id = ?", request.PieceID, userID).First(&piece).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -82,31 +81,88 @@ func RemoveRoot(c *gin.Context) {
 			})
 			return
 		}
-		log.WithField("error", err.Error()).Error("Failed to fetch piece")
+		log.WithField("error", err.Error()).WithField("pieceID", request.PieceID).Error("Failed to fetch piece")
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch piece: " + err.Error(),
+			"error": "Failed to fetch piece information: " + err.Error(),
 		})
 		return
 	}
 
-	// Use the piece data for the fields if not provided in the request
-	serviceURL := request.ServiceURL
-	if serviceURL == "" {
-		serviceURL = piece.ServiceURL
+	// 2. Validate required data from the fetched piece
+	if piece.ProofSetID == nil {
+		log.WithField("pieceID", piece.ID).Error("Piece is missing associated ProofSetID")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Internal error: Piece is missing required proof set data",
+		})
+		return
 	}
 
-	serviceName := request.ServiceName
-	if serviceName == "" {
-		serviceName = piece.ServiceName
+	if piece.RootID == nil || *piece.RootID == "" {
+		log.WithField("pieceID", piece.ID).Error("Piece is missing the stored Root ID")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Internal error: Piece is missing the required Root ID",
+		})
+		return
 	}
 
-	// For proofSetID, we'll rely on get-proof-set to find it
-	proofSetID := request.ProofSetID
-	if proofSetID == 0 {
-		proofSetID = 1 // Default only if we need it as a fallback
+	// 3. Fetch the associated ProofSet record using the piece.ProofSetID
+	var proofSet models.ProofSet
+	if err := db.Where("id = ? AND user_id = ?", *piece.ProofSetID, userID).First(&proofSet).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			log.WithField("pieceID", piece.ID).WithField("proofSetDbId", *piece.ProofSetID).Error("Associated proof set record not found in DB")
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Internal error: Associated proof set record not found for this piece",
+			})
+		} else {
+			log.WithField("pieceID", piece.ID).WithField("proofSetDbId", *piece.ProofSetID).WithField("error", err).Error("Failed to fetch associated proof set record")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to fetch proof set record: " + err.Error(),
+			})
+		}
+		return
 	}
 
-	pdptoolPath := "/Users/art3mis/Developer/opensource/protocol/curio/pdptool"
+	// Validate the fetched ProofSet record has the Service ID
+	if proofSet.ProofSetID == "" {
+		log.WithField("pieceID", piece.ID).WithField("proofSetDbId", proofSet.ID).Error("Fetched proof set record is missing the service ProofSetID string")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Internal error: Proof set record is incomplete",
+		})
+		return
+	}
+
+	// 4. Consolidate data for the command
+	serviceURL := piece.ServiceURL
+	serviceName := piece.ServiceName
+	serviceProofSetIDStr := proofSet.ProofSetID // Service's String ID from the proof_sets table
+	storedIntegerRootIDStr := *piece.RootID     // Stored Integer Root ID string from the pieces table
+
+	// Optional: Allow overrides from request if provided (use with caution)
+	if request.ServiceURL != "" {
+		serviceURL = request.ServiceURL
+		log.WithField("pieceID", piece.ID).Info("Overriding Service URL from request")
+	}
+	if request.ServiceName != "" {
+		serviceName = request.ServiceName
+		log.WithField("pieceID", piece.ID).Info("Overriding Service Name from request")
+	}
+	// Do NOT allow overriding ProofSetID or RootID from request, use the DB values.
+
+	// Basic validation: Check if stored Root ID looks like an integer string
+	if _, err := strconv.Atoi(storedIntegerRootIDStr); err != nil {
+		log.WithField("pieceID", piece.ID).WithField("storedRootID", storedIntegerRootIDStr).Error("Stored Root ID in piece record is not a valid integer string")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Internal error: Invalid Root ID format stored for piece",
+		})
+		return
+	}
+
+	log.WithField("pieceID", piece.ID).
+		WithField("serviceProofSetID", serviceProofSetIDStr).
+		WithField("integerRootID", storedIntegerRootIDStr).
+		Info("Proceeding with root removal using stored data")
+
+	pdptoolPath := "/Users/art3mis/Developer/opensource/protocol/curio/pdptool" // TODO: Configurable
 	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
 		log.WithField("path", pdptoolPath).Error("pdptool not found")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -116,149 +172,25 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// Log command parameters for debugging
-	log.WithField("serviceUrl", serviceURL).
-		WithField("pieceId", request.PieceID).
-		WithField("cid", piece.CID).
-		Info("Attempting to find root information")
-
-	// Validate that we have the service URL
-	if serviceURL == "" {
+	// Validate that we have the service URL and name
+	if serviceURL == "" || serviceName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Service URL is required but not available",
+			"error": "Service URL and Service Name are required but missing from piece/proofset data",
 		})
 		return
 	}
 
-	if serviceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Service name is required but not available",
-		})
-		return
-	}
+	// REMOVED: Call to get-proof-set before removal (no longer needed)
 
-	// 1. First get the proof set to find the proper root ID
-	proofSetIDStr := fmt.Sprintf("%d", proofSetID)
-	log.WithField("proofSetIDStr", proofSetIDStr).Info("Proof set ID")
-	proofSetCmd := exec.Command(
-		pdptoolPath,
-		"get-proof-set",
-		"--service-url", serviceURL,
-		"--service-name", serviceName,
-		"--proof-set", proofSetIDStr,
-	)
-	proofSetCmd.Dir = filepath.Dir(pdptoolPath)
-
-	var proofSetStdout bytes.Buffer
-	var proofSetStderr bytes.Buffer
-	proofSetCmd.Stdout = &proofSetStdout
-	proofSetCmd.Stderr = &proofSetStderr
-
-	// Log the exact command being executed
-	proofSetCmdStr := proofSetCmd.String()
-	log.WithField("command", proofSetCmdStr).Info("Executing get-proof-set command")
-
-	if err := proofSetCmd.Run(); err != nil {
-		errMsg := proofSetStderr.String()
-		if errMsg == "" {
-			errMsg = err.Error()
-		}
-
-		log.WithField("error", err.Error()).
-			WithField("stderr", errMsg).
-			WithField("command", proofSetCmdStr).
-			Error("Failed to execute get-proof-set command")
-
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to get proof set information: " + errMsg,
-			"details": err.Error(),
-			"command": proofSetCmdStr,
-		})
-		return
-	}
-
-	// Parse the proof set output to find the root ID that contains our CID
-	proofSetOutput := proofSetStdout.String()
-	log.WithField("output", proofSetOutput).Info("get-proof-set executed successfully")
-
-	// Try to parse the JSON output from get-proof-set
-	var proofSets []ProofSet
-	if err := json.Unmarshal([]byte(proofSetOutput), &proofSets); err != nil {
-		log.WithField("error", err.Error()).
-			WithField("output", proofSetOutput).
-			Error("Failed to parse proof set JSON")
-
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to parse proof set information",
-			"details": err.Error(),
-			"output":  proofSetOutput,
-		})
-		return
-	}
-
-	// Find the root that contains our CID
-	var foundRootID string
-	var foundProofSetID int
-
-	for _, ps := range proofSets {
-		for _, root := range ps.Roots {
-			if root.CID == piece.CID {
-				foundRootID = root.ID
-				foundProofSetID = ps.ID
-				break
-			}
-		}
-		if foundRootID != "" {
-			break
-		}
-	}
-
-	if foundRootID == "" {
-		// If we couldn't find the exact root by CID, try an alternative approach
-		// Look through the output for lines that might contain the CID
-		lines := strings.Split(proofSetOutput, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, piece.CID) {
-				// This is a simplistic approach and might need refinement
-				// Ideally, we should use a regex to extract the root ID
-				parts := strings.Split(line, " ")
-				if len(parts) > 1 {
-					// Assume the first part might be the root ID
-					foundRootID = parts[0]
-					log.WithField("extractedRootID", foundRootID).Info("Extracted root ID from output line")
-					break
-				}
-			}
-		}
-	}
-
-	if foundRootID == "" {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":  "Could not find root ID for the given CID",
-			"cid":    piece.CID,
-			"output": proofSetOutput,
-		})
-		return
-	}
-
-	// Use the found proof set ID if available
-	if foundProofSetID != 0 {
-		proofSetID = foundProofSetID
-	}
-
-	log.WithField("rootId", foundRootID).
-		WithField("proofSetId", proofSetID).
-		Info("Found root ID and proof set ID")
-
-	// 2. Now remove the root using the correct root ID
-	removeCmd := exec.Command(
-		pdptoolPath,
+	// 5. Execute remove-roots using the Service's ProofSetID string and the stored integer Root ID string
+	removeArgs := []string{
 		"remove-roots",
 		"--service-url", serviceURL,
-		"--proof-set", proofSetIDStr,
 		"--service-name", serviceName,
-		"--root-id", foundRootID,
-	)
+		"--proof-set-id", serviceProofSetIDStr, // Use the Service's ID string
+		"--root-id", storedIntegerRootIDStr, // Use the stored integer Root ID string
+	}
+	removeCmd := exec.Command(pdptoolPath, removeArgs...)
 	removeCmd.Dir = filepath.Dir(pdptoolPath)
 
 	var stdout bytes.Buffer
@@ -279,7 +211,7 @@ func RemoveRoot(c *gin.Context) {
 		log.WithField("error", err.Error()).
 			WithField("stderr", errMsg).
 			WithField("command", cmdStr).
-			Error("Failed to execute pdptool command")
+			Error("Failed to execute pdptool remove-roots command")
 
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to remove root: " + errMsg,
@@ -290,20 +222,34 @@ func RemoveRoot(c *gin.Context) {
 	}
 
 	// Command executed successfully
-	log.WithField("output", stdout.String()).Info("pdptool executed successfully")
+	log.WithField("output", stdout.String()).Info("pdptool remove-roots executed successfully")
 
-	// Mark the piece as pending removal in the database with removal date 24 hours from now
-	piece.PendingRemoval = true
+	// 6. Mark the piece as pending removal in the database
+	pendingRemovalStatus := true // Explicitly set to true
 	removalDate := time.Now().Add(24 * time.Hour)
-	piece.RemovalDate = &removalDate
 
-	if err := db.Save(&piece).Error; err != nil {
-		log.WithField("error", err.Error()).Warning("Failed to mark piece as pending removal in database")
-		// Continue with the response even if this fails, as the removal command was successful
+	// Update specific fields to mark for removal
+	// Use map[string]interface{} for Updates to handle zero values correctly if needed,
+	// or ensure the model uses pointers for fields that should be updatable to zero/false.
+	// Assuming PendingRemoval is bool and RemovalDate is *time.Time in the model:
+	if err := db.Model(&piece).Updates(map[string]interface{}{
+		"pending_removal": pendingRemovalStatus, // Use column name from DB tag
+		"removal_date":    &removalDate,
+	}).Error; err != nil {
+		log.WithField("pieceID", piece.ID).WithField("error", err.Error()).Error("Failed to mark piece as pending removal in database")
+		// Don't fail the request, but maybe return a warning in the response?
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Root removal command succeeded, but failed to mark piece for removal in DB",
+			"output":  stdout.String(),
+			"dbError": err.Error(),
+		})
+		return
 	}
 
+	log.WithField("pieceID", piece.ID).Info("Piece successfully marked for removal")
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Root removal scheduled successfully",
+		"message": "Root removal initiated successfully and piece marked for removal",
 		"output":  stdout.String(),
 	})
 }

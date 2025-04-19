@@ -42,7 +42,8 @@ interface Piece {
   updatedAt: string;
   pendingRemoval?: boolean;
   removalDate?: string;
-  proofSetId?: string;
+  proofSetDbId?: number; // Renamed from proofSetId, now holds DB ID
+  serviceProofSetId?: string; // New field for the service's string ID
   rootId?: string;
 }
 
@@ -77,7 +78,7 @@ const tableRowVariants = {
 
 export const FilesTab: React.FC<FilesTabProps> = ({
   isLoading: initialLoading,
-}) => {
+}): React.ReactNode => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [pieces, setPieces] = useState<Piece[]>([]);
@@ -93,7 +94,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     isStalled?: boolean;
     filename?: string; // store original filename for polling
     jobId?: string; // store job ID for polling
-    proofSetId?: string; // store proof set ID
+    serviceProofSetId?: string; // Use service ID string here
   } | null>(null);
   // Add state for tracking downloads in progress
   const [downloadsInProgress, setDownloadsInProgress] = useState<{
@@ -105,7 +106,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   const [selectedProof, setSelectedProof] = useState<{
     pieceId: number;
     pieceFilename: string;
-    proofSetId: string;
+    serviceProofSetId: string; // Use service ID string here
     cid: string;
     rootId?: string; // Add rootId property
   } | null>(null);
@@ -208,11 +209,11 @@ export const FilesTab: React.FC<FilesTabProps> = ({
         prevPieces.map((piece) => {
           // Find the matching piece with proof data
           const pieceWithProof = data.find((p: Piece) => p.id === piece.id);
-          if (pieceWithProof && pieceWithProof.proofSetId) {
+          if (pieceWithProof && pieceWithProof.proofSetDbId) {
             // Update with proof data
             return {
               ...piece,
-              proofSetId: pieceWithProof.proofSetId,
+              proofSetDbId: pieceWithProof.proofSetDbId,
               rootId: pieceWithProof.rootId,
             };
           }
@@ -289,12 +290,31 @@ export const FilesTab: React.FC<FilesTabProps> = ({
 
   // Add useEffect to find the user's proof set ID when pieces are loaded
   useEffect(() => {
-    // Find the first piece with a valid proofSetId
-    const firstProofSetId =
-      pieces.find((p) => p.proofSetId)?.proofSetId || null;
-    setUserProofSetId(firstProofSetId);
-    console.log("[FilesTab.tsx] User Proof Set ID updated:", firstProofSetId);
-  }, [pieces]);
+    // Find the first piece with a valid proofSetDbId (the service ID string)
+    const firstPieceWithProof = pieces.find(
+      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
+    );
+    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
+
+    // Only update state if the derived ID is different from the current state
+    if (derivedProofSetId !== userProofSetId) {
+      setUserProofSetId(derivedProofSetId);
+      if (derivedProofSetId) {
+        console.log(
+          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
+        );
+      } else {
+        console.log(
+          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
+        );
+      }
+    } else {
+      // Log even if the ID hasn't changed, for debugging
+      console.log(
+        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
+      );
+    }
+  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
 
   // Poll for upload status updates
   const startPollingUploadStatus = useCallback(
@@ -341,6 +361,9 @@ export const FilesTab: React.FC<FilesTabProps> = ({
               isStalled: false,
               // Keep the filename if it wasn't returned
               filename: data.filename || prev?.filename,
+              // Update with serviceProofSetId if available
+              serviceProofSetId:
+                data.serviceProofSetId || prev?.serviceProofSetId,
             }));
 
             // If upload is complete or failed, stop polling and handle completion
@@ -704,16 +727,16 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                   {uploadProgress.filename}
                 </div>
               )}
-              {uploadProgress.proofSetId && (
+              {uploadProgress.serviceProofSetId && (
                 <div className="text-xs mt-2 flex items-center">
                   <span className="mr-2">Proof Set ID:</span>
                   <a
-                    href={`https://pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.proofSetId}`}
+                    href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:text-blue-800 underline flex items-center"
                   >
-                    {uploadProgress.proofSetId}
+                    {uploadProgress.serviceProofSetId}
                     <ExternalLink className="h-3 w-3 ml-1" />
                   </a>
                 </div>
@@ -747,9 +770,9 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           {uploadProgress.status === "complete" && uploadProgress.cid && (
             <div className="mt-3 pt-3 border-t border-green-200">
               <div className="flex flex-col gap-2">
-                {uploadProgress.proofSetId && (
+                {uploadProgress.serviceProofSetId && (
                   <a
-                    href={`https://pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.proofSetId}`}
+                    href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm flex items-center justify-between bg-green-100 text-green-800 p-2 rounded hover:bg-green-200 transition-colors"
@@ -1056,12 +1079,20 @@ export const FilesTab: React.FC<FilesTabProps> = ({
 
   // Add a function to open the proof details dialog
   const openProofDetails = (piece: Piece) => {
-    if (piece.proofSetId === undefined) return;
+    // Use serviceProofSetId here
+    if (piece.serviceProofSetId === undefined) {
+      console.warn(
+        "Attempted to open proof details for piece without serviceProofSetId:",
+        piece.id
+      );
+      toast.error("Proof Set ID not available for this piece.");
+      return;
+    }
 
     setSelectedProof({
       pieceId: piece.id,
       pieceFilename: piece.filename,
-      proofSetId: piece.proofSetId,
+      serviceProofSetId: piece.serviceProofSetId, // Use service ID
       cid: piece.cid,
       rootId: piece.rootId, // Include rootId when available
     });
@@ -1250,7 +1281,9 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   const renderPieceRow = (piece: Piece, index: number) => {
     const isPendingRemoval = piece.pendingRemoval;
     const isDownloading = downloadsInProgress[piece.cid];
-    const hasProof = piece.proofSetId !== undefined;
+    // Use serviceProofSetId to check if proof is available
+    const hasProof =
+      piece.serviceProofSetId !== undefined && piece.serviceProofSetId !== null;
     const rowClasses = isPendingRemoval
       ? "hover:bg-gray-50 bg-red-50"
       : "hover:bg-gray-50";
@@ -1376,7 +1409,8 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                 >
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                 </svg>
-                Set #{piece.proofSetId}
+                {/* Display serviceProofSetId */}
+                Set #{piece.serviceProofSetId}
               </div>
               <div className="flex items-center gap-1">
                 <Button
@@ -1437,7 +1471,8 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                   sideOffset={5}
                   className="animate-in fade-in-50 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
                 >
-                  {piece.proofSetId !== undefined && (
+                  {/* Use hasProof (which checks serviceProofSetId) */}
+                  {hasProof && (
                     <DropdownMenuItem
                       onClick={() => openProofDetails(piece)}
                       className="cursor-pointer"
@@ -1551,7 +1586,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                 whileTap={{ scale: 0.98 }}
               >
                 <a
-                  href={`https://pdp-explorer.eng.filoz.org/proofsets/${userProofSetId}`}
+                  href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${userProofSetId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
@@ -2088,10 +2123,13 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     Proof Set ID
                   </h3>
                   <p className="text-sm font-medium font-mono flex items-center gap-1">
-                    {selectedProof.proofSetId}
+                    {/* Use serviceProofSetId here for display */}
+                    {selectedProof.serviceProofSetId}
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(selectedProof.proofSetId);
+                        navigator.clipboard.writeText(
+                          selectedProof.serviceProofSetId || ""
+                        );
                         toast.success("Proof Set ID copied to clipboard");
                       }}
                       className="text-blue-500 hover:text-blue-700"
@@ -2249,7 +2287,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     className="gap-2 justify-start bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
                     onClick={() =>
                       window.open(
-                        `https://pdp-explorer.eng.filoz.org/proofsets/${selectedProof?.proofSetId}`,
+                        `https://calibration.pdp-explorer.eng.filoz.org/proofsets/${selectedProof?.serviceProofSetId}`,
                         "_blank"
                       )
                     }
@@ -2266,7 +2304,8 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     >
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                     </svg>
-                    View Proof Set #{selectedProof?.proofSetId}
+                    {/* Display serviceProofSetId */}
+                    View Proof Set #{selectedProof?.serviceProofSetId}
                   </Button>
                 </div>
               </div>

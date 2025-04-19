@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/fws/backend/config"
 	"github.com/fws/backend/internal/models"
 	"github.com/fws/backend/internal/services"
@@ -281,21 +283,40 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	serviceURL := "https://yablu.net"
 	recordKeeper := "0x6170dE2b09b404776197485F3dc6c968Ef948505"
 
-	authLog.Infof("[Goroutine Create] Creating proof set for user %d...", user.ID)
+	authLog.Infof("[Goroutine Create] Creating proof set for user %d (Address: %s)...", user.ID, user.WalletAddress)
 
-	createProofSetCmd := exec.Command(
-		pdptoolPath,
+	// --- ABI Encode Extra Data ---
+	metadata := fmt.Sprintf("fws-user-%d", user.ID)
+	payerAddress := user.WalletAddress
+
+	// TODO: Call your ABI encoding function here
+	// Replace this placeholder with the actual call
+	extraDataHex, err := encodeExtraData(metadata, payerAddress) // Assumes function exists
+	if err != nil {
+		errMsg := fmt.Sprintf("[Goroutine Create] Failed to ABI encode extra data for user %d: %v", user.ID, err)
+		authLog.Error(errMsg)
+		return fmt.Errorf(errMsg) // Return error if encoding fails
+	}
+	authLog.WithField("extraDataHex", extraDataHex).Info("[Goroutine Create] ABI encoded extra data for user ", user.ID)
+	// --- End ABI Encode ---
+
+	createProofSetArgs := []string{
 		"create-proof-set",
 		"--service-url", serviceURL,
 		"--service-name", serviceName,
 		"--recordkeeper", recordKeeper,
-	)
+		"--extra-data", extraDataHex,
+	}
+
+	createProofSetCmd := exec.Command(pdptoolPath, createProofSetArgs...)
 
 	var createProofSetOutput bytes.Buffer
 	var createProofSetError bytes.Buffer
 	createProofSetCmd.Stdout = &createProofSetOutput
 	createProofSetCmd.Stderr = &createProofSetError
 	createProofSetCmd.Dir = filepath.Dir(pdptoolPath)
+
+	authLog.WithField("command", pdptoolPath+" "+strings.Join(createProofSetArgs, " ")).Info("[Goroutine Create] Executing create-proof-set command for user ", user.ID)
 
 	if err := createProofSetCmd.Run(); err != nil {
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to run create-proof-set command for user %d: %v, stderr: %s", user.ID, err, createProofSetError.String())
@@ -306,45 +327,54 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	outputStr := createProofSetOutput.String()
 	authLog.WithField("createOutput", outputStr).Debug("[Goroutine Create] Create proof set output for user ", user.ID)
 
-	directProofSetIDRegex := regexp.MustCompile(`ProofSet (?:ID|Id|id):[ \t]*(\d+)`)
-	directMatches := directProofSetIDRegex.FindStringSubmatch(outputStr)
-	var proofSetIDStr string
-	var txHash string = "direct_or_unknown"
+	// Attempt to extract Transaction Hash from the output (primary method)
+	txHashRegex := regexp.MustCompile(`Location: /pdp/proof-sets/created/(0x[a-fA-F0-9]{64})`) // More specific regex
+	txHashMatches := txHashRegex.FindStringSubmatch(outputStr)
+	var txHash string
 
-	if len(directMatches) > 1 {
-		proofSetIDStr = directMatches[1]
-		authLog.WithField("directProofSetID", proofSetIDStr).Info("[Goroutine Create] Found proof set ID directly in creation output for user ", user.ID)
-	} else {
-		txHashRegex := regexp.MustCompile(`0x[a-fA-F0-9]{64}`)
-		txHashMatches := txHashRegex.FindStringSubmatch(outputStr)
-		if len(txHashMatches) == 0 {
-			errMsg := fmt.Sprintf("[Goroutine Create] Failed to extract transaction hash or direct ProofSet ID for user %d", user.ID)
-			authLog.Error(errMsg)
-			return fmt.Errorf(errMsg)
-		}
-		txHash = txHashMatches[0]
+	if len(txHashMatches) > 1 {
+		txHash = txHashMatches[1]
 		authLog.WithField("txHash", txHash).Info("[Goroutine Create] Extracted transaction hash for user %d, polling...", user.ID)
+	} else {
+		// Fallback or error if no TxHash found
+		authLog.Warn("[Goroutine Create] Could not extract transaction hash using Location regex for user ", user.ID, ". Check pdptool output format.")
+		// Consider alternative regex or error handling if TxHash is essential for polling
+		// For now, let's try polling without TxHash, which might require listing sets later.
+		// If polling absolutely requires TxHash, return an error here.
+		errMsg := fmt.Sprintf("[Goroutine Create] Failed to extract transaction hash needed for polling for user %d. Output: %s", user.ID, outputStr)
+		authLog.Error(errMsg)
+		return fmt.Errorf(errMsg) // Fail if polling relies solely on TxHash
+	}
 
-		extractedID, err := h.pollForProofSetID(pdptoolPath, serviceURL, serviceName, txHash, user)
-		if err != nil {
-			authLog.Errorf("[Goroutine Create] Failed to poll for proof set ID for user %d: %v", user.ID, err)
-			return err
-		}
-		proofSetIDStr = extractedID
+	// Poll for the ProofSet ID using the Transaction Hash
+	extractedID, pollErr := h.pollForProofSetID(pdptoolPath, serviceURL, serviceName, txHash, user)
+	if pollErr != nil {
+		authLog.Errorf("[Goroutine Create] Failed to poll for proof set ID for user %d: %v", user.ID, pollErr)
+		// Decide if this is fatal. If the proof set might exist but we can't get the ID,
+		// we might end up creating duplicates later. Let's return an error.
+		return pollErr
 	}
 
 	// Save the new proof set to the database
 	newProofSet := models.ProofSet{
 		UserID:          user.ID,
-		ProofSetID:      proofSetIDStr,
+		ProofSetID:      extractedID, // This is the Service's ID string
 		TransactionHash: txHash,
 		ServiceName:     serviceName,
 		ServiceURL:      serviceURL,
 	}
 
+	// Use FirstOrCreate to prevent duplicates based on UserID, ServiceName, ServiceURL if polling failed but creation succeeded somehow
+	// Or just Create if confident polling is reliable
+	// Let's stick with Create as polling should return an error if it fails decisively
 	if result := h.db.Create(&newProofSet); result.Error != nil {
+		// Check if it's a duplicate entry error (this depends on your DB constraints)
+		// If it is a duplicate, maybe fetch the existing one? For now, log as error.
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to save new proof set info for user %d: %v", user.ID, result.Error)
 		authLog.Error(errMsg)
+		// Don't return error here? If saving fails but creation/polling succeeded,
+		// the next login might retry. But this could lead to orphaned proof sets on the service.
+		// Let's return the error to signal the issue.
 		return fmt.Errorf(errMsg)
 	}
 
@@ -352,25 +382,23 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	return nil
 }
 
-// pollForProofSetID remains the same (indefinite polling)
+// pollForProofSetID polls the status using the transaction hash and extracts the ProofSet ID string
 func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, txHash string, user *models.User) (string, error) {
-	proofSetIDRegexPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`ProofSet ID: (\d+)`), // This is the primary expected format
-		regexp.MustCompile(`ProofSet ID:[ \t]*(\d+)`),
-		regexp.MustCompile(`Proof Set ID:[ \t]*(\d+)`),
-		regexp.MustCompile(`ProofSet[^:]*ID:[ \t]*(\d+)`),
-		regexp.MustCompile(`ProofsetID:[ \t]*(\d+)`),
-		regexp.MustCompile(`Proofset ID:[ \t]*(\d+)`),
-		regexp.MustCompile(`ID:[ \t]*(\d+)`),
-	}
+	// Consolidated Regex: Should match variations like "ProofSet ID: 123", "Proofset Created: true\nProofSet ID: 123" etc.
+	// It looks for "ProofSet ID:" followed by digits, potentially after "Proofset Created: true"
+	proofSetIDRegex := regexp.MustCompile(`ProofSet ID:[ \t]*(\d+)`)
+	creationStatusRegex := regexp.MustCompile(`Proofset Created:[ \t]*(true|false)`)
+	txStatusRegex := regexp.MustCompile(`Transaction Status:[ \t]*(confirmed|pending|failed)`) // Capture tx status
+	txSuccessRegex := regexp.MustCompile(`Transaction Successful:[ \t]*(true|false|Pending)`)  // Capture tx success
 
-	var proofSetIDStr string
-	sleepDuration := 5 * time.Second // Keep the sleep duration
+	sleepDuration := 10 * time.Second // Increase sleep duration slightly for long polling
 	attemptCounter := 0
+	const maxLogInterval = 6 // Log every minute (6 * 10 seconds)
 
-	for { // Loop indefinitely
+	authLog.WithField("txHash", txHash).Info("[Goroutine Polling] Starting polling for ProofSet ID for user ", user.ID)
+
+	for { // Loop indefinitely until a definitive status is reached
 		attemptCounter++
-		// Create a new command object for each attempt
 		getStatusCmd := exec.Command(
 			pdptoolPath,
 			"get-proof-set-create-status",
@@ -385,68 +413,86 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 		getStatusCmd.Stderr = &getStatusError
 		getStatusCmd.Dir = filepath.Dir(pdptoolPath)
 
-		if err := getStatusCmd.Run(); err != nil {
-			authLog.WithField("error", err.Error()).WithField("stderr", getStatusError.String()).Warn("[Goroutine Polling] Failed to run get proof set status command, retrying...")
+		authLog.Debugf("[Goroutine Polling] Attempt %d: Executing %s", attemptCounter, getStatusCmd.String())
+
+		err := getStatusCmd.Run()
+		statusOutput := getStatusOutput.String()
+		statusStderr := getStatusError.String()
+
+		if err != nil {
+			// Basic retry mechanism for command execution failure
+			authLog.WithField("error", err.Error()).WithField("stderr", statusStderr).Warnf("[Goroutine Polling] Attempt %d: Failed to run get proof set status command, retrying in %v...", attemptCounter, sleepDuration)
 			time.Sleep(sleepDuration)
 			continue
 		}
 
-		statusOutput := getStatusOutput.String()
-		authLog.WithField("statusOutput", statusOutput).Debug("[Goroutine Polling] Proof set status output for user ", user.ID)
+		authLog.WithField("statusOutput", statusOutput).Debugf("[Goroutine Polling] Attempt %d: Proof set status output for user %d", attemptCounter, user.ID)
 
-		for _, regex := range proofSetIDRegexPatterns {
-			proofSetIDMatches := regex.FindStringSubmatch(statusOutput)
-			if len(proofSetIDMatches) > 1 {
-				proofSetIDStr = proofSetIDMatches[1]
-				authLog.WithField("proofSetID", proofSetIDStr).WithField("attempts", attemptCounter).Info("[Goroutine Polling] Successfully extracted proof set ID")
-				return proofSetIDStr, nil // Success
+		// Extract all relevant status parts
+		txStatusMatch := txStatusRegex.FindStringSubmatch(statusOutput)
+		txSuccessMatch := txSuccessRegex.FindStringSubmatch(statusOutput)
+		createdMatch := creationStatusRegex.FindStringSubmatch(statusOutput)
+		idMatch := proofSetIDRegex.FindStringSubmatch(statusOutput)
+
+		var txStatus, txSuccess, createdStatus string
+		if len(txStatusMatch) > 1 {
+			txStatus = txStatusMatch[1]
+		}
+		if len(txSuccessMatch) > 1 {
+			txSuccess = txSuccessMatch[1]
+		}
+		if len(createdMatch) > 1 {
+			createdStatus = createdMatch[1]
+		}
+
+		// Success Condition: Tx confirmed, Tx successful, Proofset created, ID found
+		if txStatus == "confirmed" && txSuccess == "true" && createdStatus == "true" && len(idMatch) > 1 {
+			proofSetIDStr := idMatch[1]
+			authLog.WithField("proofSetID", proofSetIDStr).WithField("attempts", attemptCounter).Infof("[Goroutine Polling] Successfully extracted proof set ID for user %d", user.ID)
+			return proofSetIDStr, nil // SUCCESS
+		}
+
+		// Intermediate Pending Condition: Tx confirmed, successful, but proofset not yet marked as created
+		if txStatus == "confirmed" && txSuccess == "true" && createdStatus == "false" {
+			authLog.Infof("[Goroutine Polling] Attempt %d: Transaction confirmed for user %d, but proofset creation still processing (TxStatus: %s, TxSuccess: %s, CreatedStatus: %s)... Polling again in %v.",
+				attemptCounter, user.ID, txStatus, txSuccess, createdStatus, sleepDuration)
+			time.Sleep(sleepDuration)
+			continue // Continue polling
+		}
+
+		// Failure Condition: Tx confirmed, but unsuccessful or proofset creation explicitly failed
+		if txStatus == "confirmed" && (txSuccess == "false" || (createdStatus == "true" && len(idMatch) == 0)) { // Adjusted failure condition
+			// Failure could also be txSuccess=true, createdStatus=true but no ID (should be rare)
+			authLog.Errorf("[Goroutine Polling] Proof set creation failed or stalled for user %d (TxStatus: %s, TxSuccess: %s, CreatedStatus: %s, ID Found: %t). Output: %s",
+				user.ID, txStatus, txSuccess, createdStatus, len(idMatch) > 1, statusOutput)
+			return "", fmt.Errorf("proof set creation failed or stalled post-confirmation for tx %s (status: %s, success: %s, created: %s)", txHash, txStatus, txSuccess, createdStatus) // FAILURE
+		}
+
+		// Failure Condition: Tx status itself is 'failed'
+		if txStatus == "failed" {
+			authLog.Errorf("[Goroutine Polling] Proof set creation transaction failed for user %d (TxStatus: %s). Output: %s",
+				user.ID, txStatus, statusOutput)
+			return "", fmt.Errorf("proof set creation transaction failed for tx %s (status: %s)", txHash, txStatus) // FAILURE
+		}
+
+		// Pending Condition: Tx status is 'pending' or unknown/initial state
+		if txStatus == "pending" || txStatus == "" { // Treat empty/unknown status as potentially pending
+			authLog.Infof("[Goroutine Polling] Attempt %d: Proof set creation still pending for user %d (TxStatus: '%s')... Polling again in %v.", attemptCounter, user.ID, txStatus, sleepDuration)
+			// Log progress periodically
+			if attemptCounter%maxLogInterval == 0 { // Log every N attempts
+				authLog.WithField("attempt", attemptCounter).Info("[Goroutine Polling] Still waiting for proof set ID for user ", user.ID, " (TxHash: ", txHash, ")")
 			}
+			time.Sleep(sleepDuration)
+			continue // Continue polling
 		}
 
-		// Log progress periodically
-		if attemptCounter%10 == 0 {
-			authLog.WithField("attempt", attemptCounter).Info("[Goroutine Polling] Still waiting for proof set ID to become available...")
-		}
-
+		// Unknown State: Log warning and continue polling (should be less common now)
+		authLog.Warnf("[Goroutine Polling] Attempt %d: Encountered unhandled status for user %d (TxStatus: %s, TxSuccess: %s, CreatedStatus: %s). Retrying in %v... Output: %s",
+			attemptCounter, user.ID, txStatus, txSuccess, createdStatus, sleepDuration, statusOutput)
 		time.Sleep(sleepDuration)
 	}
 
-	// Code below this loop might be unreachable now unless the loop is broken by other means in the future.
-	// Kept for robustness in case loop structure changes.
-
-	// Fallback after retries: list proof sets and try to find the one with matching extra data
-	authLog.Warn("[Goroutine Polling] Polling loop exited unexpectedly, trying list-proof-sets fallback")
-	listProofSetsCmd := exec.Command(
-		pdptoolPath,
-		"list-proof-sets",
-		"--service-url", serviceURL,
-		"--service-name", serviceName,
-	)
-	var listOutput bytes.Buffer
-	listProofSetsCmd.Stdout = &listOutput
-	listProofSetsCmd.Dir = filepath.Dir(pdptoolPath)
-	if err := listProofSetsCmd.Run(); err == nil {
-		listOutputStr := listOutput.String()
-		authLog.WithField("listOutput", listOutputStr).Debug("[Goroutine Polling] List proof sets output for fallback")
-
-		// Simple extraction: find the last line that looks like an ID line
-		lines := strings.Split(listOutputStr, "\n")
-		lastID := ""
-		idLineRegex := regexp.MustCompile(`ID:[ \t]*(\d+)`)
-		for _, line := range lines {
-			matches := idLineRegex.FindStringSubmatch(line)
-			if len(matches) > 1 {
-				lastID = matches[1]
-			}
-		}
-		if lastID != "" {
-			proofSetIDStr = lastID
-			authLog.WithField("fallbackListID", proofSetIDStr).Info("[Goroutine Polling] Using last ID found via list-proof-sets fallback")
-			return proofSetIDStr, nil
-		}
-	}
-
-	return "", fmt.Errorf("failed to extract proof set ID even after fallback attempts")
+	return "", fmt.Errorf("polling loop exited unexpectedly for tx %s", txHash)
 }
 
 // CheckAuthStatus godoc
@@ -516,4 +562,33 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Successfully logged out",
 	})
+}
+
+// encodeExtraData encodes the metadata and payer address according to the expected ABI.
+func encodeExtraData(metadata string, payerAddress string) (string, error) {
+	StringTy, err := abi.NewType("string", "", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create string type: %w", err)
+	}
+	AddressTy, err := abi.NewType("address", "", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create address type: %w", err)
+	}
+
+	arguments := abi.Arguments{
+		{Type: StringTy, Name: "metadata"},
+		{Type: AddressTy, Name: "payer"},
+	}
+
+	if !common.IsHexAddress(payerAddress) {
+		return "", fmt.Errorf("invalid payer address format: %s", payerAddress)
+	}
+	payer := common.HexToAddress(payerAddress)
+
+	packedBytes, err := arguments.Pack(metadata, payer)
+	if err != nil {
+		return "", fmt.Errorf("failed to pack ABI arguments: %w", err)
+	}
+
+	return hex.EncodeToString(packedBytes), nil
 }

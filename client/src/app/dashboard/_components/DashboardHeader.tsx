@@ -2,13 +2,12 @@
 
 import { Typography } from "@/components/ui/typography";
 import { motion, AnimatePresence } from "framer-motion";
-import { TABS, type TabItem } from "@/lib/constants";
-import { DashboardSection } from "@/types/dashboard";
+// import { TABS, type TabItem } from "@/lib/constants"; // Removed unused import
+// import { DashboardSection, DASHBOARD_SECTIONS } from "@/types/dashboard"; // Removed unused import
+// import { DashboardSection } from "@/types/dashboard"; // Removed unused import
 
 interface DashboardHeaderProps {
   account: string;
-  activeTab: DashboardSection;
-  setActiveTab: (tab: DashboardSection) => void;
   isAccountMenuOpen: boolean;
   setIsAccountMenuOpen: (isOpen: boolean) => void;
   handleAccountSwitch: () => void;
@@ -17,8 +16,6 @@ interface DashboardHeaderProps {
 
 export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   account,
-  activeTab,
-  setActiveTab,
   isAccountMenuOpen,
   setIsAccountMenuOpen,
   handleAccountSwitch,
@@ -61,9 +58,10 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             </Typography>
           </motion.div>
 
-          {/* Navigation */}
+          {/* Navigation - Removed as there's only one tab */}
+          {/*
           <nav className="hidden md:flex items-center gap-6">
-            {TABS.map((tab: TabItem) => (
+            {TABS.filter((tab) => tab.id !== DASHBOARD_SECTIONS.ACTIVITY).map((tab: TabItem) => (
               <motion.button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -81,6 +79,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               </motion.button>
             ))}
           </nav>
+          */}
 
           {/* Account Menu */}
           <div className="relative">

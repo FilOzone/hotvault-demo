@@ -5,7 +5,6 @@ import { AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { DashboardHeader } from "./_components/DashboardHeader";
-import { ActivityTab } from "./_components/ActivityTab";
 import { FilesTab } from "./_components/FilesTab";
 
 export default function Dashboard() {
@@ -38,10 +37,6 @@ export default function Dashboard() {
             <AnimatePresence mode="wait">
               {activeTab === DASHBOARD_SECTIONS.FILES && (
                 <FilesTab isLoading={isLoading} />
-              )}
-
-              {activeTab === DASHBOARD_SECTIONS.ACTIVITY && (
-                <ActivityTab isLoading={isLoading} />
               )}
             </AnimatePresence>
           </div>

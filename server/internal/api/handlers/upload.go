@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -407,23 +408,33 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	outputLines := strings.Split(outputStr, "\n")
 
 	// Search for a CID in the output
-	cidRegex := regexp.MustCompile(`^(baga[a-zA-Z0-9]+)(?::(baga[a-zA-Z0-9]+))?$`)
-	var cid string
+	// Expecting format: baga...CID1:baga...CID2
+	cidRegex := regexp.MustCompile(`^(baga[a-zA-Z0-9]+)(?::(baga[a-zA-Z0-9]+))?$`) // Regex to capture base and optionally subroot CID
+	var compoundCID string
+	var baseCID string
+	var subrootCID string // Might be the same as baseCID
 
 	// Check all output lines for a CID, starting from the last line
 	for i := len(outputLines) - 1; i >= 0; i-- {
 		trimmedLine := strings.TrimSpace(outputLines[i])
 		if cidRegex.MatchString(trimmedLine) {
 			matches := cidRegex.FindStringSubmatch(trimmedLine)
-			cid = matches[0] // Use the full match by default
-			log.WithField("cid", cid).Info("Found CID in output lines")
-			break
+			if len(matches) > 1 {
+				compoundCID = matches[0] // Full matched string
+				baseCID = matches[1]     // First capturing group
+				if len(matches) > 2 && matches[2] != "" {
+					subrootCID = matches[2] // Second optional capturing group
+				} else {
+					subrootCID = baseCID // If no subroot CID, it's the same as base
+				}
+				log.WithField("compoundCID", compoundCID).WithField("baseCID", baseCID).WithField("subrootCID", subrootCID).Info("Found and parsed CID in output lines")
+				break
+			}
 		}
 	}
 
-	// If no CID found, use fallback strategy
-	if cid == "" {
-		// Get the last non-empty line as a fallback
+	// If no CID found via regex, use fallback (less reliable)
+	if compoundCID == "" {
 		var lastNonEmpty string
 		for i := len(outputLines) - 1; i >= 0; i-- {
 			line := strings.TrimSpace(outputLines[i])
@@ -434,102 +445,127 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		}
 
 		if lastNonEmpty != "" {
-			log.WithField("lastLine", lastNonEmpty).Info("Using last non-empty output line as CID (fallback)")
-			cid = lastNonEmpty
+			log.WithField("lastLine", lastNonEmpty).Warning("Using last non-empty output line as CID (fallback, parsing may fail)")
+			compoundCID = lastNonEmpty
+			// Attempt to parse base CID from fallback
+			if idx := strings.Index(compoundCID, ":"); idx != -1 {
+				baseCID = compoundCID[:idx]
+			} else {
+				baseCID = compoundCID // Assume it's just the base CID
+			}
+			subrootCID = baseCID // Fallback assumption
+		} else {
+			log.Error("Upload completed but failed to extract CID from pdptool output.")
+			updateStatus(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to extract CID from upload response",
+				Message: "Could not determine upload result CID.",
+			})
+			return
 		}
 	}
 
-	// If still no CID, report an error
-	if cid == "" {
-		updateStatus(UploadProgress{
-			Status:  "error",
-			Error:   "Failed to extract CID from upload response",
-			Message: "Could not determine if upload was successful",
-		})
-		return
-	}
+	// --- Log Extracted CIDs BEFORE Add Root ---
+	log.WithField("uploadOutputCID", compoundCID).
+		WithField("parsedBaseCID", baseCID).
+		WithField("parsedSubrootCID", subrootCID).
+		Info("CIDs extracted from upload-file output, before calling add-roots")
+	// ----------------------------------------
 
 	log.WithField("filename", file.Filename).
 		WithField("size", file.Size).
 		WithField("service_name", serviceName).
 		WithField("service_url", serviceURL).
-		Info(fmt.Sprintf("File uploaded successfully, full CID: %s", cid))
+		WithField("compoundCID", compoundCID).
+		Info("File uploaded successfully, proceeding to add root")
 
-	// --- Introduce Delay ---
-	log.Info("Waiting 2 seconds before adding root to allow service registration...")
-	time.Sleep(2 * time.Second)
-	// ---------------------
-
-	// The full CID returned by upload-file is used as the root argument
-	rootArgument := cid
-	log.WithField("rootArgument", rootArgument).Info("Using full CID as root argument for add-roots")
-
-	// After successful upload, we need to add the root to the proof set
-	currentProgress = 95
+	// --- Add Root to Proof Set ---
+	currentProgress = 95 // Update progress before starting add-root
 	currentStage = "adding_root"
-
 	updateStatus(UploadProgress{
 		Status:   currentStage,
 		Progress: currentProgress,
-		Message:  "Locating user proof set",
-		CID:      cid, // Keep full CID here for status reporting
+		Message:  "Locating user proof set...",
+		CID:      compoundCID, // Show the full CID in status
 	})
 
-	// Get the user's existing proof set from the database
+	// --- Introduce Delay --- // Increase delay for service consistency
+	preAddRootDelay := 5 * time.Second
+	log.Info(fmt.Sprintf("Waiting %v before adding root to allow service registration...", preAddRootDelay))
+	time.Sleep(preAddRootDelay)
+	// ---------------------
+
+	// 1. Get the user's existing proof set from the database
 	var proofSet models.ProofSet
 	if err := db.Where("user_id = ?", userID).First(&proofSet).Error; err != nil {
 		errMsg := "Failed to query proof set for user."
 		if err == gorm.ErrRecordNotFound {
-			errMsg = "Proof set initialization is pending. Please wait or re-authenticate if this persists."
-			log.WithField("userID", userID).Warning(errMsg) // Log as warning, it might just be pending
+			// This should ideally not happen if auth flow ensures proof set exists
+			errMsg = "Proof set not found for user. Please re-authenticate."
+			log.WithField("userID", userID).Error(errMsg)
 		} else {
 			log.WithField("userID", userID).WithField("error", err).Error("Database error fetching proof set")
 		}
 		updateStatus(UploadProgress{
 			Status:  "error",
 			Error:   errMsg,
-			Message: "Upload cannot proceed without a ready proof set.",
-			CID:     cid,
+			Message: "Upload cannot proceed without a valid proof set.",
+			CID:     compoundCID,
 		})
 		return
 	}
 
-	// Ensure the ProofSetID from the service is populated (meaning creation is complete)
+	// Ensure the Service's ProofSetID string is populated
 	if proofSet.ProofSetID == "" {
-		errMsg := "Proof set creation pending. Please wait."
-		log.WithField("userID", userID).WithField("dbProofSetID", proofSet.ID).Info(errMsg) // Info level, as this is expected during creation
+		// This might happen if the background creation is still polling
+		errMsg := "Proof set creation is still pending. Please wait."
+		log.WithField("userID", userID).WithField("dbProofSetID", proofSet.ID).Warning(errMsg) // Warn level
 		updateStatus(UploadProgress{
-			Status:  "error", // Use 'error' status to stop the job progress UI
-			Error:   errMsg,
-			Message: "The proof set is being initialized. Upload will be available shortly.",
-			CID:     cid,
+			Status:     "pending", // Use a non-error status like 'pending' or 'waiting'
+			Error:      errMsg,    // Keep the error message for info
+			Message:    "The proof set is being initialized. Please try uploading again shortly.",
+			CID:        compoundCID,
+			ProofSetID: proofSet.ProofSetID, // May be empty
 		})
-		return
+		return // Don't proceed until proof set ID is available
 	}
 
-	log.WithField("userID", userID).WithField("proofSetID", proofSet.ProofSetID).Info("Found ready proof set for user")
+	log.WithField("userID", userID).WithField("serviceProofSetID", proofSet.ProofSetID).Info("Found ready proof set for user, proceeding to add root")
 
 	updateStatus(UploadProgress{
 		Status:     currentStage,
 		Progress:   currentProgress,
-		Message:    fmt.Sprintf("Adding root to proof set %s", proofSet.ProofSetID),
-		CID:        cid,
-		ProofSetID: proofSet.ProofSetID,
+		Message:    fmt.Sprintf("Adding root to proof set %s...", proofSet.ProofSetID),
+		CID:        compoundCID,
+		ProofSetID: proofSet.ProofSetID, // Service's string ID
 	})
 
-	// Now add the root to the proof set using the full CID
+	// 2. Add the root using the SERVICE's ProofSetID string and the COMPOUND CID
+	rootArgument := compoundCID // Use the full compound CID from upload-file output
 	addRootsArgs := []string{
 		"add-roots",
 		"--service-url", serviceURL,
 		"--service-name", serviceName,
-		"--proof-set-id", proofSet.ProofSetID,
-		"--root", rootArgument, // Use the full CID here
+		"--proof-set-id", proofSet.ProofSetID, // Use the SERVICE's string ID
+		"--root", rootArgument,
 	}
 	addRootCmd := exec.Command(pdptoolPath, addRootsArgs...)
 
-	log.WithField("command", pdptoolPath).
-		WithField("args", strings.Join(addRootsArgs, " ")).
-		Info("Executing add-roots command")
+	// --- Diagnostics Start ---
+	cmdDir := filepath.Dir(pdptoolPath)
+	secretPath := filepath.Join(cmdDir, "pdpservice.json")
+	log.WithField("expectedCmdDir", cmdDir).Info("Checking command working directory")
+	log.WithField("checkingSecretPath", secretPath).Info("Checking for pdpservice.json")
+	if _, errStat := os.Stat(secretPath); errStat == nil {
+		log.Info("pdpservice.json FOUND at the expected location.")
+	} else if os.IsNotExist(errStat) {
+		log.Error("pdpservice.json NOT FOUND at the expected location.")
+	} else {
+		log.WithField("error", errStat.Error()).Error("Error checking for pdpservice.json")
+	}
+	// --- Diagnostics End ---
+
+	log.WithField("command", pdptoolPath).WithField("args", strings.Join(addRootsArgs, " ")).Info("Executing add-roots command")
 
 	var addRootOutput bytes.Buffer
 	var addRootError bytes.Buffer
@@ -547,12 +583,19 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			Error("pdptool add-roots command failed")
 
 		updateStatus(UploadProgress{
-			Status:  "error",
-			Error:   "Failed to add root to proof set",
-			Message: stderrStr, // Use stderr for more specific error from the tool
-			CID:     cid,
+			Status:     "error",
+			Error:      "Failed to add root to proof set",
+			Message:    stderrStr, // Use stderr for more specific error from the tool
+			CID:        compoundCID,
+			ProofSetID: proofSet.ProofSetID,
 		})
 		return
+	}
+
+	// Log stderr even on success, in case of warnings
+	addRootStderrStrOnSuccess := addRootError.String()
+	if addRootStderrStrOnSuccess != "" {
+		log.WithField("stderr", addRootStderrStrOnSuccess).Warning("add-roots command succeeded but produced output on stderr")
 	}
 
 	addRootStdoutStr := addRootOutput.String()
@@ -561,42 +604,169 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("stdout", addRootStdoutStr).
 		Info("add-roots command completed successfully")
 
-	// The full CID passed to add-roots should be the RootID for the piece
-	extractedRootID := rootArgument
+	// --- Find the Integer Root ID assigned by the service (with Polling) --- //
+	currentProgress = 96 // Allocate some progress for getting the ID
+	currentStage = "finalizing"
+	updateStatus(UploadProgress{
+		Status:     currentStage,
+		Progress:   currentProgress,
+		Message:    "Confirming Root ID assignment via polling...",
+		CID:        compoundCID,
+		ProofSetID: proofSet.ProofSetID,
+	})
 
-	currentProgress = 98
-	rootId := extractedRootID // Use the validated full CID as the rootId
+	var extractedIntegerRootID string // Will store the integer ID string if found
+	pollInterval := 3 * time.Second
+	maxPollAttempts := 100 // Increased to 100 attempts (~ 5 minutes timeout)
+	pollAttempt := 0
+	foundRootInPoll := false
+
+	for pollAttempt < maxPollAttempts {
+		pollAttempt++
+		log.Info(fmt.Sprintf("Polling get-proof-set attempt %d/%d...", pollAttempt, maxPollAttempts))
+
+		// 3. Call get-proof-set to find the integer ID for the added root
+		getProofSetArgs := []string{
+			"get-proof-set",
+			"--service-url", serviceURL,
+			"--service-name", serviceName,
+			proofSet.ProofSetID, // Use the Service's ID string as the last argument
+		}
+		getProofSetCmd := exec.Command(pdptoolPath, getProofSetArgs...)
+		getProofSetCmd.Dir = filepath.Dir(pdptoolPath)
+
+		var getProofSetStdout bytes.Buffer
+		var getProofSetStderr bytes.Buffer
+		getProofSetCmd.Stdout = &getProofSetStdout
+		getProofSetCmd.Stderr = &getProofSetStderr
+
+		log.WithField("command", pdptoolPath).WithField("args", strings.Join(getProofSetArgs, " ")).Debug(fmt.Sprintf("Executing get-proof-set poll attempt %d", pollAttempt))
+
+		if err := getProofSetCmd.Run(); err != nil {
+			stderrStr := getProofSetStderr.String()
+			log.WithField("error", err.Error()).
+				WithField("stderr", stderrStr).
+				Warning(fmt.Sprintf("pdptool get-proof-set command failed during poll attempt %d. Retrying after %v...", pollAttempt, pollInterval))
+			time.Sleep(pollInterval) // Wait before retrying command
+			continue                 // Go to next poll attempt
+		}
+
+		// Parse the output to find the integer Root ID associated with the BASE CID
+		getProofSetOutput := getProofSetStdout.String()
+		log.WithField("output", getProofSetOutput).Debug(fmt.Sprintf("get-proof-set poll attempt %d output received", pollAttempt))
+
+		lines := strings.Split(getProofSetOutput, "\n")
+		var lastSeenRootID string // Store the most recently encountered integer Root ID line
+		foundMatchThisAttempt := false
+
+		for _, line := range lines {
+			trimmedLine := strings.TrimSpace(line)
+			if trimmedLine == "" {
+				continue // Skip empty lines
+			}
+
+			// --- Flexible Root ID Parsing ---
+			if idx := strings.Index(trimmedLine, "Root ID:"); idx != -1 {
+				// Extract text after "Root ID:"
+				potentialIDValue := strings.TrimSpace(trimmedLine[idx+len("Root ID:"):])
+				log.Debug(fmt.Sprintf("[Parsing] Found line containing 'Root ID:', potential value: '%s'", potentialIDValue))
+				// Check if it's an integer
+				if _, err := strconv.Atoi(potentialIDValue); err == nil {
+					lastSeenRootID = potentialIDValue
+					log.Debug(fmt.Sprintf("[Parsing] Captured integer Root ID: %s", lastSeenRootID))
+				} else {
+					// Reset if value after colon wasn't an integer
+					lastSeenRootID = ""
+					log.Debug(fmt.Sprintf("[Parsing] Found 'Root ID:' but value '%s' is not integer, resetting lastSeenRootID", potentialIDValue))
+				}
+				// Don't 'continue' here, process the same line for CID check below just in case
+			}
+
+			// --- Flexible Root CID Parsing ---
+			if idx := strings.Index(trimmedLine, "Root CID:"); idx != -1 {
+				// Extract text after "Root CID:"
+				outputCID := strings.TrimSpace(trimmedLine[idx+len("Root CID:"):])
+				log.Debug(fmt.Sprintf("[Parsing] Found line containing 'Root CID:', value: '%s'", outputCID))
+				// Check if it matches the target base CID
+				if outputCID == baseCID {
+					log.Debug(fmt.Sprintf("[Parsing] CID '%s' matches baseCID '%s'. Checking lastSeenRootID ('%s')...", outputCID, baseCID, lastSeenRootID))
+					// If it matches, check if we captured a Root ID just before
+					if lastSeenRootID != "" {
+						extractedIntegerRootID = lastSeenRootID
+						log.WithField("integerRootID", extractedIntegerRootID).WithField("matchedBaseCID", baseCID).Info(fmt.Sprintf("Successfully matched base CID and found associated integer Root ID on poll attempt %d", pollAttempt))
+						foundMatchThisAttempt = true
+						break // Found the match, exit inner loop (over lines)
+					} else {
+						// Log if CID matches but we haven't seen a valid Root ID recently
+						log.WithField("matchedBaseCID", baseCID).Warning(fmt.Sprintf("Matched base CID on poll attempt %d but no preceding integer Root ID was captured (lastSeenRootID was empty)", pollAttempt))
+					}
+				}
+			}
+		} // End inner loop (over lines)
+
+		if foundMatchThisAttempt {
+			foundRootInPoll = true
+			break // Exit polling loop successfully
+		}
+
+		// If not found yet, wait before the next poll attempt
+		log.Debug(fmt.Sprintf("Root CID %s not found in get-proof-set output on attempt %d. Waiting %v...", baseCID, pollAttempt, pollInterval))
+		time.Sleep(pollInterval)
+	} // End polling loop
+
+	// Check if polling succeeded
+	if !foundRootInPoll {
+		log.WithField("baseCID", baseCID).
+			WithField("proofSetID", proofSet.ProofSetID).
+			WithField("attempts", maxPollAttempts).
+			Error("Failed to find integer Root ID in get-proof-set output after polling.")
+		updateStatus(UploadProgress{
+			Status:     "error",
+			Progress:   98,
+			Message:    "Error: Could not confirm integer Root ID assignment after polling.",
+			Error:      fmt.Sprintf("Polling for Root ID timed out after %d attempts", maxPollAttempts),
+			CID:        compoundCID,
+			ProofSetID: proofSet.ProofSetID,
+		})
+		return // Stop processing
+	}
+
+	// --- Save Piece Info --- //
+	currentProgress = 98                   // Progress before DB write
+	rootIDToSave := extractedIntegerRootID // Use the parsed integer ID string
 
 	updateStatus(UploadProgress{
-		Status:     "finalizing",
-		Progress:   98,
-		Message:    "Root added to proof set successfully",
-		CID:        cid, // Keep original full CID for status reporting
+		Status:     currentStage, // Still finalizing
+		Progress:   currentProgress,
+		Message:    "Saving piece information to database...",
+		CID:        compoundCID,
 		ProofSetID: proofSet.ProofSetID,
 	})
 
 	piece := &models.Piece{
 		UserID:      userID,
-		CID:         cid, // Original full CID from upload
+		CID:         compoundCID, // Store the original full compound CID from upload
 		Filename:    file.Filename,
 		Size:        file.Size,
 		ServiceName: serviceName,
 		ServiceURL:  serviceURL,
-		ProofSetID:  &proofSet.ID,
-		RootID:      &rootId, // Save the full CID used in add-roots
+		ProofSetID:  &proofSet.ID,  // Link to the local DB ProofSet record's uint ID
+		RootID:      &rootIDToSave, // Store the extracted INTEGER Root ID string
 	}
 
 	if result := db.Create(piece); result.Error != nil {
 		log.WithField("error", result.Error.Error()).Error("Failed to save piece information")
 		updateStatus(UploadProgress{
-			Status:  "error",
-			Error:   "Failed to save piece information",
-			Message: result.Error.Error(),
+			Status:     "error",
+			Error:      "Failed to save piece information to database",
+			Message:    result.Error.Error(),
+			CID:        compoundCID,
+			ProofSetID: proofSet.ProofSetID,
 		})
 		return
 	}
 
-	log.WithField("pieceId", piece.ID).Info("Piece information saved successfully")
+	log.WithField("pieceId", piece.ID).WithField("integerRootID", rootIDToSave).Info("Piece information saved successfully with integer Root ID")
 
 	currentProgress = 100
 
@@ -605,9 +775,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Status:     "complete",
 		Progress:   currentProgress,
 		Message:    "Upload completed successfully",
-		CID:        cid,
+		CID:        compoundCID,
 		Filename:   file.Filename,
-		ProofSetID: proofSet.ProofSetID,
+		ProofSetID: proofSet.ProofSetID, // Service's string ID
 	})
 
 	// Keep the job status for 1 hour then clean it up
