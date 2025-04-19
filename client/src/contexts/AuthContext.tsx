@@ -1,4 +1,10 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/constants";
 import type { EthereumProvider } from "@/types/window";
@@ -37,7 +43,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   // Add connection lock
   const [isConnectionLocked, setIsConnectionLocked] = useState(false);
 
-  const authenticateWithBackend = async (address: string) => {
+  // Memoize functions to prevent infinite re-renders
+  const authenticateWithBackend = useCallback(async (address: string) => {
     try {
       console.log("🔐 Authenticating with backend for address:", address);
 
@@ -114,91 +121,97 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error("❌ Authentication error:", error);
       throw error;
     }
-  };
+  }, []);
 
-  // Handle account changes
-  const handleAccountsChanged = async (newAccounts: string[]) => {
-    console.log(
-      "[AuthContext.tsx:handleAccountsChanged] 👛 Account change detected:",
-      newAccounts
-    );
-    const newAccount = newAccounts[0] || "";
-
-    if (!newAccount) {
+  // Memoize handleAccountsChanged
+  const handleAccountsChanged = useCallback(
+    async (newAccounts: string[]) => {
       console.log(
-        "[AuthContext.tsx:handleAccountsChanged] 🔓 No account found, clearing storage and redirecting to home"
+        "[AuthContext.tsx:handleAccountsChanged] 👛 Account change detected:",
+        newAccounts
       );
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(JWT_STORAGE_KEY);
-      // Also clear the cookie by calling logout endpoint
-      await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-      setError("");
-      setAccount("");
-      router.push("/");
-      return;
-    }
+      const newAccount = newAccounts[0] || "";
 
-    // If we have an account, first check if we're already authenticated with it
-    try {
-      const statusResponse = await fetch(`${API_BASE_URL}/api/v1/auth/status`, {
-        method: "GET",
-        credentials: "include",
-      });
-
-      if (statusResponse.ok) {
-        const data = await statusResponse.json();
-
-        if (
-          data.authenticated &&
-          data.address.toLowerCase() === newAccount.toLowerCase()
-        ) {
-          console.log("✅ Already authenticated with this account");
-          setAccount(newAccount);
-          localStorage.setItem(STORAGE_KEY, "true");
-          setIsLoading(false);
-          router.push("/dashboard");
-          return;
-        }
+      if (!newAccount) {
+        console.log(
+          "[AuthContext.tsx:handleAccountsChanged] 🔓 No account found, clearing storage and redirecting to home"
+        );
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(JWT_STORAGE_KEY);
+        // Also clear the cookie by calling logout endpoint
+        await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+        });
+        setError("");
+        setAccount("");
+        router.push("/");
+        return;
       }
-    } catch (error) {
-      console.error("Error checking auth status:", error);
-      // Continue with authentication process
-    }
 
-    // Need to authenticate with the new account
-    try {
-      console.log(
-        "[AuthContext.tsx:handleAccountsChanged] 🔒 New account connected, starting authentication"
-      );
-      await authenticateWithBackend(newAccount);
-      setAccount(newAccount);
-      localStorage.setItem(STORAGE_KEY, "true");
-      console.log(
-        "[AuthContext.tsx:handleAccountsChanged] ✅ Authentication successful, redirecting to dashboard"
-      );
-      router.push("/dashboard");
-    } catch (error) {
-      console.error(
-        "[AuthContext.tsx:handleAccountsChanged] ❌ Authentication failed:",
-        error
-      );
-      setError("Failed to authenticate with the backend");
-      setAccount("");
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(JWT_STORAGE_KEY);
-      // Clear the auth cookie
-      await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-    }
-  };
+      // If we have an account, first check if we're already authenticated with it
+      try {
+        const statusResponse = await fetch(
+          `${API_BASE_URL}/api/v1/auth/status`,
+          {
+            method: "GET",
+            credentials: "include",
+          }
+        );
 
-  // Handle disconnect
-  const handleDisconnect = () => {
+        if (statusResponse.ok) {
+          const data = await statusResponse.json();
+
+          if (
+            data.authenticated &&
+            data.address.toLowerCase() === newAccount.toLowerCase()
+          ) {
+            console.log("✅ Already authenticated with this account");
+            setAccount(newAccount);
+            localStorage.setItem(STORAGE_KEY, "true");
+            setIsLoading(false);
+            router.push("/dashboard");
+            return;
+          }
+        }
+      } catch (error) {
+        console.error("Error checking auth status:", error);
+        // Continue with authentication process
+      }
+
+      // Need to authenticate with the new account
+      try {
+        console.log(
+          "[AuthContext.tsx:handleAccountsChanged] 🔒 New account connected, starting authentication"
+        );
+        await authenticateWithBackend(newAccount);
+        setAccount(newAccount);
+        localStorage.setItem(STORAGE_KEY, "true");
+        console.log(
+          "[AuthContext.tsx:handleAccountsChanged] ✅ Authentication successful, redirecting to dashboard"
+        );
+        router.push("/dashboard");
+      } catch (error) {
+        console.error(
+          "[AuthContext.tsx:handleAccountsChanged] ❌ Authentication failed:",
+          error
+        );
+        setError("Failed to authenticate with the backend");
+        setAccount("");
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(JWT_STORAGE_KEY);
+        // Clear the auth cookie
+        await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+        });
+      }
+    },
+    [authenticateWithBackend, router]
+  );
+
+  // Memoize handleDisconnect
+  const handleDisconnect = useCallback(() => {
     console.log("🔌 Wallet disconnected");
     setAccount("");
     localStorage.removeItem(STORAGE_KEY);
@@ -210,11 +223,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }).catch((err) => console.error("Error logging out:", err));
     setError("");
     router.push("/");
-  };
+  }, [router]);
 
-  const checkConnection = async () => {
-    setIsLoading(true);
+  // Memoize checkConnection
+  const checkConnection = useCallback(async () => {
     console.log("⏳ Checking connection status...");
+    // Skip setting isLoading to true on each check to avoid UI flicker
+    // Only set it if we're initializing for the first time
+    if (account === "") {
+      setIsLoading(true);
+    }
 
     try {
       // First check if we have a valid cookie session
@@ -281,10 +299,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setIsLoading(false);
     return false;
-  };
+  }, [authenticateWithBackend, account]);
 
   useEffect(() => {
-    checkConnection();
+    // Only run once on mount
+    const initialCheck = async () => {
+      await checkConnection();
+    };
+
+    initialCheck();
 
     // Set up event listeners for account changes and disconnection
     if (window.ethereum) {
@@ -294,8 +317,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       };
 
+      const disconnectHandler = () => {
+        handleDisconnect();
+      };
+
       window.ethereum.on("accountsChanged", accountsChangedHandler);
-      window.ethereum.on("disconnect", handleDisconnect);
+      window.ethereum.on("disconnect", disconnectHandler);
 
       return () => {
         if (window.ethereum) {
@@ -303,12 +330,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             "accountsChanged",
             accountsChangedHandler
           );
-          window.ethereum.removeListener("disconnect", handleDisconnect);
+          window.ethereum.removeListener("disconnect", disconnectHandler);
         }
       };
     }
   }, [
-    router,
     isConnectionLocked,
     checkConnection,
     handleAccountsChanged,
