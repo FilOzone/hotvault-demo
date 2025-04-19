@@ -1,7 +1,13 @@
 export interface EthereumProvider {
-  request: (args: { method: string; params?: any[] }) => Promise<any>;
-  on: (eventName: string, handler: (...args: any[]) => void) => void;
-  removeListener: (eventName: string, handler: (...args: any[]) => void) => void;
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on: (
+    eventName: "accountsChanged" | "disconnect",
+    handler: (accounts: string[]) => void
+  ) => void;
+  removeListener: (
+    eventName: "accountsChanged" | "disconnect",
+    handler: (accounts: string[]) => void
+  ) => void;
 }
 
 declare global {

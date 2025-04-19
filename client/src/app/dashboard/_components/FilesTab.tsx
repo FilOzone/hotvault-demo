@@ -51,12 +51,10 @@ interface FilesTabProps {
   isLoading: boolean;
 }
 
-// Define an error type that includes options
 interface DownloadError extends Error {
   options?: string[];
 }
 
-// Add animation variants for reuse
 const fadeInUp = {
   hidden: { opacity: 0, y: 10 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.2 } },
@@ -127,15 +125,13 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   // Clean up all timeouts when component unmounts
   useEffect(() => {
     return () => {
-      // Capture current ref values to avoid stale refs in cleanup
-      const currentUploadTimeout = uploadTimeoutRef.current;
-      const currentPollInterval = pollIntervalRef.current;
-
-      if (currentUploadTimeout) {
-        clearTimeout(currentUploadTimeout);
+      if (uploadTimeoutRef.current) {
+        const timeout = uploadTimeoutRef.current;
+        clearTimeout(timeout);
       }
-      if (currentPollInterval) {
-        clearInterval(currentPollInterval);
+      if (pollIntervalRef.current) {
+        const interval = pollIntervalRef.current;
+        clearInterval(interval);
       }
     };
   }, []);

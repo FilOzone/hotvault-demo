@@ -1,18 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/constants";
-
-interface EthereumProvider {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on: (
-    eventName: "accountsChanged" | "disconnect",
-    handler: (accounts: string[]) => void
-  ) => void;
-  removeListener: (
-    eventName: "accountsChanged" | "disconnect",
-    handler: (accounts: string[]) => void
-  ) => void;
-}
+import type { EthereumProvider } from "@/types/window";
 
 declare global {
   interface Window {
@@ -318,7 +307,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       };
     }
-  }, [router, isConnectionLocked]);
+  }, [
+    router,
+    isConnectionLocked,
+    checkConnection,
+    handleAccountsChanged,
+    handleDisconnect,
+  ]);
 
   const connectWallet = async () => {
     if (isConnectionLocked) {

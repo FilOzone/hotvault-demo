@@ -2,14 +2,15 @@
 
 import { Typography } from "@/components/ui/typography";
 import { motion, AnimatePresence } from "framer-motion";
-// import { TABS, type TabItem } from "@/lib/constants"; // Removed unused import
-// import { DashboardSection, DASHBOARD_SECTIONS } from "@/types/dashboard"; // Removed unused import
-// import { DashboardSection } from "@/types/dashboard"; // Removed unused import
+import { DashboardSection } from "@/types/dashboard";
+import { Dispatch, SetStateAction } from "react";
 
 interface DashboardHeaderProps {
   account: string;
+  activeTab: DashboardSection;
+  setActiveTab: Dispatch<SetStateAction<DashboardSection>>;
   isAccountMenuOpen: boolean;
-  setIsAccountMenuOpen: (isOpen: boolean) => void;
+  setIsAccountMenuOpen: Dispatch<SetStateAction<boolean>>;
   handleAccountSwitch: () => void;
   disconnectWallet: () => void;
 }
@@ -30,7 +31,6 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
           <motion.div
             className="flex items-center gap-2"
             whileHover={{ scale: 1.02 }}
@@ -58,30 +58,6 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             </Typography>
           </motion.div>
 
-          {/* Navigation - Removed as there's only one tab */}
-          {/*
-          <nav className="hidden md:flex items-center gap-6">
-            {TABS.filter((tab) => tab.id !== DASHBOARD_SECTIONS.ACTIVITY).map((tab: TabItem) => (
-              <motion.button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2
-                    ${
-                      activeTab === tab.id
-                        ? "text-blue-600 bg-blue-50"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <tab.icon />
-                {tab.label}
-              </motion.button>
-            ))}
-          </nav>
-          */}
-
-          {/* Account Menu */}
           <div className="relative">
             <motion.button
               onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
