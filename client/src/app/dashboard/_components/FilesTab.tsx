@@ -122,6 +122,11 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   // Add state for the user's proof set ID
   const [userProofSetId, setUserProofSetId] = useState<string | null>(null);
 
+  // Add state for tracking proof set creation status
+  const [proofSetStatus, setProofSetStatus] = useState<
+    "idle" | "pending" | "ready"
+  >("idle");
+
   // Clean up all timeouts when component unmounts
   useEffect(() => {
     return () => {
@@ -177,17 +182,32 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   // Add new function to fetch proofs
   const fetchProofs = async () => {
     try {
+      // If we already have a userProofSetId, no need to keep checking
+      if (userProofSetId) {
+        setProofSetStatus("ready");
+        return;
+      }
+
       const token = localStorage.getItem("jwt_token");
       if (!token) {
         setAuthError("Authentication required. Please login again.");
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/v1/pieces/proofs`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/pieces/proof-sets`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
+
+      // If we get a 500 error, it likely means proof sets are still being created
+      if (response.status === 500) {
+        console.log(
+          "[FilesTab.tsx:fetchProofs] Proof sets are being created..."
+        );
+        setProofSetStatus("pending");
+        return;
+      }
 
       if (response.status === 401) {
         setAuthError("Your session has expired. Please login again.");
@@ -195,16 +215,36 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       }
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch proofs: ${response.statusText}`);
+        console.warn(
+          `[FilesTab.tsx:fetchProofs] Failed to fetch proofs: ${response.statusText}`
+        );
+        setProofSetStatus("pending");
+        return;
       }
 
       const data = await response.json();
+
+      // Validate data structure before using it
+      if (!data || (data.pieces && !Array.isArray(data.pieces))) {
+        console.warn(
+          "[FilesTab.tsx:fetchProofs] Unexpected data format:",
+          data
+        );
+        return;
+      }
 
       // Update the pieces with proof data
       setPieces((prevPieces) =>
         prevPieces.map((piece) => {
           // Find the matching piece with proof data
-          const pieceWithProof = data.find((p: Piece) => p.id === piece.id);
+          const piecesArray = Array.isArray(data.pieces)
+            ? data.pieces
+            : Array.isArray(data)
+            ? data
+            : [];
+          const pieceWithProof = piecesArray.find(
+            (p: Piece) => p.id === piece.id
+          );
           if (pieceWithProof && pieceWithProof.proofSetDbId) {
             // Update with proof data
             return {
@@ -217,17 +257,15 @@ export const FilesTab: React.FC<FilesTabProps> = ({
         })
       );
 
+      setProofSetStatus("ready");
       console.log("[FilesTab.tsx:fetchProofs] ✅ Proofs loaded:", data);
     } catch (error) {
-      console.error(
-        "[FilesTab.tsx:fetchProofs] ❌ Error fetching proofs:",
+      // Don't show error toast to the user
+      console.warn(
+        "[FilesTab.tsx:fetchProofs] ℹ️ Error fetching proofs (might be pending creation):",
         error
       );
-      toast.error(
-        `Failed to fetch proof data: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      setProofSetStatus("pending");
     }
   };
 
@@ -254,8 +292,20 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     };
   }, [authError]);
 
+  // Add a useEffect to periodically check for proof sets if they're pending
   useEffect(() => {
-    // Create a flag to track if the component is still mounted
+    // Don't poll if we already have a proof set ID
+    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
+      const proofCheckInterval = setInterval(() => {
+        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
+        fetchProofs();
+      }, 15000); // Check every 15 seconds
+
+      return () => clearInterval(proofCheckInterval);
+    }
+  }, [proofSetStatus, pieces.length, userProofSetId]);
+
+  useEffect(() => {
     let isMounted = true;
 
     const loadData = async () => {
@@ -1498,6 +1548,26 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     );
   };
 
+  // In the render method or somewhere appropriate in the component
+  const renderProofSetStatusBanner = () => {
+    // Don't show the banner if we already have a proof set ID, even if status is pending
+    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
+      return (
+        <motion.div
+          className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-2"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="animate-spin h-4 w-4 border-2 border-blue-500 rounded-full border-t-transparent"></div>
+          <Typography variant="small">
+            Generating proof sets for your files... This may take a few minutes.
+          </Typography>
+        </motion.div>
+      );
+    }
+    return null;
+  };
+
   return (
     <motion.div
       key="files"
@@ -1546,6 +1616,8 @@ export const FilesTab: React.FC<FilesTabProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {renderProofSetStatusBanner()}
 
       {/* Upload Section */}
       <motion.div
