@@ -119,6 +119,26 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/pieces/proof-sets": {
+            "get": {
+                "description": "Get all proof sets and their pieces for the authenticated user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pieces"
+                ],
+                "summary": "Get user's proof sets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.ProofSetsResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/pieces/proofs": {
             "get": {
                 "description": "(DEPRECATED - Use /api/v1/pieces instead) Get all pieces with proof information",
@@ -642,25 +662,21 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "pendingRemoval": {
-                    "description": "Use pointer to handle null/false",
                     "type": "boolean"
                 },
                 "proofSetDbId": {
-                    "description": "Local DB FK ID",
                     "type": "integer"
                 },
                 "removalDate": {
                     "type": "string"
                 },
                 "rootId": {
-                    "description": "Service's Integer Root ID (string)",
                     "type": "string"
                 },
                 "serviceName": {
                     "type": "string"
                 },
                 "serviceProofSetId": {
-                    "description": "Service's String ID",
                     "type": "string"
                 },
                 "serviceUrl": {
@@ -674,6 +690,55 @@ const docTemplate = `{
                 },
                 "userId": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_handlers.ProofSetWithPieces": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "pieceIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "proofSetId": {
+                    "type": "string"
+                },
+                "serviceName": {
+                    "type": "string"
+                },
+                "serviceUrl": {
+                    "type": "string"
+                },
+                "transactionHash": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_handlers.ProofSetsResponse": {
+            "type": "object",
+            "properties": {
+                "pieces": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handlers.PieceResponse"
+                    }
+                },
+                "proofSets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_handlers.ProofSetWithPieces"
+                    }
                 }
             }
         },
