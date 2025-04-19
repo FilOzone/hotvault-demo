@@ -13,12 +13,15 @@ import (
 )
 
 func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
+	handlers.Initialize(db, cfg)
+
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
+		AllowOrigins:     []string{"http://localhost:3000", "https://fws-demo-app.yourdomain.com"}, // Update with your domains
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
+		MaxAge:           12 * 60 * 60,
 	}))
 
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -33,12 +36,29 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		{
 			auth.POST("/nonce", authHandler.GenerateNonce)
 			auth.POST("/verify", authHandler.VerifySignature)
+			auth.GET("/status", authHandler.CheckAuthStatus)
+			auth.POST("/logout", authHandler.Logout)
 		}
 
 		protected := v1.Group("")
 		protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
 		{
-			// Add protected routes
+			protected.POST("/upload", handlers.UploadFile)
+			protected.GET("/upload/status/:jobId", handlers.GetUploadStatus)
+			protected.GET("/download/:cid", handlers.DownloadFile)
+
+			pieces := protected.Group("/pieces")
+			{
+				pieces.GET("", handlers.GetUserPieces)
+				pieces.GET("/:id", handlers.GetPieceByID)
+				pieces.GET("/cid/:cid", handlers.GetPieceByCID)
+				pieces.GET("/proofs", handlers.GetPieceProofs)
+			}
+
+			roots := protected.Group("/roots")
+			{
+				roots.POST("/remove", handlers.RemoveRoot)
+			}
 		}
 	}
 

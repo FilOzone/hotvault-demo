@@ -10,5 +10,7 @@ func MigrateDB(db *gorm.DB) error {
 		&models.User{},
 		&models.Wallet{},
 		&models.Transaction{},
+		&models.ProofSet{},
+		&models.Piece{},
 	)
 }

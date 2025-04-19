@@ -15,7 +15,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-
 export const metadata: Metadata = {
   title: "Filecoin Web Services",
   description:
@@ -29,7 +28,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${dmSans.className} antialiased`}>
+      <body
+        className={`${dmSans.className} ${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
         <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
