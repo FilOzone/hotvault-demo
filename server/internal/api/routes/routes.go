@@ -50,6 +50,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 			pieces := protected.Group("/pieces")
 			{
 				pieces.GET("", handlers.GetUserPieces)
+				pieces.GET("/proof-sets", handlers.GetProofSets)
 				pieces.GET("/:id", handlers.GetPieceByID)
 				pieces.GET("/cid/:cid", handlers.GetPieceByCID)
 				pieces.GET("/proofs", handlers.GetPieceProofs)
