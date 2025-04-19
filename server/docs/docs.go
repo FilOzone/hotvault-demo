@@ -69,7 +69,7 @@ const docTemplate = `{
         },
         "/api/v1/pieces": {
             "get": {
-                "description": "Get all pieces uploaded by the authenticated user",
+                "description": "Get all pieces uploaded by the authenticated user, including service proof set ID",
                 "produces": [
                     "application/json"
                 ],
@@ -83,7 +83,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_fws_backend_internal_models.Piece"
+                                "$ref": "#/definitions/internal_api_handlers.PieceResponse"
                             }
                         }
                     }
@@ -114,6 +114,29 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_fws_backend_internal_models.Piece"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/pieces/proofs": {
+            "get": {
+                "description": "(DEPRECATED - Use /api/v1/pieces instead) Get all pieces with proof information",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pieces"
+                ],
+                "summary": "Get user's pieces with proof data (DEPRECATED)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_fws_backend_internal_models.Piece"
+                            }
                         }
                     }
                 }
@@ -185,17 +208,17 @@ const docTemplate = `{
         },
         "/api/v1/upload": {
             "post": {
-                "description": "Upload a file to the PDP service with piece preparation and real-time progress updates",
+                "description": "Upload a file to the PDP service with piece preparation and returns a job ID for status polling",
                 "consumes": [
                     "multipart/form-data"
                 ],
                 "produces": [
-                    "text/event-stream"
+                    "application/json"
                 ],
                 "tags": [
                     "upload"
                 ],
-                "summary": "Upload a file to PDP service with progress updates",
+                "summary": "Upload a file to PDP service",
                 "parameters": [
                     {
                         "type": "file",
@@ -210,6 +233,58 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handlers.UploadProgress"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/upload/status/{jobId}": {
+            "get": {
+                "description": "Get the status of an upload job",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "upload"
+                ],
+                "summary": "Get upload status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "jobId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.UploadProgress"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "description": "Logs out the user by clearing the JWT cookie",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Logout User",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -254,6 +329,32 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/status": {
+            "get": {
+                "description": "Checks if the user is authenticated via cookie and if their proof set is ready",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Check Authentication Status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.StatusResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/internal_api_handlers.ErrorResponse"
                         }
@@ -349,6 +450,18 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "pendingRemoval": {
+                    "type": "boolean"
+                },
+                "proofSetId": {
+                    "type": "integer"
+                },
+                "removalDate": {
+                    "type": "string"
+                },
+                "rootId": {
+                    "type": "string"
                 },
                 "serviceName": {
                     "type": "string"
@@ -513,15 +626,66 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handlers.PieceResponse": {
+            "type": "object",
+            "properties": {
+                "cid": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "filename": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "pendingRemoval": {
+                    "description": "Use pointer to handle null/false",
+                    "type": "boolean"
+                },
+                "proofSetDbId": {
+                    "description": "Local DB FK ID",
+                    "type": "integer"
+                },
+                "removalDate": {
+                    "type": "string"
+                },
+                "rootId": {
+                    "description": "Service's Integer Root ID (string)",
+                    "type": "string"
+                },
+                "serviceName": {
+                    "type": "string"
+                },
+                "serviceProofSetId": {
+                    "description": "Service's String ID",
+                    "type": "string"
+                },
+                "serviceUrl": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "userId": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handlers.RemoveRootRequest": {
             "type": "object",
             "required": [
-                "proofSetId",
-                "rootId",
-                "serviceName",
-                "serviceUrl"
+                "pieceId"
             ],
             "properties": {
+                "pieceId": {
+                    "type": "integer"
+                },
                 "proofSetId": {
                     "type": "integer"
                 },
@@ -533,6 +697,21 @@ const docTemplate = `{
                 },
                 "serviceUrl": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handlers.StatusResponse": {
+            "description": "Response containing authentication status",
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "authenticated": {
+                    "type": "boolean"
+                },
+                "proofSetReady": {
+                    "type": "boolean"
                 }
             }
         },
@@ -548,11 +727,17 @@ const docTemplate = `{
                 "filename": {
                     "type": "string"
                 },
+                "jobId": {
+                    "type": "string"
+                },
                 "message": {
                     "type": "string"
                 },
                 "progress": {
                     "type": "integer"
+                },
+                "proofSetId": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -573,6 +758,10 @@ const docTemplate = `{
                 "address": {
                     "type": "string",
                     "example": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Sign this message to authenticate with FWS: abcd1234..."
                 },
                 "signature": {
                     "type": "string",

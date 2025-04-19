@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fws/backend/config"
 	"github.com/fws/backend/internal/models"
 	"github.com/fws/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
@@ -25,9 +26,9 @@ import (
 var (
 	log logger.Logger
 	db  *gorm.DB
+	cfg *config.Config
 )
 
-// In-memory storage for upload job status
 var (
 	uploadJobs     = make(map[string]UploadProgress)
 	uploadJobsLock sync.RWMutex
@@ -37,13 +38,18 @@ func init() {
 	log = logger.NewLogger()
 }
 
-func Initialize(database *gorm.DB) {
+func Initialize(database *gorm.DB, appConfig *config.Config) {
 	if database == nil {
-		log.Error("Database connection is nil")
+		log.Error("Database connection is nil during initialization")
+		return
+	}
+	if appConfig == nil {
+		log.Error("App configuration is nil during initialization")
 		return
 	}
 	db = database
-	log.Info("Upload handler initialized with database connection")
+	cfg = appConfig
+	log.Info("Upload handler initialized with database and configuration")
 }
 
 type UploadProgress struct {
@@ -83,12 +89,19 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	pdptoolPath := "/Users/art3mis/Developer/opensource/protocol/curio/pdptool"
+	pdptoolPath := cfg.PdptoolPath
+	if pdptoolPath == "" {
+		log.Error("PDPTool path not configured in environment/config")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Server configuration error: PDPTool path missing",
+		})
+		return
+	}
 
 	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
-		log.WithField("path", pdptoolPath).Error("pdptool not found")
+		log.WithField("path", pdptoolPath).Error("pdptool not found at configured path")
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "pdptool not found",
+			"error": "pdptool executable not found at configured path",
 			"path":  pdptoolPath,
 		})
 		return
@@ -102,10 +115,8 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Generate a unique job ID
 	jobID := uuid.New().String()
 
-	// Initialize job status
 	initialStatus := UploadProgress{
 		Status:    "starting",
 		Progress:  0,
@@ -115,15 +126,12 @@ func UploadFile(c *gin.Context) {
 		JobID:     jobID,
 	}
 
-	// Store the job status
 	uploadJobsLock.Lock()
 	uploadJobs[jobID] = initialStatus
 	uploadJobsLock.Unlock()
 
-	// Start the upload process in a goroutine
 	go processUpload(jobID, file, userID.(uint), pdptoolPath)
 
-	// Return the job ID immediately
 	c.JSON(http.StatusOK, initialStatus)
 }
 
@@ -151,12 +159,20 @@ func GetUploadStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, progress)
 }
 
-// Process the file upload in a background goroutine
 func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoolPath string) {
-	serviceName := "pdp-artemis"
-	serviceURL := "https://yablu.net"
+	serviceName := cfg.ServiceName
+	serviceURL := cfg.ServiceURL
+	if serviceName == "" || serviceURL == "" {
+		log.Error("Service Name or Service URL not configured")
+		uploadJobsLock.Lock()
+		progress := uploadJobs[jobID]
+		progress.Status = "error"
+		progress.Error = "Server configuration error: Service Name/URL missing"
+		uploadJobs[jobID] = progress
+		uploadJobsLock.Unlock()
+		return
+	}
 
-	// Update job status helper function
 	updateStatus := func(progress UploadProgress) {
 		progress.JobID = jobID
 		uploadJobsLock.Lock()
@@ -164,14 +180,12 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		uploadJobsLock.Unlock()
 	}
 
-	// Keep track of the current stage and progress
 	currentStage := "starting"
 	currentProgress := 0
 	maxProgress := 100
 
-	// Estimated progress weights for different stages
-	prepareWeight := 20 // Preparation takes about 20% of the total time
-	uploadWeight := 80  // Uploading takes about 80% of the total time
+	prepareWeight := 20
+	uploadWeight := 80
 
 	if _, err := os.Stat("pdpservice.json"); os.IsNotExist(err) {
 		currentStage = "preparing"
@@ -208,7 +222,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Update progress for file save operation
 	updateStatus(UploadProgress{
 		Status:   currentStage,
 		Progress: currentProgress,
@@ -263,7 +276,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	prepareCmd.Stderr = &prepareError
 	prepareCmd.Dir = filepath.Dir(pdptoolPath)
 
-	// Simulate preparation progress updates
 	prepareDone := make(chan bool)
 	go func() {
 		prepareStartProgress := currentProgress
@@ -297,7 +309,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	}
 
 	close(prepareDone)
-	// Ensure we've updated to the right progress after prepare is done
 	currentProgress = prepareWeight + 10
 	currentStage = "uploading"
 
@@ -310,39 +321,21 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	uploadCmd := exec.Command(
 		pdptoolPath,
 		"upload-file",
-		"--service-url", serviceURL,
-		"--service-name", serviceName,
+		"--service-url", cfg.ServiceURL,
+		"--service-name", cfg.ServiceName,
 		tempFilePath,
 	)
 
-	// craete new proof set for a new user
-	// must have min  fo 10usdfccurrentProgressthen allowance of 10
-	// then deposit 10usdfc in payments contract
-	// create a new proof set for user
-	// add the root to the proof set
-	// remove the root from the proof set after add-root
-
-	// TODO: call add-root after upload-file
-	// TODO: create a new proof set
-	// TODO: remove the root from the proof set after add-root
-
-	//
-
-	// abi encode the struct and the convert it to hex
-
-	// Capture stdout and stderr from the command
 	var uploadOutput bytes.Buffer
 	var uploadError bytes.Buffer
 	uploadCmd.Stdout = &uploadOutput
 	uploadCmd.Stderr = &uploadError
 
-	// Log the start of the upload command
 	log.WithField("filename", file.Filename).
 		WithField("size", file.Size).
 		WithField("service", serviceName).
 		Info("Started pdptool upload command")
 
-	// Start the upload command
 	if err := uploadCmd.Start(); err != nil {
 		updateStatus(UploadProgress{
 			Status:  "error",
@@ -352,12 +345,11 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		return
 	}
 
-	// Periodically update progress while the command runs
 	done := make(chan bool)
 	go func() {
 		uploadStartProgress := currentProgress
 		uploadStartTime := time.Now()
-		estimatedUploadTime := time.Duration(file.Size/1024/10) * time.Millisecond // rough estimate
+		estimatedUploadTime := time.Duration(file.Size/1024/10) * time.Millisecond
 		if estimatedUploadTime < 5*time.Second {
 			estimatedUploadTime = 5 * time.Second
 		}
@@ -370,10 +362,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			case <-done:
 				return
 			case <-ticker.C:
-				// Calculate progress based on elapsed time
 				elapsedRatio := float64(time.Since(uploadStartTime)) / float64(estimatedUploadTime)
 				if elapsedRatio > 1.0 {
-					elapsedRatio = 0.95 // Cap at 95% if taking longer than expected
+					elapsedRatio = 0.95
 				}
 
 				estimatedProgress := uploadStartProgress + int(float64(uploadWeight)*elapsedRatio)
@@ -389,7 +380,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		}
 	}()
 
-	// Wait for the command to complete
 	err = uploadCmd.Wait()
 	close(done)
 
@@ -403,29 +393,25 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		return
 	}
 
-	// Process the output to find the CID
 	outputStr := uploadOutput.String()
 	outputLines := strings.Split(outputStr, "\n")
 
-	// Search for a CID in the output
-	// Expecting format: baga...CID1:baga...CID2
-	cidRegex := regexp.MustCompile(`^(baga[a-zA-Z0-9]+)(?::(baga[a-zA-Z0-9]+))?$`) // Regex to capture base and optionally subroot CID
+	cidRegex := regexp.MustCompile(`^(baga[a-zA-Z0-9]+)(?::(baga[a-zA-Z0-9]+))?$`)
 	var compoundCID string
 	var baseCID string
-	var subrootCID string // Might be the same as baseCID
+	var subrootCID string
 
-	// Check all output lines for a CID, starting from the last line
 	for i := len(outputLines) - 1; i >= 0; i-- {
 		trimmedLine := strings.TrimSpace(outputLines[i])
 		if cidRegex.MatchString(trimmedLine) {
 			matches := cidRegex.FindStringSubmatch(trimmedLine)
 			if len(matches) > 1 {
-				compoundCID = matches[0] // Full matched string
-				baseCID = matches[1]     // First capturing group
+				compoundCID = matches[0]
+				baseCID = matches[1]
 				if len(matches) > 2 && matches[2] != "" {
-					subrootCID = matches[2] // Second optional capturing group
+					subrootCID = matches[2]
 				} else {
-					subrootCID = baseCID // If no subroot CID, it's the same as base
+					subrootCID = baseCID
 				}
 				log.WithField("compoundCID", compoundCID).WithField("baseCID", baseCID).WithField("subrootCID", subrootCID).Info("Found and parsed CID in output lines")
 				break
@@ -433,7 +419,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		}
 	}
 
-	// If no CID found via regex, use fallback (less reliable)
 	if compoundCID == "" {
 		var lastNonEmpty string
 		for i := len(outputLines) - 1; i >= 0; i-- {
@@ -447,13 +432,12 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		if lastNonEmpty != "" {
 			log.WithField("lastLine", lastNonEmpty).Warning("Using last non-empty output line as CID (fallback, parsing may fail)")
 			compoundCID = lastNonEmpty
-			// Attempt to parse base CID from fallback
 			if idx := strings.Index(compoundCID, ":"); idx != -1 {
 				baseCID = compoundCID[:idx]
 			} else {
-				baseCID = compoundCID // Assume it's just the base CID
+				baseCID = compoundCID
 			}
-			subrootCID = baseCID // Fallback assumption
+			subrootCID = baseCID
 		} else {
 			log.Error("Upload completed but failed to extract CID from pdptool output.")
 			updateStatus(UploadProgress{
@@ -465,12 +449,10 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		}
 	}
 
-	// --- Log Extracted CIDs BEFORE Add Root ---
 	log.WithField("uploadOutputCID", compoundCID).
 		WithField("parsedBaseCID", baseCID).
 		WithField("parsedSubrootCID", subrootCID).
 		Info("CIDs extracted from upload-file output, before calling add-roots")
-	// ----------------------------------------
 
 	log.WithField("filename", file.Filename).
 		WithField("size", file.Size).
@@ -479,28 +461,23 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("compoundCID", compoundCID).
 		Info("File uploaded successfully, proceeding to add root")
 
-	// --- Add Root to Proof Set ---
-	currentProgress = 95 // Update progress before starting add-root
+	currentProgress = 95
 	currentStage = "adding_root"
 	updateStatus(UploadProgress{
 		Status:   currentStage,
 		Progress: currentProgress,
 		Message:  "Locating user proof set...",
-		CID:      compoundCID, // Show the full CID in status
+		CID:      compoundCID,
 	})
 
-	// --- Introduce Delay --- // Increase delay for service consistency
 	preAddRootDelay := 5 * time.Second
 	log.Info(fmt.Sprintf("Waiting %v before adding root to allow service registration...", preAddRootDelay))
 	time.Sleep(preAddRootDelay)
-	// ---------------------
 
-	// 1. Get the user's existing proof set from the database
 	var proofSet models.ProofSet
 	if err := db.Where("user_id = ?", userID).First(&proofSet).Error; err != nil {
 		errMsg := "Failed to query proof set for user."
 		if err == gorm.ErrRecordNotFound {
-			// This should ideally not happen if auth flow ensures proof set exists
 			errMsg = "Proof set not found for user. Please re-authenticate."
 			log.WithField("userID", userID).Error(errMsg)
 		} else {
@@ -515,19 +492,17 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		return
 	}
 
-	// Ensure the Service's ProofSetID string is populated
 	if proofSet.ProofSetID == "" {
-		// This might happen if the background creation is still polling
 		errMsg := "Proof set creation is still pending. Please wait."
-		log.WithField("userID", userID).WithField("dbProofSetID", proofSet.ID).Warning(errMsg) // Warn level
+		log.WithField("userID", userID).WithField("dbProofSetID", proofSet.ID).Warning(errMsg)
 		updateStatus(UploadProgress{
-			Status:     "pending", // Use a non-error status like 'pending' or 'waiting'
-			Error:      errMsg,    // Keep the error message for info
+			Status:     "pending",
+			Error:      errMsg,
 			Message:    "The proof set is being initialized. Please try uploading again shortly.",
 			CID:        compoundCID,
-			ProofSetID: proofSet.ProofSetID, // May be empty
+			ProofSetID: proofSet.ProofSetID,
 		})
-		return // Don't proceed until proof set ID is available
+		return
 	}
 
 	log.WithField("userID", userID).WithField("serviceProofSetID", proofSet.ProofSetID).Info("Found ready proof set for user, proceeding to add root")
@@ -537,21 +512,19 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Progress:   currentProgress,
 		Message:    fmt.Sprintf("Adding root to proof set %s...", proofSet.ProofSetID),
 		CID:        compoundCID,
-		ProofSetID: proofSet.ProofSetID, // Service's string ID
+		ProofSetID: proofSet.ProofSetID,
 	})
 
-	// 2. Add the root using the SERVICE's ProofSetID string and the COMPOUND CID
-	rootArgument := compoundCID // Use the full compound CID from upload-file output
+	rootArgument := compoundCID
 	addRootsArgs := []string{
 		"add-roots",
-		"--service-url", serviceURL,
-		"--service-name", serviceName,
-		"--proof-set-id", proofSet.ProofSetID, // Use the SERVICE's string ID
+		"--service-url", cfg.ServiceURL,
+		"--service-name", cfg.ServiceName,
+		"--proof-set-id", proofSet.ProofSetID,
 		"--root", rootArgument,
 	}
 	addRootCmd := exec.Command(pdptoolPath, addRootsArgs...)
 
-	// --- Diagnostics Start ---
 	cmdDir := filepath.Dir(pdptoolPath)
 	secretPath := filepath.Join(cmdDir, "pdpservice.json")
 	log.WithField("expectedCmdDir", cmdDir).Info("Checking command working directory")
@@ -563,7 +536,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	} else {
 		log.WithField("error", errStat.Error()).Error("Error checking for pdpservice.json")
 	}
-	// --- Diagnostics End ---
 
 	log.WithField("command", pdptoolPath).WithField("args", strings.Join(addRootsArgs, " ")).Info("Executing add-roots command")
 
@@ -585,14 +557,13 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		updateStatus(UploadProgress{
 			Status:     "error",
 			Error:      "Failed to add root to proof set",
-			Message:    stderrStr, // Use stderr for more specific error from the tool
+			Message:    stderrStr,
 			CID:        compoundCID,
 			ProofSetID: proofSet.ProofSetID,
 		})
 		return
 	}
 
-	// Log stderr even on success, in case of warnings
 	addRootStderrStrOnSuccess := addRootError.String()
 	if addRootStderrStrOnSuccess != "" {
 		log.WithField("stderr", addRootStderrStrOnSuccess).Warning("add-roots command succeeded but produced output on stderr")
@@ -604,8 +575,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("stdout", addRootStdoutStr).
 		Info("add-roots command completed successfully")
 
-	// --- Find the Integer Root ID assigned by the service (with Polling) --- //
-	currentProgress = 96 // Allocate some progress for getting the ID
+	currentProgress = 96
 	currentStage = "finalizing"
 	updateStatus(UploadProgress{
 		Status:     currentStage,
@@ -615,9 +585,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		ProofSetID: proofSet.ProofSetID,
 	})
 
-	var extractedIntegerRootID string // Will store the integer ID string if found
+	var extractedIntegerRootID string
 	pollInterval := 3 * time.Second
-	maxPollAttempts := 100 // Increased to 100 attempts (~ 5 minutes timeout)
+	maxPollAttempts := 100
 	pollAttempt := 0
 	foundRootInPoll := false
 
@@ -625,12 +595,11 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		pollAttempt++
 		log.Info(fmt.Sprintf("Polling get-proof-set attempt %d/%d...", pollAttempt, maxPollAttempts))
 
-		// 3. Call get-proof-set to find the integer ID for the added root
 		getProofSetArgs := []string{
 			"get-proof-set",
-			"--service-url", serviceURL,
-			"--service-name", serviceName,
-			proofSet.ProofSetID, // Use the Service's ID string as the last argument
+			"--service-url", cfg.ServiceURL,
+			"--service-name", cfg.ServiceName,
+			proofSet.ProofSetID,
 		}
 		getProofSetCmd := exec.Command(pdptoolPath, getProofSetArgs...)
 		getProofSetCmd.Dir = filepath.Dir(pdptoolPath)
@@ -647,74 +616,61 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			log.WithField("error", err.Error()).
 				WithField("stderr", stderrStr).
 				Warning(fmt.Sprintf("pdptool get-proof-set command failed during poll attempt %d. Retrying after %v...", pollAttempt, pollInterval))
-			time.Sleep(pollInterval) // Wait before retrying command
-			continue                 // Go to next poll attempt
+			time.Sleep(pollInterval)
+			continue
 		}
 
-		// Parse the output to find the integer Root ID associated with the BASE CID
 		getProofSetOutput := getProofSetStdout.String()
 		log.WithField("output", getProofSetOutput).Debug(fmt.Sprintf("get-proof-set poll attempt %d output received", pollAttempt))
 
 		lines := strings.Split(getProofSetOutput, "\n")
-		var lastSeenRootID string // Store the most recently encountered integer Root ID line
+		var lastSeenRootID string
 		foundMatchThisAttempt := false
 
 		for _, line := range lines {
 			trimmedLine := strings.TrimSpace(line)
 			if trimmedLine == "" {
-				continue // Skip empty lines
+				continue
 			}
 
-			// --- Flexible Root ID Parsing ---
 			if idx := strings.Index(trimmedLine, "Root ID:"); idx != -1 {
-				// Extract text after "Root ID:"
 				potentialIDValue := strings.TrimSpace(trimmedLine[idx+len("Root ID:"):])
 				log.Debug(fmt.Sprintf("[Parsing] Found line containing 'Root ID:', potential value: '%s'", potentialIDValue))
-				// Check if it's an integer
 				if _, err := strconv.Atoi(potentialIDValue); err == nil {
 					lastSeenRootID = potentialIDValue
 					log.Debug(fmt.Sprintf("[Parsing] Captured integer Root ID: %s", lastSeenRootID))
 				} else {
-					// Reset if value after colon wasn't an integer
 					lastSeenRootID = ""
 					log.Debug(fmt.Sprintf("[Parsing] Found 'Root ID:' but value '%s' is not integer, resetting lastSeenRootID", potentialIDValue))
 				}
-				// Don't 'continue' here, process the same line for CID check below just in case
 			}
 
-			// --- Flexible Root CID Parsing ---
 			if idx := strings.Index(trimmedLine, "Root CID:"); idx != -1 {
-				// Extract text after "Root CID:"
 				outputCID := strings.TrimSpace(trimmedLine[idx+len("Root CID:"):])
 				log.Debug(fmt.Sprintf("[Parsing] Found line containing 'Root CID:', value: '%s'", outputCID))
-				// Check if it matches the target base CID
 				if outputCID == baseCID {
 					log.Debug(fmt.Sprintf("[Parsing] CID '%s' matches baseCID '%s'. Checking lastSeenRootID ('%s')...", outputCID, baseCID, lastSeenRootID))
-					// If it matches, check if we captured a Root ID just before
 					if lastSeenRootID != "" {
 						extractedIntegerRootID = lastSeenRootID
 						log.WithField("integerRootID", extractedIntegerRootID).WithField("matchedBaseCID", baseCID).Info(fmt.Sprintf("Successfully matched base CID and found associated integer Root ID on poll attempt %d", pollAttempt))
 						foundMatchThisAttempt = true
-						break // Found the match, exit inner loop (over lines)
+						break
 					} else {
-						// Log if CID matches but we haven't seen a valid Root ID recently
 						log.WithField("matchedBaseCID", baseCID).Warning(fmt.Sprintf("Matched base CID on poll attempt %d but no preceding integer Root ID was captured (lastSeenRootID was empty)", pollAttempt))
 					}
 				}
 			}
-		} // End inner loop (over lines)
+		}
 
 		if foundMatchThisAttempt {
 			foundRootInPoll = true
-			break // Exit polling loop successfully
+			break
 		}
 
-		// If not found yet, wait before the next poll attempt
 		log.Debug(fmt.Sprintf("Root CID %s not found in get-proof-set output on attempt %d. Waiting %v...", baseCID, pollAttempt, pollInterval))
 		time.Sleep(pollInterval)
-	} // End polling loop
+	}
 
-	// Check if polling succeeded
 	if !foundRootInPoll {
 		log.WithField("baseCID", baseCID).
 			WithField("proofSetID", proofSet.ProofSetID).
@@ -728,15 +684,14 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			CID:        compoundCID,
 			ProofSetID: proofSet.ProofSetID,
 		})
-		return // Stop processing
+		return
 	}
 
-	// --- Save Piece Info --- //
-	currentProgress = 98                   // Progress before DB write
-	rootIDToSave := extractedIntegerRootID // Use the parsed integer ID string
+	currentProgress = 98
+	rootIDToSave := extractedIntegerRootID
 
 	updateStatus(UploadProgress{
-		Status:     currentStage, // Still finalizing
+		Status:     currentStage,
 		Progress:   currentProgress,
 		Message:    "Saving piece information to database...",
 		CID:        compoundCID,
@@ -745,13 +700,13 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	piece := &models.Piece{
 		UserID:      userID,
-		CID:         compoundCID, // Store the original full compound CID from upload
+		CID:         compoundCID,
 		Filename:    file.Filename,
 		Size:        file.Size,
-		ServiceName: serviceName,
-		ServiceURL:  serviceURL,
-		ProofSetID:  &proofSet.ID,  // Link to the local DB ProofSet record's uint ID
-		RootID:      &rootIDToSave, // Store the extracted INTEGER Root ID string
+		ServiceName: cfg.ServiceName,
+		ServiceURL:  cfg.ServiceURL,
+		ProofSetID:  &proofSet.ID,
+		RootID:      &rootIDToSave,
 	}
 
 	if result := db.Create(piece); result.Error != nil {
@@ -770,17 +725,15 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	currentProgress = 100
 
-	// Final completion update
 	updateStatus(UploadProgress{
 		Status:     "complete",
 		Progress:   currentProgress,
 		Message:    "Upload completed successfully",
 		CID:        compoundCID,
 		Filename:   file.Filename,
-		ProofSetID: proofSet.ProofSetID, // Service's string ID
+		ProofSetID: proofSet.ProofSetID,
 	})
 
-	// Keep the job status for 1 hour then clean it up
 	go func() {
 		time.Sleep(1 * time.Hour)
 		uploadJobsLock.Lock()

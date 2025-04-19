@@ -42,16 +42,19 @@ type EthereumConfig struct {
 	ContractAddress string
 }
 
+// LoadConfig loads configuration from environment variables.
+// It returns a pointer to the Config struct.
 func LoadConfig() *Config {
 	expirationStr := os.Getenv("JWT_EXPIRATION")
 	expiration, err := time.ParseDuration(expirationStr)
 	if err != nil {
-		expiration = 24 * time.Hour
+		expiration = 24 * time.Hour // Default expiration if parsing fails or env var is missing
 	}
 
-	chainID, err := strconv.ParseInt(os.Getenv("ETH_CHAIN_ID"), 10, 64)
+	chainIDStr := os.Getenv("CHAIN_ID")
+	chainID, err := strconv.ParseInt(chainIDStr, 10, 64)
 	if err != nil {
-		chainID = 1
+		chainID = 1 // Default Chain ID if parsing fails or env var is missing
 	}
 
 	return &Config{
@@ -65,14 +68,14 @@ func LoadConfig() *Config {
 			User:     os.Getenv("DB_USER"),
 			Password: os.Getenv("DB_PASSWORD"),
 			DBName:   os.Getenv("DB_NAME"),
-			SSLMode:  os.Getenv("DB_SSLMODE"),
+			SSLMode:  os.Getenv("DB_SSL_MODE"),
 		},
 		JWT: JWTConfig{
 			Secret:     os.Getenv("JWT_SECRET"),
 			Expiration: expiration,
 		},
 		Ethereum: EthereumConfig{
-			RPCURL:          os.Getenv("ETH_RPC_URL"),
+			RPCURL:          os.Getenv("RPC_URL"),
 			ChainID:         chainID,
 			ContractAddress: os.Getenv("CONTRACT_ADDRESS"),
 		},

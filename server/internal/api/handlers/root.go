@@ -53,7 +53,7 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	var request RemoveRootRequest // Request might still be useful for explicit overrides, but we prioritize DB data
+	var request RemoveRootRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid request: " + err.Error(),
@@ -61,7 +61,6 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// Get user ID from context (set by JWT middleware)
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -70,9 +69,7 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// 1. Retrieve the piece from the database, ensuring it belongs to the user
 	var piece models.Piece
-	// Fetch Piece first
 	if err := db.Where("id = ? AND user_id = ?", request.PieceID, userID).First(&piece).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -87,7 +84,6 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// 2. Validate required data from the fetched piece
 	if piece.ProofSetID == nil {
 		log.WithField("pieceID", piece.ID).Error("Piece is missing associated ProofSetID")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -104,7 +100,6 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// 3. Fetch the associated ProofSet record using the piece.ProofSetID
 	var proofSet models.ProofSet
 	if err := db.Where("id = ? AND user_id = ?", *piece.ProofSetID, userID).First(&proofSet).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -121,7 +116,6 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// Validate the fetched ProofSet record has the Service ID
 	if proofSet.ProofSetID == "" {
 		log.WithField("pieceID", piece.ID).WithField("proofSetDbId", proofSet.ID).Error("Fetched proof set record is missing the service ProofSetID string")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -130,13 +124,11 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// 4. Consolidate data for the command
 	serviceURL := piece.ServiceURL
 	serviceName := piece.ServiceName
-	serviceProofSetIDStr := proofSet.ProofSetID // Service's String ID from the proof_sets table
-	storedIntegerRootIDStr := *piece.RootID     // Stored Integer Root ID string from the pieces table
+	serviceProofSetIDStr := proofSet.ProofSetID
+	storedIntegerRootIDStr := *piece.RootID
 
-	// Optional: Allow overrides from request if provided (use with caution)
 	if request.ServiceURL != "" {
 		serviceURL = request.ServiceURL
 		log.WithField("pieceID", piece.ID).Info("Overriding Service URL from request")
@@ -145,9 +137,7 @@ func RemoveRoot(c *gin.Context) {
 		serviceName = request.ServiceName
 		log.WithField("pieceID", piece.ID).Info("Overriding Service Name from request")
 	}
-	// Do NOT allow overriding ProofSetID or RootID from request, use the DB values.
 
-	// Basic validation: Check if stored Root ID looks like an integer string
 	if _, err := strconv.Atoi(storedIntegerRootIDStr); err != nil {
 		log.WithField("pieceID", piece.ID).WithField("storedRootID", storedIntegerRootIDStr).Error("Stored Root ID in piece record is not a valid integer string")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -161,17 +151,24 @@ func RemoveRoot(c *gin.Context) {
 		WithField("integerRootID", storedIntegerRootIDStr).
 		Info("Proceeding with root removal using stored data")
 
-	pdptoolPath := "/Users/art3mis/Developer/opensource/protocol/curio/pdptool" // TODO: Configurable
-	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
-		log.WithField("path", pdptoolPath).Error("pdptool not found")
+	pdptoolPath := cfg.PdptoolPath
+	if pdptoolPath == "" {
+		log.Error("PDPTool path not configured in environment/config")
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "pdptool not found",
+			"error": "Server configuration error: PDPTool path missing",
+		})
+		return
+	}
+
+	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
+		log.WithField("path", pdptoolPath).Error("pdptool not found at configured path")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "pdptool executable not found at configured path",
 			"path":  pdptoolPath,
 		})
 		return
 	}
 
-	// Validate that we have the service URL and name
 	if serviceURL == "" || serviceName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Service URL and Service Name are required but missing from piece/proofset data",
@@ -179,15 +176,12 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// REMOVED: Call to get-proof-set before removal (no longer needed)
-
-	// 5. Execute remove-roots using the Service's ProofSetID string and the stored integer Root ID string
 	removeArgs := []string{
 		"remove-roots",
 		"--service-url", serviceURL,
 		"--service-name", serviceName,
-		"--proof-set-id", serviceProofSetIDStr, // Use the Service's ID string
-		"--root-id", storedIntegerRootIDStr, // Use the stored integer Root ID string
+		"--proof-set-id", serviceProofSetIDStr,
+		"--root-id", storedIntegerRootIDStr,
 	}
 	removeCmd := exec.Command(pdptoolPath, removeArgs...)
 	removeCmd.Dir = filepath.Dir(pdptoolPath)
@@ -197,7 +191,6 @@ func RemoveRoot(c *gin.Context) {
 	removeCmd.Stdout = &stdout
 	removeCmd.Stderr = &stderr
 
-	// Log the exact command being executed
 	cmdStr := removeCmd.String()
 	log.WithField("command", cmdStr).Info("Executing remove-roots command")
 
@@ -220,14 +213,10 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
-	// Command executed successfully
 	log.WithField("output", stdout.String()).Info("pdptool remove-roots executed successfully")
 
-	// 6. Delete the piece from the database immediately
 	if err := db.Delete(&piece).Error; err != nil {
 		log.WithField("pieceID", piece.ID).WithField("error", err.Error()).Error("Failed to delete piece from database after successful root removal")
-		// Don't fail the request, but maybe return a warning in the response?
-		// The root was removed from the service, but the DB record remains. This might need manual cleanup.
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Root removal command succeeded, but failed to delete piece record from DB",
 			"output":  stdout.String(),

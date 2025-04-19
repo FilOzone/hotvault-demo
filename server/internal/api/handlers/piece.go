@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"net/http"
-	"time" // Import time for the response struct
+	"time"
 
 	"github.com/fws/backend/internal/models"
 	"github.com/gin-gonic/gin"
@@ -45,7 +45,6 @@ func GetUserPieces(c *gin.Context) {
 	}
 
 	var pieces []models.Piece
-	// Fetch pieces first
 	if err := db.Where("user_id = ?", userID).Order("created_at DESC").Find(&pieces).Error; err != nil {
 		log.WithField("error", err.Error()).Error("Failed to fetch user pieces")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -55,7 +54,6 @@ func GetUserPieces(c *gin.Context) {
 		return
 	}
 
-	// Fetch associated ProofSet records efficiently
 	proofSetIDs := make([]uint, 0, len(pieces))
 	for _, piece := range pieces {
 		if piece.ProofSetID != nil {
@@ -67,7 +65,6 @@ func GetUserPieces(c *gin.Context) {
 	if len(proofSetIDs) > 0 {
 		var proofSets []models.ProofSet
 		if err := db.Where("id IN ?", proofSetIDs).Find(&proofSets).Error; err != nil {
-			// Log error but continue, pieces will just lack serviceProofSetId
 			log.WithField("error", err.Error()).Error("Failed to fetch associated proof sets for pieces")
 		} else {
 			for _, ps := range proofSets {
@@ -76,16 +73,13 @@ func GetUserPieces(c *gin.Context) {
 		}
 	}
 
-	// Transform pieces into the response format
 	responsePieces := make([]PieceResponse, 0, len(pieces))
 	for _, piece := range pieces {
-		// Need to take address of piece.PendingRemoval if models.Piece.PendingRemoval is bool
 		var pendingRemovalPtr *bool
-		if piece.PendingRemoval { // Assuming piece.PendingRemoval is bool
+		if piece.PendingRemoval {
 			tempVal := true
 			pendingRemovalPtr = &tempVal
 		}
-		// If model uses *bool, just assign directly: pendingRemovalPtr = piece.PendingRemoval
 
 		respPiece := PieceResponse{
 			ID:             piece.ID,
@@ -95,18 +89,16 @@ func GetUserPieces(c *gin.Context) {
 			Size:           piece.Size,
 			ServiceName:    piece.ServiceName,
 			ServiceURL:     piece.ServiceURL,
-			PendingRemoval: pendingRemovalPtr, // Use the pointer
+			PendingRemoval: pendingRemovalPtr,
 			RemovalDate:    piece.RemovalDate,
-			ProofSetDbID:   piece.ProofSetID, // Local DB ID
-			RootID:         piece.RootID,     // Service Root ID
+			ProofSetDbID:   piece.ProofSetID,
+			RootID:         piece.RootID,
 			CreatedAt:      piece.CreatedAt,
 			UpdatedAt:      piece.UpdatedAt,
 		}
-		// Add the Service Proof Set ID if the associated ProofSet was found
 		if piece.ProofSetID != nil {
 			if proofSet, ok := proofSetMap[*piece.ProofSetID]; ok {
-				if proofSet.ProofSetID != "" { // Check if the service ID string is actually populated
-					// Use a temporary variable to take the address
+				if proofSet.ProofSetID != "" {
 					serviceID := proofSet.ProofSetID
 					respPiece.ServiceProofSetID = &serviceID
 				}
@@ -195,7 +187,6 @@ func GetPieceByCID(c *gin.Context) {
 }
 
 // GetPieceProofs returns all pieces with proof information for the authenticated user
-// DEPRECATED - GetUserPieces now returns the necessary info
 // @Summary Get user's pieces with proof data (DEPRECATED)
 // @Description (DEPRECATED - Use /api/v1/pieces instead) Get all pieces with proof information
 // @Tags pieces
@@ -203,38 +194,9 @@ func GetPieceByCID(c *gin.Context) {
 // @Success 200 {array} models.Piece
 // @Router /api/v1/pieces/proofs [get]
 func GetPieceProofs(c *gin.Context) {
-	// Redirect or inform client this endpoint is deprecated
 	log.Warning("Deprecated endpoint /api/v1/pieces/proofs called. Use /api/v1/pieces.")
 	c.JSON(http.StatusGone, gin.H{
 		"error":   "Endpoint deprecated",
 		"message": "Please use the /api/v1/pieces endpoint instead.",
 	})
-	/* // Old logic - removed
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "User ID not found in token",
-		})
-		return
-	}
-
-	var pieces []models.Piece
-	// Fetch pieces. The relevant ProofSetID (local DB uint) and RootID (service integer string)
-	// should already be stored in the piece record itself.
-	if err := db.Where("user_id = ?", userID).Find(&pieces).Error; err != nil {
-		log.WithField("error", err.Error()).Error("Failed to fetch user pieces for proof data")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to fetch piece proofs",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	log.WithField("pieceCount", len(pieces)).Info("Fetched pieces with stored proof data")
-
-	// No further processing needed here, the required fields (ProofSetID, RootID)
-	// are part of the models.Piece struct and fetched directly from the DB.
-
-	c.JSON(http.StatusOK, pieces)
-	*/
 }

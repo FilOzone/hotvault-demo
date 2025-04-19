@@ -47,17 +47,14 @@ func DownloadFile(c *gin.Context) {
 		return
 	}
 
-	// Check if we should use IPFS gateway instead of pdptool
 	useGateway := c.Query("gateway") == "true"
 
 	if useGateway {
-		// Extract the first part of the CID if it contains a colon
 		ipfsCid := cid
 		if parts := strings.Split(cid, ":"); len(parts) > 0 {
 			ipfsCid = parts[0]
 		}
 
-		// Redirect to IPFS gateway
 		gatewayURL := fmt.Sprintf("https://ipfs.io/ipfs/%s", ipfsCid)
 		log.WithField("url", gatewayURL).Info("Redirecting to IPFS gateway")
 
@@ -66,50 +63,32 @@ func DownloadFile(c *gin.Context) {
 		return
 	}
 
-	pdptoolPath := "/Users/art3mis/Developer/opensource/protocol/curio/pdptool"
-	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
-		log.WithField("path", pdptoolPath).Error("pdptool not found")
-
-		// Send a more helpful error message with options
+	pdptoolPath := cfg.PdptoolPath
+	if pdptoolPath == "" {
+		log.Error("PDPTool path not configured in environment/config")
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "pdptool not found",
+			"error": "Server configuration error: PDPTool path missing",
+		})
+		return
+	}
+
+	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
+		log.WithField("path", pdptoolPath).Error("pdptool not found at configured path")
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "pdptool executable not found at configured path",
 			"path":  pdptoolPath,
 			"options": []string{
 				"Use '?gateway=true' parameter to download directly from IPFS gateway",
-				"Install pdptool at the expected path",
+				"Ensure PDPTOOL_PATH environment variable is set correctly",
 				"Contact administrator",
 			},
 		})
 		return
 	}
 
-	// Use relative path fallback if absolute path doesn't exist
-	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
-		// Try looking for pdptool in the local directory
-		pdptoolPath = "./pdptool"
-		if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
-			// Try looking in the PATH
-			path, err := exec.LookPath("pdptool")
-			if err != nil {
-				log.WithField("error", err.Error()).Error("Failed to find pdptool in PATH")
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Could not find pdptool executable",
-					"options": []string{
-						"Use '?gateway=true' parameter to download directly from IPFS gateway",
-						"Install pdptool in your PATH",
-						"Contact administrator",
-					},
-				})
-				return
-			}
-			pdptoolPath = path
-		}
-	}
-
 	log.WithField("path", pdptoolPath).Info("Using pdptool at path")
 
-	// Try to simplify CID if it contains a colon
-	// pdptool might expect just the first part of the CID
 	processCid := cid
 	if parts := strings.Split(cid, ":"); len(parts) > 0 {
 		processCid = parts[0]
@@ -124,7 +103,6 @@ func DownloadFile(c *gin.Context) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Write the processed CID to the chunk file
 	chunkFile := filepath.Join(tempDir, "chunks.txt")
 	if err := os.WriteFile(chunkFile, []byte(processCid), 0644); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -141,6 +119,7 @@ func DownloadFile(c *gin.Context) {
 		"--chunk-file", chunkFile,
 		"--output-file", outputFile,
 	)
+
 	downloadCmd.Dir = filepath.Dir(pdptoolPath)
 
 	var errOutput bytes.Buffer
@@ -150,8 +129,6 @@ func DownloadFile(c *gin.Context) {
 		errorMsg := fmt.Sprintf("Failed to download file: %v", err)
 		log.WithField("error", err.Error()).WithField("stderr", errOutput.String()).Error(errorMsg)
 
-		// If pdptool fails with status 400, it might be an issue with the CID format
-		// Suggest using the IPFS gateway instead
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   errorMsg,
 			"details": err.Error(),
