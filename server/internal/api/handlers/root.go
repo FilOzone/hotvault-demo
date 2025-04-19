@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/fws/backend/internal/models"
 	"github.com/gin-gonic/gin"
@@ -224,32 +223,23 @@ func RemoveRoot(c *gin.Context) {
 	// Command executed successfully
 	log.WithField("output", stdout.String()).Info("pdptool remove-roots executed successfully")
 
-	// 6. Mark the piece as pending removal in the database
-	pendingRemovalStatus := true // Explicitly set to true
-	removalDate := time.Now().Add(24 * time.Hour)
-
-	// Update specific fields to mark for removal
-	// Use map[string]interface{} for Updates to handle zero values correctly if needed,
-	// or ensure the model uses pointers for fields that should be updatable to zero/false.
-	// Assuming PendingRemoval is bool and RemovalDate is *time.Time in the model:
-	if err := db.Model(&piece).Updates(map[string]interface{}{
-		"pending_removal": pendingRemovalStatus, // Use column name from DB tag
-		"removal_date":    &removalDate,
-	}).Error; err != nil {
-		log.WithField("pieceID", piece.ID).WithField("error", err.Error()).Error("Failed to mark piece as pending removal in database")
+	// 6. Delete the piece from the database immediately
+	if err := db.Delete(&piece).Error; err != nil {
+		log.WithField("pieceID", piece.ID).WithField("error", err.Error()).Error("Failed to delete piece from database after successful root removal")
 		// Don't fail the request, but maybe return a warning in the response?
+		// The root was removed from the service, but the DB record remains. This might need manual cleanup.
 		c.JSON(http.StatusOK, gin.H{
-			"message": "Root removal command succeeded, but failed to mark piece for removal in DB",
+			"message": "Root removal command succeeded, but failed to delete piece record from DB",
 			"output":  stdout.String(),
 			"dbError": err.Error(),
 		})
 		return
 	}
 
-	log.WithField("pieceID", piece.ID).Info("Piece successfully marked for removal")
+	log.WithField("pieceID", piece.ID).Info("Piece successfully deleted from database")
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Root removal initiated successfully and piece marked for removal",
+		"message": "Root removed successfully and piece deleted",
 		"output":  stdout.String(),
 	})
 }

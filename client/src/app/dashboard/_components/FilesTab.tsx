@@ -1051,21 +1051,11 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       const result = await response.json();
       console.log("[FilesTab.tsx:submitRemoveRoot] Success:", result);
 
-      toast.success("Root removal scheduled - will be removed in 24 hours");
+      toast.success("Root removed and file deleted successfully");
 
-      // Update the local state to mark the piece as pending removal
-      setPieces(
-        pieces.map((p) =>
-          p.id === pieceToRemove.id
-            ? {
-                ...p,
-                pendingRemoval: true,
-                removalDate: new Date(
-                  Date.now() + 24 * 60 * 60 * 1000
-                ).toISOString(),
-              }
-            : p
-        )
+      // Update the local state to remove the piece immediately
+      setPieces((prevPieces) =>
+        prevPieces.filter((p) => p.id !== pieceToRemove.id)
       );
 
       // Close dialog
@@ -1496,6 +1486,8 @@ export const FilesTab: React.FC<FilesTabProps> = ({
                     <DropdownMenuItem
                       onClick={() => handleRemoveRoot(piece)}
                       className="cursor-pointer text-red-600"
+                      // Disable if it's already marked (though it should be removed from UI now)
+                      disabled={piece.pendingRemoval}
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
                       Remove Root
