@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -267,16 +268,16 @@ func (h *AuthHandler) ensureProofSetExists(user *models.User) {
 func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	pdptoolPath := h.cfg.PdptoolPath
 	if pdptoolPath == "" {
-		return fmt.Errorf("pdptool path not configured")
+		return errors.New("pdptool path not configured")
 	}
 	serviceName := h.cfg.ServiceName
 	serviceURL := h.cfg.ServiceURL
 	recordKeeper := h.cfg.RecordKeeper
 
 	if serviceName == "" || serviceURL == "" || recordKeeper == "" {
-		errMsg := "Service Name, Service URL, or Record Keeper not configured"
+		errMsg := "service name, service url, or record keeper not configured"
 		authLog.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	authLog.Infof("[Goroutine Create] Creating proof set for user %d (Address: %s)...", user.ID, user.WalletAddress)
@@ -288,7 +289,7 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	if err != nil {
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to ABI encode extra data for user %d: %v", user.ID, err)
 		authLog.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 	authLog.WithField("extraDataHex", extraDataHex).Info("[Goroutine Create] ABI encoded extra data for user ", user.ID)
 
@@ -313,7 +314,7 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	if err := createProofSetCmd.Run(); err != nil {
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to run create-proof-set command for user %d: %v, stderr: %s", user.ID, err, createProofSetError.String())
 		authLog.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	outputStr := createProofSetOutput.String()
@@ -325,12 +326,12 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 
 	if len(txHashMatches) > 1 {
 		txHash = txHashMatches[1]
-		authLog.WithField("txHash", txHash).Info("[Goroutine Create] Extracted transaction hash for user %d, polling...", user.ID)
+		authLog.WithField("txHash", txHash).Infof("[Goroutine Create] Extracted transaction hash for user %d, polling...", user.ID)
 	} else {
 		authLog.Warn("[Goroutine Create] Could not extract transaction hash using Location regex for user ", user.ID, ". Check pdptool output format.")
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to extract transaction hash needed for polling for user %d. Output: %s", user.ID, outputStr)
 		authLog.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	extractedID, pollErr := h.pollForProofSetID(pdptoolPath, serviceURL, serviceName, txHash, user)
@@ -350,7 +351,7 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	if result := h.db.Create(&newProofSet); result.Error != nil {
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to save new proof set info for user %d: %v", user.ID, result.Error)
 		authLog.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	authLog.WithField("proofSetDBID", newProofSet.ID).WithField("proofSetPdpID", newProofSet.ProofSetID).Infof("[Goroutine Create] Successfully created and saved proof set for user %d", user.ID)
@@ -454,8 +455,6 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 			attemptCounter, user.ID, txStatus, txSuccess, createdStatus, sleepDuration, statusOutput)
 		time.Sleep(sleepDuration)
 	}
-
-	return "", fmt.Errorf("polling loop exited unexpectedly for tx %s", txHash)
 }
 
 // CheckAuthStatus godoc
