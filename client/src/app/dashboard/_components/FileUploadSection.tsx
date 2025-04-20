@@ -174,6 +174,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       console.log(
         `[FileUploadSection] 🚀 Uploading ${selectedImage.name} to ${API_BASE_URL}/api/v1/upload`
       );
+
       const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
         method: "POST",
         body: formData,

@@ -162,6 +162,76 @@ export const FilesTab = ({
   const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
   const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
 
+  // Add a useEffect to periodically check for proof sets if they're pending
+  useEffect(() => {
+    // Don't poll if we already have a proof set ID
+    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
+      const proofCheckInterval = setInterval(() => {
+        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
+        fetchProofs();
+      }, 15000); // Check every 15 seconds
+
+      return () => clearInterval(proofCheckInterval);
+    }
+  }, [proofSetStatus, pieces.length, userProofSetId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadData = async () => {
+      try {
+        if (isMounted) {
+          const data = await fetchPieces();
+          // Only proceed if we're still mounted and have data
+          if (isMounted && data) {
+            await fetchProofs();
+          }
+        }
+      } catch (error: unknown) {
+        if (isMounted && !authError) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          toast.error(`Error loading files: ${errorMessage}`);
+        }
+      }
+    };
+
+    loadData();
+
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+    };
+  }, [authError, fetchPieces]);
+
+  // Add useEffect to find the user's proof set ID when pieces are loaded
+  useEffect(() => {
+    // Find the first piece with a valid proofSetDbId (the service ID string)
+    const firstPieceWithProof = pieces.find(
+      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
+    );
+    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
+
+    // Only update state if the derived ID is different from the current state
+    if (derivedProofSetId !== userProofSetId) {
+      setUserProofSetId(derivedProofSetId);
+      if (derivedProofSetId) {
+        console.log(
+          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
+        );
+      } else {
+        console.log(
+          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
+        );
+      }
+    } else {
+      // Log even if the ID hasn't changed, for debugging
+      console.log(
+        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
+      );
+    }
+  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
+
   // Add new function to fetch proofs
   const fetchProofs = useCallback(async () => {
     try {
@@ -308,6 +378,29 @@ export const FilesTab = ({
       );
     }
   }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
+
+  // Add this useEffect to check token on component mount and set up periodic token check
+  useEffect(() => {
+    const checkToken = () => {
+      const token = localStorage.getItem("jwt_token");
+      if (!token) {
+        setAuthError("Authentication required. Please login again.");
+      } else {
+        // Only clear auth error if it was previously set
+        if (authError) setAuthError(null);
+      }
+    };
+
+    // Check on mount
+    checkToken();
+
+    // Check token periodically
+    const tokenInterval = setInterval(checkToken, 60000); // Check every minute
+
+    return () => {
+      clearInterval(tokenInterval);
+    };
+  }, [authError]);
 
   // Modify the onDrop function to handle all file types, not just images
   const onDrop = useCallback((acceptedFiles: File[]) => {
