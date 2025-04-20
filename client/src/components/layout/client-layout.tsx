@@ -25,14 +25,15 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
             await router.replace("/dashboard");
           } else if (
             !account &&
-            (pathname === "/dashboard" || pathname === "/upload")
+            (pathname.startsWith("/dashboard") || pathname === "/upload")
           ) {
             await router.replace("/");
           } else {
             // Only render if we're on the correct page for the auth state
             setShouldRender(
               (account &&
-                (pathname === "/dashboard" || pathname === "/upload")) ||
+                (pathname.startsWith("/dashboard") ||
+                  pathname === "/upload")) ||
                 (!account && pathname === "/")
             );
           }
