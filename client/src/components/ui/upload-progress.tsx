@@ -1,13 +1,21 @@
 "use client";
 
-import { useUploadStore } from "@/store/upload-store";
+import { useUploadStore, UploadProgress as UploadProgressType } from "@/store/upload-store";
 import { AlertTriangle, ExternalLink, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./button";
 
-export const UploadProgress = () => {
-  const { uploadProgress, clearUploadProgress } = useUploadStore();
+interface UploadProgressProps {
+  uploadProgress: UploadProgressType | null;
+  onCancel: () => void;
+  hasActiveAbortController: boolean;
+}
 
+export const UploadProgress = ({
+  uploadProgress,
+  onCancel,
+  hasActiveAbortController,
+}: UploadProgressProps) => {
   if (!uploadProgress) return null;
 
   // Common status color mapping
@@ -115,7 +123,7 @@ export const UploadProgress = () => {
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6"
-                  onClick={() => clearUploadProgress()}
+                  onClick={onCancel}
                 >
                   <X className="h-4 w-4" />
                 </Button>

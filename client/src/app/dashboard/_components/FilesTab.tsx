@@ -3,7 +3,8 @@
 import { Typography } from "@/components/ui/typography";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
+import type { ReactElement } from "react";
 import { useDropzone } from "react-dropzone";
 import { API_BASE_URL } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
@@ -30,6 +31,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { formatFileSize, getFilePreviewType } from "@/lib/utils";
+import { useUpload } from "@/hooks/useUpload";
+import { useUploadStore } from "@/store/upload-store";
+import { UploadProgress } from "@/components/ui/upload-progress";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Piece {
   id: number;
@@ -42,8 +48,8 @@ interface Piece {
   updatedAt: string;
   pendingRemoval?: boolean;
   removalDate?: string;
-  proofSetDbId?: number; // Renamed from proofSetId, now holds DB ID
-  serviceProofSetId?: string; // New field for the service's string ID
+  proofSetDbId?: number;
+  serviceProofSetId?: string;
   rootId?: string;
 }
 
@@ -74,50 +80,29 @@ const tableRowVariants = {
   }),
 };
 
-export const FilesTab: React.FC<FilesTabProps> = ({
+export const FilesTab = ({
   isLoading: initialLoading,
-}): React.ReactNode => {
+}: FilesTabProps): ReactElement => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [pieces, setPieces] = useState<Piece[]>([]);
   const [isLoading, setIsLoading] = useState(initialLoading);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<{
-    status: string;
-    progress?: number;
-    message?: string;
-    cid?: string;
-    error?: string;
-    lastUpdated?: number; // timestamp of last update
-    isStalled?: boolean;
-    filename?: string; // store original filename for polling
-    jobId?: string; // store job ID for polling
-    serviceProofSetId?: string; // Use service ID string here
-  } | null>(null);
-  // Add state for tracking downloads in progress
   const [downloadsInProgress, setDownloadsInProgress] = useState<{
     [cid: string]: boolean;
   }>({});
+
+  const { disconnectWallet } = useAuth();
 
   // Add new state for proof dialog
   const [isProofDialogOpen, setIsProofDialogOpen] = useState(false);
   const [selectedProof, setSelectedProof] = useState<{
     pieceId: number;
     pieceFilename: string;
-    serviceProofSetId: string; // Use service ID string here
+    serviceProofSetId: string;
     cid: string;
-    rootId?: string; // Add rootId property
+    rootId?: string;
   } | null>(null);
-
-  // Refs for upload state management
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const uploadStartTimeRef = useRef<number | null>(null);
-
-  // Add new state for root removal dialog
-  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
-  const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
 
   // Add state for the user's proof set ID
   const [userProofSetId, setUserProofSetId] = useState<string | null>(null);
@@ -126,20 +111,6 @@ export const FilesTab: React.FC<FilesTabProps> = ({
   const [proofSetStatus, setProofSetStatus] = useState<
     "idle" | "pending" | "ready"
   >("idle");
-
-  // Clean up all timeouts when component unmounts
-  useEffect(() => {
-    return () => {
-      if (uploadTimeoutRef.current) {
-        const timeout = uploadTimeoutRef.current;
-        clearTimeout(timeout);
-      }
-      if (pollIntervalRef.current) {
-        const interval = pollIntervalRef.current;
-        clearInterval(interval);
-      }
-    };
-  }, []);
 
   const fetchPieces = useCallback(async () => {
     try {
@@ -178,6 +149,88 @@ export const FilesTab: React.FC<FilesTabProps> = ({
       setIsLoading(false);
     }
   }, []);
+
+  // Use the global upload hook and store
+  const {
+    uploadFile,
+    handleCancelUpload: cancelUpload,
+    hasActiveUpload,
+  } = useUpload(fetchPieces);
+  const uploadProgress = useUploadStore((state) => state.uploadProgress);
+
+  // Add new state for root removal dialog
+  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
+  const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
+
+  // Add a useEffect to periodically check for proof sets if they're pending
+  useEffect(() => {
+    // Don't poll if we already have a proof set ID
+    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
+      const proofCheckInterval = setInterval(() => {
+        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
+        fetchProofs();
+      }, 15000); // Check every 15 seconds
+
+      return () => clearInterval(proofCheckInterval);
+    }
+  }, [proofSetStatus, pieces.length, userProofSetId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadData = async () => {
+      try {
+        if (isMounted) {
+          const data = await fetchPieces();
+          // Only proceed if we're still mounted and have data
+          if (isMounted && data) {
+            await fetchProofs();
+          }
+        }
+      } catch (error: unknown) {
+        if (isMounted && !authError) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          toast.error(`Error loading files: ${errorMessage}`);
+        }
+      }
+    };
+
+    loadData();
+
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+    };
+  }, [authError, fetchPieces]);
+
+  // Add useEffect to find the user's proof set ID when pieces are loaded
+  useEffect(() => {
+    // Find the first piece with a valid proofSetDbId (the service ID string)
+    const firstPieceWithProof = pieces.find(
+      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
+    );
+    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
+
+    // Only update state if the derived ID is different from the current state
+    if (derivedProofSetId !== userProofSetId) {
+      setUserProofSetId(derivedProofSetId);
+      if (derivedProofSetId) {
+        console.log(
+          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
+        );
+      } else {
+        console.log(
+          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
+        );
+      }
+    } else {
+      // Log even if the ID hasn't changed, for debugging
+      console.log(
+        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
+      );
+    }
+  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
 
   // Add new function to fetch proofs
   const fetchProofs = async () => {
@@ -292,241 +345,6 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     };
   }, [authError]);
 
-  // Add a useEffect to periodically check for proof sets if they're pending
-  useEffect(() => {
-    // Don't poll if we already have a proof set ID
-    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
-      const proofCheckInterval = setInterval(() => {
-        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
-        fetchProofs();
-      }, 15000); // Check every 15 seconds
-
-      return () => clearInterval(proofCheckInterval);
-    }
-  }, [proofSetStatus, pieces.length, userProofSetId]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadData = async () => {
-      try {
-        if (isMounted) {
-          const data = await fetchPieces();
-          // Only proceed if we're still mounted and have data
-          if (isMounted && data) {
-            await fetchProofs();
-          }
-        }
-      } catch (error: unknown) {
-        if (isMounted && !authError) {
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
-          toast.error(`Error loading files: ${errorMessage}`);
-        }
-      }
-    };
-
-    loadData();
-
-    // Cleanup function to prevent state updates after unmount
-    return () => {
-      isMounted = false;
-    };
-  }, [authError, fetchPieces]);
-
-  // Add useEffect to find the user's proof set ID when pieces are loaded
-  useEffect(() => {
-    // Find the first piece with a valid proofSetDbId (the service ID string)
-    const firstPieceWithProof = pieces.find(
-      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
-    );
-    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
-
-    // Only update state if the derived ID is different from the current state
-    if (derivedProofSetId !== userProofSetId) {
-      setUserProofSetId(derivedProofSetId);
-      if (derivedProofSetId) {
-        console.log(
-          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
-        );
-      } else {
-        console.log(
-          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
-        );
-      }
-    } else {
-      // Log even if the ID hasn't changed, for debugging
-      console.log(
-        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
-      );
-    }
-  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
-
-  // Poll for upload status updates
-  const startPollingUploadStatus = useCallback(
-    (jobId: string, initialDelay = 0) => {
-      // Clear any existing poll interval
-      const currentPollInterval = pollIntervalRef.current;
-      if (currentPollInterval) {
-        clearInterval(currentPollInterval);
-        pollIntervalRef.current = null;
-      }
-
-      // Initial delay before starting to poll (useful for letting the server start processing)
-      setTimeout(() => {
-        // Function to poll for status
-        const pollStatus = async () => {
-          try {
-            const token = localStorage.getItem("jwt_token");
-            if (!token) {
-              throw new Error("Authentication required");
-            }
-
-            const response = await fetch(
-              `${API_BASE_URL}/api/v1/upload/status/${jobId}`,
-              {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-              }
-            );
-
-            if (!response.ok) {
-              throw new Error(
-                `Failed to get upload status: ${response.statusText}`
-              );
-            }
-
-            const data = await response.json();
-            console.log("[FilesTab.tsx:pollStatus] Got status update:", data);
-
-            // Update the progress state
-            setUploadProgress((prev) => ({
-              ...data,
-              lastUpdated: Date.now(),
-              isStalled: false,
-              // Keep the filename if it wasn't returned
-              filename: data.filename || prev?.filename,
-              // Update with serviceProofSetId if available
-              serviceProofSetId:
-                data.serviceProofSetId || prev?.serviceProofSetId,
-            }));
-
-            // If upload is complete or failed, stop polling and handle completion
-            if (data.status === "complete" || data.status === "error") {
-              const currentInterval = pollIntervalRef.current;
-              if (currentInterval) {
-                clearInterval(currentInterval);
-                pollIntervalRef.current = null;
-              }
-
-              if (data.status === "complete") {
-                console.log("[FilesTab.tsx:pollStatus] ✅ Upload complete!");
-
-                // Clean up after successful upload
-                setSelectedImage(null);
-                setPreviewUrl(null);
-
-                // Refresh the pieces list
-                fetchPieces();
-
-                // Keep the success message for a few seconds then clear it
-                setTimeout(() => {
-                  setUploadProgress(null);
-                }, 3000);
-              }
-            }
-          } catch (error) {
-            console.error(
-              "[FilesTab.tsx:pollStatus] Error polling for status:",
-              error
-            );
-            // Don't stop polling on error - the server might be temporarily unavailable
-          }
-        };
-
-        // Poll immediately once
-        pollStatus();
-
-        // Then set up the interval (every 2 seconds)
-        pollIntervalRef.current = setInterval(pollStatus, 2000);
-      }, initialDelay);
-    },
-    [fetchPieces]
-  );
-
-  // Add a new helper function to determine if we can provide special preview for specific non-image file types
-  const getFilePreviewType = (
-    filename: string
-  ):
-    | "image"
-    | "document"
-    | "spreadsheet"
-    | "code"
-    | "archive"
-    | "video"
-    | "audio"
-    | "generic" => {
-    const extension = filename.split(".").pop()?.toLowerCase() || "";
-
-    // Images
-    if (
-      ["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"].includes(extension)
-    ) {
-      return "image";
-    }
-
-    // Documents
-    if (["pdf", "doc", "docx", "txt", "rtf", "odt"].includes(extension)) {
-      return "document";
-    }
-
-    // Spreadsheets
-    if (["xls", "xlsx", "csv", "ods"].includes(extension)) {
-      return "spreadsheet";
-    }
-
-    // Code files
-    if (
-      [
-        "js",
-        "ts",
-        "jsx",
-        "tsx",
-        "html",
-        "css",
-        "java",
-        "py",
-        "c",
-        "cpp",
-        "rb",
-        "php",
-      ].includes(extension)
-    ) {
-      return "code";
-    }
-
-    // Archives
-    if (["zip", "rar", "tar", "gz", "7z"].includes(extension)) {
-      return "archive";
-    }
-
-    // Video files
-    if (
-      ["mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"].includes(extension)
-    ) {
-      return "video";
-    }
-
-    // Audio files
-    if (["mp3", "wav", "ogg", "flac", "aac", "m4a"].includes(extension)) {
-      return "audio";
-    }
-
-    // Default/generic
-    return "generic";
-  };
-
   // Modify the onDrop function to handle all file types, not just images
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -554,307 +372,19 @@ export const FilesTab: React.FC<FilesTabProps> = ({
     maxFiles: 1,
   });
 
-  const handleCancelUpload = () => {
-    const currentAbortController = abortControllerRef.current;
-    const currentPollInterval = pollIntervalRef.current;
-
-    if (currentAbortController) {
-      currentAbortController.abort();
-      abortControllerRef.current = null;
-    }
-
-    // Clear any polling interval
-    if (currentPollInterval) {
-      clearInterval(currentPollInterval);
-      pollIntervalRef.current = null;
-    }
-
-    uploadStartTimeRef.current = null;
-
-    setUploadProgress({
-      status: "cancelled",
-      message: "Upload cancelled by user",
-      error: "Upload cancelled",
-      progress: 0,
-    });
-
-    setTimeout(() => {
-      setUploadProgress(null);
-      setSelectedImage(null);
-      setPreviewUrl(null);
-    }, 2000);
-  };
-
   const handleSubmitImage = async () => {
     if (!selectedImage) return;
 
-    const formData = new FormData();
-    formData.append("file", selectedImage);
-
     try {
-      const token = localStorage.getItem("jwt_token");
-      if (!token) {
-        throw new Error("Authentication required");
-      }
-
-      // Create a new abort controller
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
-
-      // Record upload start time
-      uploadStartTimeRef.current = Date.now();
-
-      setUploadProgress({
-        status: "starting",
-        progress: 0,
-        message: "Initiating upload...",
-        lastUpdated: Date.now(),
-        isStalled: false,
-        filename: selectedImage.name,
-      });
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-        signal,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `Upload failed (${response.status})`;
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          // Error is already logged if parsing fails
-          console.error(
-            "[FilesTab.tsx:handleSubmitImage] Raw error response:",
-            errorText
-          );
-        }
-        throw new Error(errorMessage);
-      }
-
-      // Parse the initial response which should contain the job ID
-      const data = await response.json();
-      console.log("[FilesTab.tsx:handleSubmitImage] Upload initiated:", data);
-
-      if (data.jobId) {
-        // Update the upload progress with the job ID and start polling
-        setUploadProgress((prev) => ({
-          ...prev,
-          ...data,
-          lastUpdated: Date.now(),
-          isStalled: false,
-        }));
-
-        // Start polling for status updates (with a small initial delay)
-        startPollingUploadStatus(data.jobId, 1000);
-      } else {
-        throw new Error("No job ID received from server");
-      }
+      await uploadFile(selectedImage);
+      // On successful upload initiation, clear the selected image
+      setSelectedImage(null);
+      setPreviewUrl(null);
+      // The files list will be refreshed automatically via the onSuccess callback
     } catch (error) {
-      // Clear the abort controller reference on error
-      abortControllerRef.current = null;
-      uploadStartTimeRef.current = null;
-
-      // Handle AbortError specially
-      if (error instanceof DOMException && error.name === "AbortError") {
-        console.log(
-          "[FilesTab.tsx:handleSubmitImage] Upload was cancelled by user"
-        );
-        return;
-      }
-
-      console.error(
-        "[FilesTab.tsx:handleSubmitImage] ❌ Error in handleSubmitImage:",
-        error
-      );
-      setUploadProgress({
-        status: "error",
-        error: error instanceof Error ? error.message : "Upload failed",
-        lastUpdated: Date.now(),
-      });
+      // Error handling is done in the hook
+      console.error("[FilesTab] Upload failed:", error);
     }
-  };
-
-  // Render progress indicator with enhanced UI
-  const renderUploadProgress = () => {
-    if (!uploadProgress) return null;
-
-    // Common status color mapping
-    const statusColors = {
-      error: "text-red-500 bg-red-50 border-red-200",
-      warning: "text-amber-500 bg-amber-50 border-amber-200",
-      complete: "text-green-500 bg-green-50 border-green-200",
-      uploading: "text-blue-500 bg-blue-50 border-blue-200",
-      preparing: "text-indigo-500 bg-indigo-50 border-indigo-200",
-      starting: "text-gray-500 bg-gray-50 border-gray-200",
-      cancelled: "text-gray-500 bg-gray-50 border-gray-200",
-      finalizing: "text-emerald-500 bg-emerald-50 border-emerald-200",
-      adding_root: "text-purple-500 bg-purple-50 border-purple-200",
-    };
-
-    const statusColor =
-      statusColors[uploadProgress.status as keyof typeof statusColors] ||
-      statusColors.uploading;
-
-    const getStatusText = () => {
-      switch (uploadProgress.status) {
-        case "starting":
-          return "Starting upload...";
-        case "preparing":
-          return "Preparing file...";
-        case "uploading":
-          return "Uploading...";
-        case "finalizing":
-          return "Finalizing...";
-        case "adding_root":
-          return "Adding to proof set...";
-        case "complete":
-          return "Upload complete!";
-        case "error":
-          return "Upload failed";
-        case "warning":
-          return "Warning";
-        case "cancelled":
-          return "Upload cancelled";
-        default:
-          return uploadProgress.status;
-      }
-    };
-
-    // Create a floating status indicator that's always visible
-    return (
-      <div className="fixed bottom-4 right-4 z-50 w-80 shadow-lg rounded-lg overflow-hidden">
-        <div className={`p-4 ${statusColor}`}>
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 font-medium">
-                {uploadProgress.isStalled && (
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                )}
-                <span>{getStatusText()}</span>
-                {uploadProgress.status !== "complete" &&
-                  uploadProgress.status !== "error" &&
-                  uploadProgress.status !== "cancelled" &&
-                  abortControllerRef.current && (
-                    <button
-                      onClick={handleCancelUpload}
-                      className="ml-2 px-2 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  )}
-              </div>
-              {uploadProgress.message && (
-                <div className="text-sm mt-1 opacity-80 line-clamp-2">
-                  {uploadProgress.message}
-                </div>
-              )}
-              {uploadProgress.isStalled && (
-                <div className="text-amber-600 text-sm mt-1">
-                  No updates received for a while.
-                </div>
-              )}
-              {uploadProgress.error && (
-                <div className="text-red-500 text-sm mt-1 line-clamp-2">
-                  Error: {uploadProgress.error}
-                </div>
-              )}
-              {uploadProgress.filename && (
-                <div className="text-xs text-gray-500 mt-1 truncate">
-                  {uploadProgress.filename}
-                </div>
-              )}
-              {uploadProgress.serviceProofSetId && (
-                <div className="text-xs mt-2 flex items-center">
-                  <span className="mr-2">Proof Set ID:</span>
-                  <a
-                    href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 underline flex items-center"
-                  >
-                    {uploadProgress.serviceProofSetId}
-                    <ExternalLink className="h-3 w-3 ml-1" />
-                  </a>
-                </div>
-              )}
-            </div>
-            {uploadProgress.progress !== undefined && (
-              <div className="text-sm font-medium ml-2">
-                {uploadProgress.progress}%
-              </div>
-            )}
-          </div>
-
-          {uploadProgress.progress !== undefined && (
-            <div className="w-full bg-gray-200 rounded-full h-2.5 mt-3">
-              <div
-                className={`h-2.5 rounded-full ${
-                  uploadProgress.status === "error"
-                    ? "bg-red-500"
-                    : uploadProgress.status === "complete"
-                    ? "bg-green-500"
-                    : uploadProgress.isStalled
-                    ? "bg-amber-500"
-                    : "bg-blue-500"
-                }`}
-                style={{ width: `${uploadProgress.progress}%` }}
-              ></div>
-            </div>
-          )}
-
-          {/* Display completed upload info with links */}
-          {uploadProgress.status === "complete" && uploadProgress.cid && (
-            <div className="mt-3 pt-3 border-t border-green-200">
-              <div className="flex flex-col gap-2">
-                {uploadProgress.serviceProofSetId && (
-                  <a
-                    href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm flex items-center justify-between bg-green-100 text-green-800 p-2 rounded hover:bg-green-200 transition-colors"
-                  >
-                    <span className="flex items-center">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-4 w-4 mr-2"
-                      >
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                      </svg>
-                      View Proof Set
-                    </span>
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   // Add download function
@@ -1607,9 +1137,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({
             <Button
               className="mt-3 bg-red-100 text-red-800 hover:bg-red-200 transition-colors"
               size="sm"
-              onClick={() => {
-                window.location.href = "/login";
-              }}
+              onClick={disconnectWallet}
             >
               Login Again
             </Button>
@@ -1941,7 +1469,11 @@ export const FilesTab: React.FC<FilesTabProps> = ({
             )}
           </AnimatePresence>
         </div>
-        {renderUploadProgress()}
+        <UploadProgress
+          uploadProgress={uploadProgress}
+          onCancel={cancelUpload}
+          hasActiveAbortController={hasActiveUpload}
+        />
       </motion.div>
 
       {/* Files List */}

@@ -9,6 +9,8 @@
 /vendor/
 go.work
 
+pdpservice.json
+
 # IDE specific
 .idea/
 .vscode/

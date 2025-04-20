@@ -6,6 +6,8 @@ export interface UploadProgress {
     | "starting"
     | "preparing"
     | "uploading"
+    | "processing"
+    | "success"
     | "finalizing"
     | "adding_root"
     | "complete"
