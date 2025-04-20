@@ -171,6 +171,9 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         }));
       }, 10000); // 10 seconds timeout
 
+      console.log(
+        `[FileUploadSection] 🚀 Uploading ${selectedImage.name} to ${API_BASE_URL}/api/v1/upload`
+      );
       const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
         method: "POST",
         body: formData,
@@ -186,12 +189,39 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         uploadTimeoutRef.current = null;
       }
 
+      console.log(
+        `[FileUploadSection] 📬 Upload response status: ${response.status}`
+      );
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData = {
+          message: `Upload failed with status ${response.status}`,
+        };
+        try {
+          errorData = await response.json();
+          console.error(
+            "[FileUploadSection] ❌ Upload failed response body:",
+            errorData
+          );
+        } catch (jsonError) {
+          console.error(
+            "[FileUploadSection] ❌ Failed to parse upload error response as JSON:",
+            jsonError
+          );
+          const textResponse = await response.text();
+          console.error(
+            "[FileUploadSection] ❌ Upload failed response text:",
+            textResponse
+          );
+          errorData.message = textResponse || errorData.message;
+        }
         throw new Error(errorData.message || "Upload failed");
       }
 
       const data = await response.json();
+      console.log(
+        "[FileUploadSection] ✅ Upload successful response body:",
+        data
+      );
 
       setUploadProgress({
         status: "success",
@@ -211,6 +241,9 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         // Poll for proof generation status
         const pollStatus = async () => {
           try {
+            console.log(
+              `[FileUploadSection] ⏳ Polling status for job ${data.jobId}...`
+            );
             const statusResponse = await fetch(
               `${API_BASE_URL}/api/v1/upload/status/${data.jobId}`,
               {
@@ -220,13 +253,21 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
               }
             );
 
+            console.log(
+              `[FileUploadSection] 📬 Poll response status: ${statusResponse.status}`
+            );
             if (!statusResponse.ok) {
               throw new Error("Failed to check proof status");
             }
 
             const statusData = await statusResponse.json();
+            console.log(
+              "[FileUploadSection] 📊 Polling status update:",
+              statusData
+            );
 
             if (statusData.status === "complete") {
+              console.log("[FileUploadSection] ✅ Proof generation complete!");
               setUploadProgress((prev) => ({
                 ...(prev || { filename: selectedImage.name }),
                 status: "complete",
@@ -253,6 +294,10 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 setPreviewUrl(null);
               }, 5000);
             } else if (statusData.status === "failed") {
+              console.error(
+                "[FileUploadSection] ❌ Proof generation failed:",
+                statusData
+              );
               setUploadProgress((prev) => ({
                 ...(prev || { filename: selectedImage.name }),
                 status: "error",
@@ -305,6 +350,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         uploadTimeoutRef.current = null;
       }
 
+      console.error("[FileUploadSection] 💥 Upload caught error:", error);
       if (error instanceof Error) {
         // Only show error if not aborted
         if (error.name !== "AbortError") {

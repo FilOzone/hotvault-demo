@@ -196,6 +196,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		})
 
 		createSecretCmd := exec.Command(pdptoolPath, "create-service-secret")
+		createSecretCmd.Dir = filepath.Dir(pdptoolPath)
 		var createSecretOutput bytes.Buffer
 		var createSecretError bytes.Buffer
 		createSecretCmd.Stdout = &createSecretOutput
@@ -331,10 +332,11 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	uploadCmd.Stdout = &uploadOutput
 	uploadCmd.Stderr = &uploadError
 
-	log.WithField("filename", file.Filename).
-		WithField("size", file.Size).
-		WithField("service", serviceName).
-		Info("Started pdptool upload command")
+	// Log the command's working directory and relevant env vars
+	uploadCmd.Dir = filepath.Dir(pdptoolPath)
+	log.WithField("workingDir", uploadCmd.Dir).
+		WithField("command", pdptoolPath+" "+strings.Join(uploadCmd.Args[1:], " ")).
+		Info("Executing pdptool upload-file command")
 
 	if err := uploadCmd.Start(); err != nil {
 		updateStatus(UploadProgress{
@@ -384,12 +386,17 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	close(done)
 
 	if err != nil {
+		stderrStr := uploadError.String()
+		stdoutStr := uploadOutput.String()
 		updateStatus(UploadProgress{
 			Status:  "error",
 			Error:   "Upload command failed",
-			Message: uploadError.String(),
+			Message: stderrStr,
 		})
-		log.WithField("error", err.Error()).Error("Upload command failed")
+		log.WithField("error", err.Error()).
+			WithField("stderr", stderrStr).
+			WithField("stdout", stdoutStr).
+			Error("Upload command failed")
 		return
 	}
 
@@ -524,6 +531,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		"--root", rootArgument,
 	}
 	addRootCmd := exec.Command(pdptoolPath, addRootsArgs...)
+	addRootCmd.Dir = filepath.Dir(pdptoolPath)
 
 	cmdDir := filepath.Dir(pdptoolPath)
 	secretPath := filepath.Join(cmdDir, "pdpservice.json")
@@ -543,7 +551,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	var addRootError bytes.Buffer
 	addRootCmd.Stdout = &addRootOutput
 	addRootCmd.Stderr = &addRootError
-	addRootCmd.Dir = filepath.Dir(pdptoolPath)
 
 	if err := addRootCmd.Run(); err != nil {
 		stderrStr := addRootError.String()

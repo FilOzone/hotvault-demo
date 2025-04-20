@@ -302,12 +302,12 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	}
 
 	createProofSetCmd := exec.Command(pdptoolPath, createProofSetArgs...)
+	createProofSetCmd.Dir = filepath.Dir(pdptoolPath)
 
 	var createProofSetOutput bytes.Buffer
 	var createProofSetError bytes.Buffer
 	createProofSetCmd.Stdout = &createProofSetOutput
 	createProofSetCmd.Stderr = &createProofSetError
-	createProofSetCmd.Dir = filepath.Dir(pdptoolPath)
 
 	authLog.WithField("command", pdptoolPath+" "+strings.Join(createProofSetArgs, " ")).Info("[Goroutine Create] Executing create-proof-set command for user ", user.ID)
 
@@ -380,12 +380,12 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 			"--service-name", serviceName,
 			"--tx-hash", txHash,
 		)
+		getStatusCmd.Dir = filepath.Dir(pdptoolPath)
 
 		var getStatusOutput bytes.Buffer
 		var getStatusError bytes.Buffer
 		getStatusCmd.Stdout = &getStatusOutput
 		getStatusCmd.Stderr = &getStatusError
-		getStatusCmd.Dir = filepath.Dir(pdptoolPath)
 
 		authLog.Debugf("[Goroutine Polling] Attempt %d: Executing %s", attemptCounter, getStatusCmd.String())
 
