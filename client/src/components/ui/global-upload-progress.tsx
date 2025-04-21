@@ -4,8 +4,35 @@ import { useUploadStore } from "@/store/upload-store";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./button";
 import { AlertTriangle, ExternalLink } from "lucide-react";
-import { statusColors, getStatusText } from "@/lib/constants";
 import { useEffect, useState } from "react";
+
+// Define status colors for different upload states
+const statusColors = {
+  uploading: "bg-blue-100 text-blue-800",
+  processing: "bg-purple-100 text-purple-800",
+  complete: "bg-green-100 text-green-800",
+  success: "bg-green-100 text-green-800",
+  error: "bg-red-100 text-red-800",
+  warning: "bg-amber-100 text-amber-800",
+};
+
+// Convert status to human-readable text
+const getStatusText = (status: string): string => {
+  switch (status) {
+    case "uploading":
+      return "Uploading...";
+    case "processing":
+      return "Processing...";
+    case "complete":
+      return "Upload Complete";
+    case "success":
+      return "Upload Successful";
+    case "error":
+      return "Upload Failed";
+    default:
+      return "Upload in Progress";
+  }
+};
 
 export const GlobalUploadProgress = () => {
   const { uploadProgress, clearUploadProgress } = useUploadStore();
