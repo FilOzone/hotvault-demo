@@ -288,10 +288,13 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
             } else {
               setUploadProgress((prev) => ({
                 ...(prev || { filename: selectedImage.name }),
-                status: "processing",
+                status: statusData.status,
                 progress: statusData.progress,
+                message: statusData.message,
                 lastUpdated: Date.now(),
                 isStalled: false,
+                serviceProofSetId:
+                  statusData.proofSetId || prev?.serviceProofSetId,
               }));
             }
           } catch (error) {
@@ -352,12 +355,22 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
             : "Uploading file...";
         case "processing":
           return "Processing and generating proof...";
+        case "adding_root":
+          return `Adding file to proof set${
+            uploadProgress.serviceProofSetId
+              ? ` (${uploadProgress.serviceProofSetId})`
+              : ""
+          }...`;
+        case "finalizing":
+          return "Finalizing proof set registration...";
         case "success":
           return "File uploaded successfully!";
         case "complete":
           return "File uploaded and proof generated!";
         case "error":
           return `Error: ${uploadProgress.error || "Something went wrong"}`;
+        case "pending":
+          return "Waiting for proof set creation to complete...";
         default:
           return "Processing...";
       }

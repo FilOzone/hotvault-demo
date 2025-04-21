@@ -1159,14 +1159,22 @@ export const FilesTab = ({
     if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
       return (
         <motion.div
-          className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-2"
+          className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-3"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="animate-spin h-4 w-4 border-2 border-blue-500 rounded-full border-t-transparent"></div>
-          <Typography variant="small">
-            Generating proof sets for your files... This may take a few minutes.
-          </Typography>
+          <div className="flex-shrink-0 bg-blue-100 p-2 rounded-full">
+            <div className="animate-spin h-5 w-5 border-2 border-blue-500 rounded-full border-t-transparent"></div>
+          </div>
+          <div className="flex-1">
+            <p className="font-medium mb-1">Proof Set Creation in Progress</p>
+            <p className="text-sm">
+              Your proof set is being created on the blockchain. This process
+              typically takes 5-10 minutes to complete. During this time, you
+              can upload files but proof verification will not be available
+              until the proof set creation is finalized.
+            </p>
+          </div>
         </motion.div>
       );
     }

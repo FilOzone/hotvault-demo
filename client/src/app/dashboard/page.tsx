@@ -7,6 +7,7 @@ import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { FilesTab } from "./_components/FilesTab";
 import { PaymentSetupTab } from "./_components/PaymentSetupTab";
+import { ProofSetBanner } from "@/components/ui/proof-set-banner";
 
 export default function Dashboard() {
   const { account, handleAccountSwitch, disconnectWallet } = useAuth();
@@ -31,6 +32,8 @@ export default function Dashboard() {
         handleAccountSwitch={handleAccountSwitch}
         disconnectWallet={disconnectWallet}
       />
+
+      <ProofSetBanner />
 
       <div className="pt-16">
         <main className="container mx-auto px-4 py-8">
