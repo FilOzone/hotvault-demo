@@ -2,8 +2,9 @@
 
 import { Typography } from "@/components/ui/typography";
 import { motion, AnimatePresence } from "framer-motion";
-import { DashboardSection } from "@/types/dashboard";
+import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { Dispatch, SetStateAction } from "react";
+import { Files, Wallet } from "lucide-react";
 
 interface DashboardHeaderProps {
   account: string;
@@ -17,6 +18,8 @@ interface DashboardHeaderProps {
 
 export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   account,
+  activeTab,
+  setActiveTab,
   isAccountMenuOpen,
   setIsAccountMenuOpen,
   handleAccountSwitch,
@@ -31,32 +34,61 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          <motion.div
-            className="flex items-center gap-2"
-            whileHover={{ scale: 1.02 }}
-          >
-            <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center">
-              <svg
-                className="w-5 h-5 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-            <Typography
-              variant="h1"
-              className="text-xl font-mono tracking-tight"
+          <div className="flex items-center gap-10">
+            <motion.div
+              className="flex items-center gap-2"
+              whileHover={{ scale: 1.02 }}
             >
-              Hot Vault
-            </Typography>
-          </motion.div>
+              <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center">
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+              </div>
+              <Typography
+                variant="h1"
+                className="text-xl font-mono tracking-tight"
+              >
+                FWS
+              </Typography>
+            </motion.div>
+
+            {/* Navigation Tabs */}
+            <nav className="flex items-center space-x-1">
+              <button
+                onClick={() => setActiveTab(DASHBOARD_SECTIONS.FILES)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === DASHBOARD_SECTIONS.FILES
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                }`}
+              >
+                <Files size={16} />
+                Files
+              </button>
+
+              <button
+                onClick={() => setActiveTab(DASHBOARD_SECTIONS.PAYMENTS)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === DASHBOARD_SECTIONS.PAYMENTS
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                }`}
+              >
+                <Wallet size={16} />
+                Payments
+              </button>
+            </nav>
+          </div>
 
           <div className="relative">
             <motion.button
