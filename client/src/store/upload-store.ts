@@ -13,7 +13,9 @@ export interface UploadProgress {
     | "complete"
     | "error"
     | "warning"
-    | "cancelled";
+    | "cancelled"
+    | "retry"
+    | "pending";
   progress?: number;
   message?: string;
   cid?: string;

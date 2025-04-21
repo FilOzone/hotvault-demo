@@ -36,6 +36,7 @@ import { useUpload } from "@/hooks/useUpload";
 import { useUploadStore } from "@/store/upload-store";
 import { UploadProgress } from "@/components/ui/upload-progress";
 import { useAuth } from "@/contexts/AuthContext";
+import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 
 interface Piece {
   id: number;
@@ -345,9 +346,26 @@ export const FilesTab = ({
 
     loadData();
 
+    // Add event listener for upload completion to refresh the file list
+    const handleUploadCompleted = () => {
+      console.log(
+        "[FilesTab] Detected upload completion, refreshing file list"
+      );
+      fetchPieces().catch((err) => {
+        console.error(
+          "[FilesTab] Error refreshing file list after upload",
+          err
+        );
+      });
+    };
+
+    // Listen for the custom upload completed event
+    window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
+
     // Cleanup function to prevent state updates after unmount
     return () => {
       isMounted = false;
+      window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
     };
   }, [authError, fetchPieces, fetchProofs]);
 

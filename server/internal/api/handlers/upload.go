@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -473,10 +474,11 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	updateStatus(UploadProgress{
 		Status:   currentStage,
 		Progress: currentProgress,
-		Message:  "Locating user proof set...",
+		Message:  "Finding or creating a proof set for your file...",
 		CID:      compoundCID,
 	})
 
+	// Increased initial delay before attempting to add root
 	preAddRootDelay := 5 * time.Second
 	log.Info(fmt.Sprintf("Waiting %v before adding root to allow service registration...", preAddRootDelay))
 	time.Sleep(preAddRootDelay)
@@ -499,6 +501,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		return
 	}
 
+	// Double check that the proof set ID is valid
 	if proofSet.ProofSetID == "" {
 		errMsg := "Proof set creation is still pending. Please wait."
 		log.WithField("userID", userID).WithField("dbProofSetID", proofSet.ID).Warning(errMsg)
@@ -514,6 +517,53 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	log.WithField("userID", userID).WithField("serviceProofSetID", proofSet.ProofSetID).Info("Found ready proof set for user, proceeding to add root")
 
+	// Verify the proof set exists on the service before proceeding
+	updateStatus(UploadProgress{
+		Status:     currentStage,
+		Progress:   currentProgress,
+		Message:    fmt.Sprintf("Verifying proof set %s exists...", proofSet.ProofSetID),
+		CID:        compoundCID,
+		ProofSetID: proofSet.ProofSetID,
+	})
+
+	// First verify the proof set exists on the remote service
+	verifyProofSetArgs := []string{
+		"get-proof-set",
+		"--service-url", cfg.ServiceURL,
+		"--service-name", cfg.ServiceName,
+		proofSet.ProofSetID,
+	}
+
+	verifyCmd := exec.Command(pdptoolPath, verifyProofSetArgs...)
+	verifyCmd.Dir = filepath.Dir(pdptoolPath)
+
+	var verifyOutput bytes.Buffer
+	var verifyError bytes.Buffer
+	verifyCmd.Stdout = &verifyOutput
+	verifyCmd.Stderr = &verifyError
+
+	verifyErr := verifyCmd.Run()
+	if verifyErr != nil {
+		stderrStr := verifyError.String()
+		log.WithField("error", verifyErr.Error()).
+			WithField("stderr", stderrStr).
+			WithField("proofSetID", proofSet.ProofSetID).
+			Error("Failed to verify proof set exists")
+
+		// If we can't verify the proof set, we need to create a new one or use a different one
+		updateStatus(UploadProgress{
+			Status:     "error",
+			Error:      "Proof set verification failed",
+			Message:    "Could not verify proof set. Please try again or contact support.",
+			CID:        compoundCID,
+			ProofSetID: proofSet.ProofSetID,
+		})
+		return
+	}
+
+	// Proof set verification successful, proceed to add roots
+	log.WithField("proofSetID", proofSet.ProofSetID).Info("Proof set verification successful")
+
 	updateStatus(UploadProgress{
 		Status:     currentStage,
 		Progress:   currentProgress,
@@ -522,6 +572,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		ProofSetID: proofSet.ProofSetID,
 	})
 
+	// Implement retry mechanism with exponential backoff for add-roots command
 	rootArgument := compoundCID
 	addRootsArgs := []string{
 		"add-roots",
@@ -530,9 +581,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		"--proof-set-id", proofSet.ProofSetID,
 		"--root", rootArgument,
 	}
-	addRootCmd := exec.Command(pdptoolPath, addRootsArgs...)
-	addRootCmd.Dir = filepath.Dir(pdptoolPath)
 
+	// Check command working directory and secret file
 	cmdDir := filepath.Dir(pdptoolPath)
 	secretPath := filepath.Join(cmdDir, "pdpservice.json")
 	log.WithField("expectedCmdDir", cmdDir).Info("Checking command working directory")
@@ -545,42 +595,189 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		log.WithField("error", errStat.Error()).Error("Error checking for pdpservice.json")
 	}
 
-	log.WithField("command", pdptoolPath).WithField("args", strings.Join(addRootsArgs, " ")).Info("Executing add-roots command")
+	// Retry configuration
+	maxRetries := 5
+	initialBackoff := 3 * time.Second
+	maxBackoff := 30 * time.Second
+	backoff := initialBackoff
+	success := false
 
-	var addRootOutput bytes.Buffer
-	var addRootError bytes.Buffer
-	addRootCmd.Stdout = &addRootOutput
-	addRootCmd.Stderr = &addRootError
+	// Execute add-roots command with retries
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		log.WithField("command", pdptoolPath).
+			WithField("args", strings.Join(addRootsArgs, " ")).
+			WithField("attempt", attempt).
+			WithField("maxRetries", maxRetries).
+			Info("Executing add-roots command")
 
-	if err := addRootCmd.Run(); err != nil {
-		stderrStr := addRootError.String()
-		stdoutStr := addRootOutput.String()
-		log.WithField("error", err.Error()).
-			WithField("stderr", stderrStr).
-			WithField("stdout", stdoutStr).
-			WithField("commandArgs", strings.Join(addRootsArgs, " ")).
-			Error("pdptool add-roots command failed")
+		// Update UI with current retry attempt
+		updateStatus(UploadProgress{
+			Status:     currentStage,
+			Progress:   currentProgress,
+			Message:    fmt.Sprintf("Adding root to proof set %s (attempt %d/%d)...", proofSet.ProofSetID, attempt, maxRetries),
+			CID:        compoundCID,
+			ProofSetID: proofSet.ProofSetID,
+		})
 
+		addRootCmd := exec.Command(pdptoolPath, addRootsArgs...)
+		addRootCmd.Dir = filepath.Dir(pdptoolPath)
+
+		var addRootOutput bytes.Buffer
+		var addRootError bytes.Buffer
+		addRootCmd.Stdout = &addRootOutput
+		addRootCmd.Stderr = &addRootError
+
+		// Add a timeout context to prevent hanging on the command execution
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+
+		// Use the context with the command
+		cmdWithTimeout := exec.CommandContext(ctx, pdptoolPath, addRootsArgs...)
+		cmdWithTimeout.Dir = filepath.Dir(pdptoolPath)
+		cmdWithTimeout.Stdout = &addRootOutput
+		cmdWithTimeout.Stderr = &addRootError
+
+		if err := cmdWithTimeout.Run(); err != nil {
+			stderrStr := addRootError.String()
+			stdoutStr := addRootOutput.String()
+
+			// Check if it was a timeout
+			if ctx.Err() == context.DeadlineExceeded {
+				log.WithField("attempt", attempt).
+					WithField("maxRetries", maxRetries).
+					Error("Command execution timed out after 45 seconds")
+
+				if attempt < maxRetries {
+					// Update UI with timeout status
+					updateStatus(UploadProgress{
+						Status:     currentStage,
+						Progress:   currentProgress,
+						Message:    fmt.Sprintf("Command timed out. Retrying %d/%d...", attempt+1, maxRetries),
+						CID:        compoundCID,
+						ProofSetID: proofSet.ProofSetID,
+					})
+
+					// Wait with exponential backoff
+					time.Sleep(backoff)
+
+					// Double the backoff for next attempt, capped at maxBackoff
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+					continue
+				} else {
+					updateStatus(UploadProgress{
+						Status:     "error",
+						Error:      "Command timed out after multiple attempts",
+						Message:    "The service took too long to respond. Please try again later.",
+						CID:        compoundCID,
+						ProofSetID: proofSet.ProofSetID,
+					})
+					return
+				}
+			}
+
+			// Log the error with detailed information
+			log.WithField("error", err.Error()).
+				WithField("stderr", stderrStr).
+				WithField("stdout", stdoutStr).
+				WithField("commandArgs", strings.Join(addRootsArgs, " ")).
+				WithField("attempt", attempt).
+				WithField("maxRetries", maxRetries).
+				Error("pdptool add-roots command failed")
+
+			// Check for specific error patterns that indicate a retry might succeed
+			shouldRetry := false
+			retryMessage := ""
+
+			if strings.Contains(stderrStr, "subroot CID") && strings.Contains(stderrStr, "not found or does not belong to service") {
+				shouldRetry = true
+				retryMessage = "CID not yet registered with service. Will retry after delay."
+			} else if strings.Contains(stderrStr, "Size must be a multiple of 32") {
+				shouldRetry = true
+				retryMessage = "Validation error. Will retry after delay."
+			} else if strings.Contains(stderrStr, "Failed to send transaction") {
+				shouldRetry = true
+				retryMessage = "Transaction error. Will retry after delay."
+			} else if strings.Contains(stderrStr, "status code 500") || strings.Contains(stderrStr, "status code 400") {
+				shouldRetry = true
+				retryMessage = "Service error. Will retry after delay."
+			}
+
+			if shouldRetry && attempt < maxRetries {
+				log.WithField("backoff", backoff).WithField("attempt", attempt).Info(retryMessage)
+
+				// Update UI with retry status
+				updateStatus(UploadProgress{
+					Status:     currentStage,
+					Progress:   currentProgress,
+					Message:    fmt.Sprintf("%s Waiting %v before retry %d/%d...", retryMessage, backoff, attempt, maxRetries),
+					CID:        compoundCID,
+					ProofSetID: proofSet.ProofSetID,
+				})
+
+				// Wait with exponential backoff
+				time.Sleep(backoff)
+
+				// Double the backoff for next attempt, capped at maxBackoff
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+				continue
+			}
+
+			// If we've reached max retries or it's not a retryable error, fail
+			if attempt >= maxRetries {
+				updateStatus(UploadProgress{
+					Status:     "error",
+					Error:      "Failed to add root to proof set after multiple attempts",
+					Message:    stderrStr,
+					CID:        compoundCID,
+					ProofSetID: proofSet.ProofSetID,
+				})
+				return
+			}
+
+			// For non-retryable errors, fail immediately
+			updateStatus(UploadProgress{
+				Status:     "error",
+				Error:      "Failed to add root to proof set",
+				Message:    stderrStr,
+				CID:        compoundCID,
+				ProofSetID: proofSet.ProofSetID,
+			})
+			return
+		}
+
+		// Command succeeded, break out of retry loop
+		addRootStderrStrOnSuccess := addRootError.String()
+		if addRootStderrStrOnSuccess != "" {
+			log.WithField("stderr", addRootStderrStrOnSuccess).Warning("add-roots command succeeded but produced output on stderr")
+		}
+
+		addRootStdoutStr := addRootOutput.String()
+		log.WithField("proofSetID", proofSet.ProofSetID).
+			WithField("rootUsed", rootArgument).
+			WithField("stdout", addRootStdoutStr).
+			WithField("attempt", attempt).
+			Info("add-roots command completed successfully")
+
+		success = true
+		break
+	}
+
+	if !success {
 		updateStatus(UploadProgress{
 			Status:     "error",
-			Error:      "Failed to add root to proof set",
-			Message:    stderrStr,
+			Error:      "Failed to add root to proof set after multiple attempts",
+			Message:    "Service did not accept the root after multiple attempts.",
 			CID:        compoundCID,
 			ProofSetID: proofSet.ProofSetID,
 		})
 		return
 	}
-
-	addRootStderrStrOnSuccess := addRootError.String()
-	if addRootStderrStrOnSuccess != "" {
-		log.WithField("stderr", addRootStderrStrOnSuccess).Warning("add-roots command succeeded but produced output on stderr")
-	}
-
-	addRootStdoutStr := addRootOutput.String()
-	log.WithField("proofSetID", proofSet.ProofSetID).
-		WithField("rootUsed", rootArgument).
-		WithField("stdout", addRootStdoutStr).
-		Info("add-roots command completed successfully")
 
 	currentProgress = 96
 	currentStage = "finalizing"

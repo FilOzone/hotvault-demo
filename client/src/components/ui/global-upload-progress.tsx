@@ -3,8 +3,12 @@
 import { useUploadStore } from "@/store/upload-store";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./button";
-import { AlertTriangle, ExternalLink } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, ExternalLink, RefreshCw } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { toast } from "sonner";
+
+// Poll interval for checking status (milliseconds)
+const STATUS_POLL_INTERVAL = 5000; // 5 seconds
 
 // Define status colors for different upload states
 const statusColors = {
@@ -14,6 +18,9 @@ const statusColors = {
   success: "bg-green-100 text-green-800",
   error: "bg-red-100 text-red-800",
   warning: "bg-amber-100 text-amber-800",
+  retry: "bg-amber-100 text-amber-800",
+  adding_root: "bg-blue-100 text-blue-800",
+  pending: "bg-blue-100 text-blue-800",
 };
 
 // Convert status to human-readable text
@@ -29,15 +36,55 @@ const getStatusText = (status: string): string => {
       return "Upload Successful";
     case "error":
       return "Upload Failed";
+    case "retry":
+      return "Retrying...";
+    case "adding_root":
+      return "Adding to Chain...";
+    case "pending":
+      return "Initializing Proof Set...";
     default:
       return "Upload in Progress";
   }
 };
 
+// Helper function to get more detailed message based on status and existing message
+const getDetailedMessage = (status: string, message?: string): string => {
+  if (!message) return "";
+
+  // Special case for "Locating user proof set..."
+  if (message.includes("Locating user proof set")) {
+    return "Finding or creating a proof set for your file...";
+  }
+
+  // If message contains "Adding root to proof set" but doesn't have attempt info
+  if (
+    message.includes("Adding root to proof set") &&
+    !message.includes("attempt")
+  ) {
+    return "Registering file on the blockchain network...";
+  }
+
+  // If message has "proof set creation is still pending"
+  if (
+    message.includes("proof set creation is still pending") ||
+    message.includes("proof set is being initialized")
+  ) {
+    return "Waiting for blockchain confirmation of your proof set...";
+  }
+
+  return message;
+};
+
+// Custom event for notifying upload completion
+export const UPLOAD_COMPLETED_EVENT = "upload:completed";
+
 export const GlobalUploadProgress = () => {
-  const { uploadProgress, clearUploadProgress } = useUploadStore();
+  const { uploadProgress, clearUploadProgress, setUploadProgress } =
+    useUploadStore();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isDuplicate, setIsDuplicate] = useState(false);
+  const [hasStalled, setHasStalled] = useState(false);
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check authentication status
   useEffect(() => {
@@ -75,18 +122,154 @@ export const GlobalUploadProgress = () => {
     };
   }, [clearUploadProgress]);
 
-  // Auto-dismiss logic for completed/error states
+  // Polling for status updates when in certain states
   useEffect(() => {
-    if (!uploadProgress) return;
+    // Clear any existing poll timer on state change
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
 
-    // Clear progress if status is complete/error or if backend processing is done
+    if (!uploadProgress || !uploadProgress.jobId) return;
+
+    // Set up polling for these states
+    if (
+      uploadProgress.status === "adding_root" ||
+      uploadProgress.status === "pending" ||
+      (uploadProgress.isStalled &&
+        (uploadProgress.message?.includes("proof set") ||
+          uploadProgress.message?.includes("Proof set")))
+    ) {
+      console.log("[GlobalUploadProgress] Starting status polling");
+
+      // Set up regular polling
+      pollTimerRef.current = setInterval(() => {
+        const token = localStorage.getItem("jwt_token");
+        if (!token || !uploadProgress.jobId) return;
+
+        console.log("[GlobalUploadProgress] Polling for status update");
+
+        fetch(`/api/v1/upload/status/${uploadProgress.jobId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+          .then((response) => {
+            if (!response.ok) {
+              // Specifically handle 404 Not Found
+              if (response.status === 404) {
+                throw new Error(
+                  `Upload status not found (Job ID: ${uploadProgress.jobId}). The job may have expired or the server restarted.`
+                );
+              }
+              throw new Error(`Failed to get status (${response.status})`);
+            }
+            return response.json();
+          })
+          .then((data) => {
+            console.log("[GlobalUploadProgress] Poll response:", data);
+
+            // Only update if there's actual change
+            if (
+              data &&
+              (data.status !== uploadProgress.status ||
+                data.message !== uploadProgress.message ||
+                data.progress !== uploadProgress.progress)
+            ) {
+              setUploadProgress({
+                ...data,
+                lastUpdated: Date.now(),
+                isStalled: false,
+              });
+
+              if (data.status === "complete" || data.status === "success") {
+                // Dispatch event to refresh file list
+                window.dispatchEvent(
+                  new CustomEvent(UPLOAD_COMPLETED_EVENT, {
+                    detail: {
+                      cid: data.cid,
+                      filename: data.filename,
+                      serviceProofSetId: data.serviceProofSetId,
+                    },
+                  })
+                );
+
+                if (pollTimerRef.current) {
+                  clearInterval(pollTimerRef.current);
+                  pollTimerRef.current = null;
+                }
+              }
+            }
+          })
+          .catch((error) => {
+            console.error("[GlobalUploadProgress] Poll error:", error);
+            // Stop polling if the job is not found (404) or on other critical errors
+            if (
+              error.message.includes("Upload status not found") ||
+              error.message.includes("Failed to get status")
+            ) {
+              setUploadProgress({
+                status: "error",
+                error: error.message,
+                lastUpdated: Date.now(),
+                jobId: uploadProgress?.jobId, // Keep jobId if available
+                filename: uploadProgress?.filename, // Keep filename if available
+              });
+              if (pollTimerRef.current) {
+                clearInterval(pollTimerRef.current);
+                pollTimerRef.current = null;
+              }
+            }
+            // For other errors, we might want to let polling continue or handle differently
+          });
+      }, STATUS_POLL_INTERVAL);
+
+      return () => {
+        if (pollTimerRef.current) {
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+      };
+    }
+  }, [uploadProgress, setUploadProgress]);
+
+  // Auto-dismiss logic for completed/error states and trigger file list refresh
+  useEffect(() => {
+    if (!uploadProgress) {
+      setHasStalled(false);
+      return;
+    }
+
+    // If upload is complete/successful, dispatch event to refresh file list
     if (
       uploadProgress.status === "complete" ||
-      uploadProgress.status === "error" ||
       uploadProgress.status === "success"
     ) {
+      // Dispatch a custom event that can be listened to by the file list component
+      window.dispatchEvent(
+        new CustomEvent(UPLOAD_COMPLETED_EVENT, {
+          detail: {
+            cid: uploadProgress.cid,
+            filename: uploadProgress.filename,
+            serviceProofSetId: uploadProgress.serviceProofSetId,
+          },
+        })
+      );
+
+      // Set timer to clear the progress notification
       const timer = setTimeout(() => {
         clearUploadProgress();
+        setHasStalled(false);
+      }, 5000); // Dismiss after 5 seconds
+
+      return () => clearTimeout(timer);
+    }
+
+    // Handle error state
+    if (uploadProgress.status === "error") {
+      const timer = setTimeout(() => {
+        clearUploadProgress();
+        setHasStalled(false);
       }, 5000); // Dismiss after 5 seconds
 
       return () => clearTimeout(timer);
@@ -95,17 +278,20 @@ export const GlobalUploadProgress = () => {
     // Handle stalled uploads
     if (
       uploadProgress.status === "uploading" ||
-      uploadProgress.status === "processing"
+      uploadProgress.status === "processing" ||
+      uploadProgress.status === "adding_root" ||
+      uploadProgress.status === "retry" ||
+      uploadProgress.status === "pending"
     ) {
       const lastUpdate = uploadProgress.lastUpdated;
       const currentTime = Date.now();
 
       // If no update for 30 seconds, consider it stalled
       if (lastUpdate && currentTime - lastUpdate > 30000) {
-        clearUploadProgress();
+        setHasStalled(true);
       }
     }
-  }, [uploadProgress, clearUploadProgress]);
+  }, [uploadProgress, clearUploadProgress, setHasStalled]);
 
   // Add duplicate handling
   useEffect(() => {
@@ -120,12 +306,95 @@ export const GlobalUploadProgress = () => {
     }
   }, [uploadProgress?.error, clearUploadProgress]);
 
+  // Handle manual refresh of stalled uploads
+  const handleManualRetry = () => {
+    if (!uploadProgress) return;
+
+    // Only allow retry for certain states
+    if (
+      uploadProgress.status === "adding_root" ||
+      uploadProgress.status === "processing" ||
+      uploadProgress.status === "retry" ||
+      uploadProgress.status === "pending" ||
+      uploadProgress.isStalled
+    ) {
+      // Set the stalled flag to false
+      setHasStalled(false);
+
+      // Force a status update with new timestamp to reset the stalled timer
+      setUploadProgress({
+        ...uploadProgress,
+        lastUpdated: Date.now(),
+        message: uploadProgress.message?.includes("attempt")
+          ? uploadProgress.message
+          : `${uploadProgress.message} (manually refreshed)`,
+        isStalled: false,
+      });
+
+      toast.info("Refreshing upload status...");
+
+      // If we have a jobId, try to refresh the status from server
+      if (uploadProgress.jobId) {
+        fetch(`/api/v1/upload/status/${uploadProgress.jobId}`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("jwt_token")}`,
+          },
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("Failed to refresh status");
+            }
+            return response.json();
+          })
+          .then((data) => {
+            console.log(
+              "[GlobalUploadProgress] Manual refresh response:",
+              data
+            );
+            if (data) {
+              // If the status shows the same state for too long, we might need to clear and retry
+              if (
+                data.status === uploadProgress.status &&
+                data.message === uploadProgress.message &&
+                uploadProgress.isStalled
+              ) {
+                toast.warning(
+                  "Process appears to be stuck. You may want to cancel and try again."
+                );
+              } else {
+                setUploadProgress({
+                  ...data,
+                  lastUpdated: Date.now(),
+                  isStalled: false,
+                });
+                toast.success("Status refreshed");
+              }
+            }
+          })
+          .catch((error) => {
+            console.error("Error refreshing status:", error);
+            toast.error("Failed to refresh status. Please try again.");
+          });
+      }
+    }
+  };
+
   // Don't show anything if not authenticated or no upload progress
   if (!isAuthenticated || !uploadProgress) return null;
 
   const statusColor =
     statusColors[uploadProgress.status as keyof typeof statusColors] ||
     statusColors.uploading;
+
+  // Determine if we're in a retry state
+  const isRetrying = uploadProgress.status === "retry";
+  // Determine if we're in a state where manual retry is allowed
+  const canManuallyRetry =
+    hasStalled &&
+    (uploadProgress.status === "adding_root" ||
+      uploadProgress.status === "processing" ||
+      uploadProgress.status === "retry" ||
+      uploadProgress.status === "pending");
 
   return (
     <AnimatePresence>
@@ -144,31 +413,40 @@ export const GlobalUploadProgress = () => {
                 {uploadProgress.isStalled && (
                   <AlertTriangle className="h-4 w-4 text-amber-500" />
                 )}
+                {isRetrying && (
+                  <RefreshCw className="h-4 w-4 text-amber-500 animate-spin" />
+                )}
                 <span>
                   {isDuplicate
                     ? "Duplicate File Detected"
                     : getStatusText(uploadProgress.status)}
                 </span>
-                {(uploadProgress.status === "uploading" ||
-                  uploadProgress.status === "processing") && (
-                  <Button
-                    onClick={clearUploadProgress}
-                    variant="ghost"
-                    size="sm"
-                    className="ml-2 px-2 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
-                  >
-                    Cancel
-                  </Button>
-                )}
               </div>
               {uploadProgress.message && (
                 <div className="text-sm mt-1 opacity-80 line-clamp-2">
-                  {uploadProgress.message}
+                  {getDetailedMessage(
+                    uploadProgress.status,
+                    uploadProgress.message
+                  )}
                 </div>
               )}
               {uploadProgress.isStalled && (
                 <div className="text-amber-600 text-sm mt-1">
                   No updates received for a while.
+                </div>
+              )}
+              {/* Show manual retry button if the process has stalled */}
+              {canManuallyRetry && (
+                <div className="mt-2">
+                  <Button
+                    onClick={handleManualRetry}
+                    variant="outline"
+                    size="sm"
+                    className="w-full flex items-center justify-center gap-2 bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Manual Refresh</span>
+                  </Button>
                 </div>
               )}
               {uploadProgress.error && (
@@ -218,8 +496,11 @@ export const GlobalUploadProgress = () => {
                 className={`h-2.5 rounded-full ${
                   uploadProgress.status === "error"
                     ? "bg-red-500"
-                    : uploadProgress.status === "complete"
+                    : uploadProgress.status === "complete" ||
+                      uploadProgress.status === "success"
                     ? "bg-green-500"
+                    : uploadProgress.status === "retry"
+                    ? "bg-amber-500"
                     : uploadProgress.isStalled
                     ? "bg-amber-500"
                     : "bg-blue-500"

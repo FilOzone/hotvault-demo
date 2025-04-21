@@ -20,38 +20,13 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 }) => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const { uploadProgress, setUploadProgress, clearUploadProgress } =
-    useUploadStore();
+  const { uploadProgress, setUploadProgress } = useUploadStore();
 
   // Refs for upload state management
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const uploadStartTimeRef = useRef<number | null>(null);
-
-  const handleCancelUpload = () => {
-    // Cancel any in-progress fetch requests
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
-    // Clear any poll intervals
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-
-    // Clear any timeouts
-    if (uploadTimeoutRef.current) {
-      clearTimeout(uploadTimeoutRef.current);
-      uploadTimeoutRef.current = null;
-    }
-
-    // Reset the upload state
-    clearUploadProgress();
-    toast.info("Upload canceled");
-  };
 
   const getFilePreviewType = (
     filename: string
@@ -423,17 +398,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       >
         <div className="flex justify-between items-center mb-2">
           <div className="font-medium text-sm">{getStatusText()}</div>
-          {(uploadProgress.status === "uploading" ||
-            uploadProgress.status === "processing") && (
-            <Button
-              onClick={handleCancelUpload}
-              variant="ghost"
-              size="sm"
-              className="text-xs h-7 px-2 hover:bg-red-50 hover:text-red-600"
-            >
-              Cancel
-            </Button>
-          )}
         </div>
 
         <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
@@ -498,15 +462,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
             </Typography>
           </div>
           <div className="flex space-x-2">
-            {uploadProgress && (
-              <Button
-                onClick={handleCancelUpload}
-                variant="outline"
-                className="text-sm"
-              >
-                Cancel
-              </Button>
-            )}
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
