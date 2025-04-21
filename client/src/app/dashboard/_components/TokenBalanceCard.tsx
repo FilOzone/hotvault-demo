@@ -2,7 +2,7 @@ import { usePayment } from "@/contexts/PaymentContext";
 import * as Constants from "@/lib/constants";
 import { RefreshCw } from "lucide-react";
 
-export const USDFCBalanceDisplay = () => {
+export const TokenBalanceCard = () => {
   const { paymentStatus, refreshBalance } = usePayment();
   const { usdcBalance, hasMinimumBalance, isLoading, error } = paymentStatus;
 

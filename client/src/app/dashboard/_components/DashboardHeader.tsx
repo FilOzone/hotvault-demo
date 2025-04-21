@@ -85,7 +85,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 }`}
               >
                 <Wallet size={16} />
-                Payments
+                Payment Setup
               </button>
             </nav>
           </div>

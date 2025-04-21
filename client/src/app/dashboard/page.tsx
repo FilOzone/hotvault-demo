@@ -6,8 +6,8 @@ import { useState } from "react";
 import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { FilesTab } from "./_components/FilesTab";
-import { PaymentsTab } from "./_components/PaymentsTab";
 import { USDFCBalanceDisplay } from "./_components/USDFCBalanceDisplay";
+import { PaymentSetupTab } from "./_components/PaymentSetupTab";
 
 export default function Dashboard() {
   const { account, handleAccountSwitch, disconnectWallet } = useAuth();
@@ -43,7 +43,7 @@ export default function Dashboard() {
               {activeTab === DASHBOARD_SECTIONS.FILES && (
                 <FilesTab isLoading={isLoading} />
               )}
-              {activeTab === DASHBOARD_SECTIONS.PAYMENTS && <PaymentsTab />}
+              {activeTab === DASHBOARD_SECTIONS.PAYMENTS && <PaymentSetupTab />}
             </AnimatePresence>
           </div>
         </main>

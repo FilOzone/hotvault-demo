@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { usePayment } from "@/contexts/PaymentContext";
-import { USDFCBalanceDisplay } from "./USDFCBalanceDisplay";
+import { TokenBalanceCard } from "./TokenBalanceCard";
 import {
   Wallet,
   ArrowRight,
@@ -17,7 +17,7 @@ enum PaymentStep {
   COMPLETE = 3,
 }
 
-export const PaymentsTab = () => {
+export const PaymentSetupTab = () => {
   const { paymentStatus } = usePayment();
   const [currentStep, setCurrentStep] = useState<PaymentStep>(
     PaymentStep.APPROVE_TOKEN
@@ -152,7 +152,7 @@ export const PaymentsTab = () => {
 
       <div className="p-6 grid md:grid-cols-5 gap-6">
         <div className="md:col-span-2">
-          <USDFCBalanceDisplay />
+          <TokenBalanceCard />
 
           {/* Helpful info card */}
           <div className="mt-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
