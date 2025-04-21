@@ -6,6 +6,7 @@ import { useState } from "react";
 import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { FilesTab } from "./_components/FilesTab";
+import { USDFCBalanceDisplay } from "./_components/USDFCBalanceDisplay";
 
 export default function Dashboard() {
   const { account, handleAccountSwitch, disconnectWallet } = useAuth();
@@ -33,6 +34,9 @@ export default function Dashboard() {
 
       <div className="pt-16">
         <main className="container mx-auto px-4 py-8">
+          {/* USDFC Balance Display */}
+          <USDFCBalanceDisplay />
+
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <AnimatePresence mode="wait">
               {activeTab === DASHBOARD_SECTIONS.FILES && (

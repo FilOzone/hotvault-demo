@@ -12,6 +12,7 @@ export interface Piece {
 export const DASHBOARD_SECTIONS = {
   FILES: "files",
   ACTIVITY: "activity",
+  PAYMENTS: "payments",
 } as const;
 
 export type DashboardSection =
