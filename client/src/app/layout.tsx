@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { DM_Sans } from "next/font/google";
 import "./globals.css";
 import ClientLayout from "@/components/layout/client-layout";
+import { GlobalUploadProgress } from "@/components/ui/global-upload-progress";
 
 const dmSans = DM_Sans({ subsets: ["latin"] });
 const geistSans = Geist({
@@ -31,7 +32,10 @@ export default function RootLayout({
       <body
         className={`${dmSans.className} ${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ClientLayout>{children}</ClientLayout>
+        <ClientLayout>
+          {children}
+          <GlobalUploadProgress />
+        </ClientLayout>
       </body>
     </html>
   );

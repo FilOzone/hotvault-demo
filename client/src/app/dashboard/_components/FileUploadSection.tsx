@@ -9,7 +9,7 @@ import { Typography } from "@/components/ui/typography";
 import { API_BASE_URL } from "@/lib/constants";
 import { toast } from "sonner";
 import { FileIcon } from "./FileIcon";
-import { UploadProgress } from "./types";
+import { useUploadStore } from "@/store/upload-store";
 
 interface FileUploadProps {
   onUploadSuccess: () => void;
@@ -20,9 +20,8 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 }) => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(
-    null
-  );
+  const { uploadProgress, setUploadProgress, clearUploadProgress } =
+    useUploadStore();
 
   // Refs for upload state management
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -50,7 +49,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
     }
 
     // Reset the upload state
-    setUploadProgress(null);
+    clearUploadProgress();
     toast.info("Upload canceled");
   };
 
@@ -166,13 +165,16 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 
       // Start the stall detection timer
       uploadTimeoutRef.current = setTimeout(() => {
-        setUploadProgress((prev) => {
-          if (!prev) return null;
-          return { ...prev, isStalled: true };
-        });
+        setUploadProgress((prev) => ({
+          ...(prev || { status: "uploading", filename: selectedImage.name }),
+          isStalled: true,
+        }));
       }, 10000); // 10 seconds timeout
 
-      const response = await fetch(`${API_BASE_URL}/api/v1/pieces/upload`, {
+      console.log(
+        `[FileUploadSection] 🚀 Uploading ${selectedImage.name} to ${API_BASE_URL}/api/v1/upload`
+      );
+      const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
         method: "POST",
         body: formData,
         headers: {
@@ -187,12 +189,39 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         uploadTimeoutRef.current = null;
       }
 
+      console.log(
+        `[FileUploadSection] 📬 Upload response status: ${response.status}`
+      );
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData = {
+          message: `Upload failed with status ${response.status}`,
+        };
+        try {
+          errorData = await response.json();
+          console.error(
+            "[FileUploadSection] ❌ Upload failed response body:",
+            errorData
+          );
+        } catch (jsonError) {
+          console.error(
+            "[FileUploadSection] ❌ Failed to parse upload error response as JSON:",
+            jsonError
+          );
+          const textResponse = await response.text();
+          console.error(
+            "[FileUploadSection] ❌ Upload failed response text:",
+            textResponse
+          );
+          errorData.message = textResponse || errorData.message;
+        }
         throw new Error(errorData.message || "Upload failed");
       }
 
       const data = await response.json();
+      console.log(
+        "[FileUploadSection] ✅ Upload successful response body:",
+        data
+      );
 
       setUploadProgress({
         status: "success",
@@ -204,16 +233,19 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 
       // Start polling for proof status if we have a job ID
       if (data.jobId) {
-        setUploadProgress((prev) => {
-          if (!prev) return null;
-          return { ...prev, status: "processing" };
-        });
+        setUploadProgress((prev) => ({
+          ...(prev || { filename: selectedImage.name }),
+          status: "processing",
+        }));
 
         // Poll for proof generation status
         const pollStatus = async () => {
           try {
+            console.log(
+              `[FileUploadSection] ⏳ Polling status for job ${data.jobId}...`
+            );
             const statusResponse = await fetch(
-              `${API_BASE_URL}/api/v1/pieces/status/${data.jobId}`,
+              `${API_BASE_URL}/api/v1/upload/status/${data.jobId}`,
               {
                 headers: {
                   Authorization: `Bearer ${token}`,
@@ -221,23 +253,27 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
               }
             );
 
+            console.log(
+              `[FileUploadSection] 📬 Poll response status: ${statusResponse.status}`
+            );
             if (!statusResponse.ok) {
               throw new Error("Failed to check proof status");
             }
 
             const statusData = await statusResponse.json();
+            console.log(
+              "[FileUploadSection] 📊 Polling status update:",
+              statusData
+            );
 
             if (statusData.status === "complete") {
-              // Proof generation is complete
-              setUploadProgress((prev) => {
-                if (!prev) return null;
-                return {
-                  ...prev,
-                  status: "complete",
-                  message: "File uploaded and proof generated!",
-                  serviceProofSetId: statusData.serviceProofSetId,
-                };
-              });
+              console.log("[FileUploadSection] ✅ Proof generation complete!");
+              setUploadProgress((prev) => ({
+                ...(prev || { filename: selectedImage.name }),
+                status: "complete",
+                message: "File uploaded and proof generated!",
+                serviceProofSetId: statusData.serviceProofSetId,
+              }));
 
               // Clear the polling interval
               if (pollIntervalRef.current) {
@@ -250,20 +286,23 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 
               // Reset the upload state after a delay
               setTimeout(() => {
-                setUploadProgress(null);
+                setUploadProgress({
+                  status: "complete",
+                  message: "Upload complete",
+                });
                 setSelectedImage(null);
                 setPreviewUrl(null);
               }, 5000);
             } else if (statusData.status === "failed") {
-              // Proof generation failed
-              setUploadProgress((prev) => {
-                if (!prev) return null;
-                return {
-                  ...prev,
-                  status: "error",
-                  error: statusData.error || "Proof generation failed",
-                };
-              });
+              console.error(
+                "[FileUploadSection] ❌ Proof generation failed:",
+                statusData
+              );
+              setUploadProgress((prev) => ({
+                ...(prev || { filename: selectedImage.name }),
+                status: "error",
+                error: statusData.error || "Proof generation failed",
+              }));
 
               // Clear the polling interval
               if (pollIntervalRef.current) {
@@ -271,17 +310,13 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 pollIntervalRef.current = null;
               }
             } else {
-              // Still processing, update the progress if available
-              setUploadProgress((prev) => {
-                if (!prev) return null;
-                return {
-                  ...prev,
-                  status: "processing",
-                  progress: statusData.progress,
-                  lastUpdated: Date.now(),
-                  isStalled: false,
-                };
-              });
+              setUploadProgress((prev) => ({
+                ...(prev || { filename: selectedImage.name }),
+                status: "processing",
+                progress: statusData.progress,
+                lastUpdated: Date.now(),
+                isStalled: false,
+              }));
             }
           } catch (error) {
             console.error(
@@ -300,7 +335,10 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 
         // Reset the upload state after a delay
         setTimeout(() => {
-          setUploadProgress(null);
+          setUploadProgress({
+            status: "complete",
+            message: "Upload complete",
+          });
           setSelectedImage(null);
           setPreviewUrl(null);
         }, 5000);
@@ -312,6 +350,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         uploadTimeoutRef.current = null;
       }
 
+      console.error("[FileUploadSection] 💥 Upload caught error:", error);
       if (error instanceof Error) {
         // Only show error if not aborted
         if (error.name !== "AbortError") {
@@ -517,7 +556,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                     />
                   ) : (
                     // Enhanced non-image file preview with specific styles per file type
-                    <div className="block w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
+                    <div className="w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
                       <div className="flex flex-col items-center justify-center p-6">
                         {(() => {
                           const fileType = getFilePreviewType(
