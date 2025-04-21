@@ -556,7 +556,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                     />
                   ) : (
                     // Enhanced non-image file preview with specific styles per file type
-                    <div className="block w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
+                    <div className="w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
                       <div className="flex flex-col items-center justify-center p-6">
                         {(() => {
                           const fileType = getFilePreviewType(

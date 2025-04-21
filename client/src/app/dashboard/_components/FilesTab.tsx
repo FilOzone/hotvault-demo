@@ -162,78 +162,8 @@ export const FilesTab = ({
   const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
   const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
 
-  // Add a useEffect to periodically check for proof sets if they're pending
-  useEffect(() => {
-    // Don't poll if we already have a proof set ID
-    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
-      const proofCheckInterval = setInterval(() => {
-        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
-        fetchProofs();
-      }, 15000); // Check every 15 seconds
-
-      return () => clearInterval(proofCheckInterval);
-    }
-  }, [proofSetStatus, pieces.length, userProofSetId]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadData = async () => {
-      try {
-        if (isMounted) {
-          const data = await fetchPieces();
-          // Only proceed if we're still mounted and have data
-          if (isMounted && data) {
-            await fetchProofs();
-          }
-        }
-      } catch (error: unknown) {
-        if (isMounted && !authError) {
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
-          toast.error(`Error loading files: ${errorMessage}`);
-        }
-      }
-    };
-
-    loadData();
-
-    // Cleanup function to prevent state updates after unmount
-    return () => {
-      isMounted = false;
-    };
-  }, [authError, fetchPieces]);
-
-  // Add useEffect to find the user's proof set ID when pieces are loaded
-  useEffect(() => {
-    // Find the first piece with a valid proofSetDbId (the service ID string)
-    const firstPieceWithProof = pieces.find(
-      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
-    );
-    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
-
-    // Only update state if the derived ID is different from the current state
-    if (derivedProofSetId !== userProofSetId) {
-      setUserProofSetId(derivedProofSetId);
-      if (derivedProofSetId) {
-        console.log(
-          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
-        );
-      } else {
-        console.log(
-          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
-        );
-      }
-    } else {
-      // Log even if the ID hasn't changed, for debugging
-      console.log(
-        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
-      );
-    }
-  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
-
   // Add new function to fetch proofs
-  const fetchProofs = async () => {
+  const fetchProofs = useCallback(async () => {
     try {
       // If we already have a userProofSetId, no need to keep checking
       if (userProofSetId) {
@@ -320,30 +250,64 @@ export const FilesTab = ({
       );
       setProofSetStatus("pending");
     }
-  };
+  }, [userProofSetId, setProofSetStatus, setAuthError, setPieces]);
 
-  // Add this useEffect to check token on component mount and set up periodic token check
   useEffect(() => {
-    const checkToken = () => {
-      const token = localStorage.getItem("jwt_token");
-      if (!token) {
-        setAuthError("Authentication required. Please login again.");
-      } else {
-        // Only clear auth error if it was previously set
-        if (authError) setAuthError(null);
+    let isMounted = true;
+
+    const loadData = async () => {
+      try {
+        if (isMounted) {
+          const data = await fetchPieces();
+          // Only proceed if we're still mounted and have data
+          if (isMounted && data) {
+            await fetchProofs();
+          }
+        }
+      } catch (error: unknown) {
+        if (isMounted && !authError) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          toast.error(`Error loading files: ${errorMessage}`);
+        }
       }
     };
 
-    // Check on mount
-    checkToken();
+    loadData();
 
-    // Check token periodically
-    const tokenInterval = setInterval(checkToken, 60000); // Check every minute
-
+    // Cleanup function to prevent state updates after unmount
     return () => {
-      clearInterval(tokenInterval);
+      isMounted = false;
     };
-  }, [authError]);
+  }, [authError, fetchPieces, fetchProofs]);
+
+  // Add useEffect to find the user's proof set ID when pieces are loaded
+  useEffect(() => {
+    // Find the first piece with a valid proofSetDbId (the service ID string)
+    const firstPieceWithProof = pieces.find(
+      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
+    );
+    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
+
+    // Only update state if the derived ID is different from the current state
+    if (derivedProofSetId !== userProofSetId) {
+      setUserProofSetId(derivedProofSetId);
+      if (derivedProofSetId) {
+        console.log(
+          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
+        );
+      } else {
+        console.log(
+          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
+        );
+      }
+    } else {
+      // Log even if the ID hasn't changed, for debugging
+      console.log(
+        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
+      );
+    }
+  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
 
   // Modify the onDrop function to handle all file types, not just images
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -1177,7 +1141,7 @@ export const FilesTab = ({
                   href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${userProofSetId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1246,7 +1210,7 @@ export const FilesTab = ({
                     />
                   ) : (
                     // Enhanced non-image file preview with specific styles per file type
-                    <div className="block w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
+                    <div className="w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
                       <div className="flex flex-col items-center justify-center p-6">
                         {(() => {
                           const fileType = getFilePreviewType(
