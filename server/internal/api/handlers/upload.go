@@ -582,6 +582,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		"--root", rootArgument,
 	}
 
+	log.WithField("add-roots-args", strings.Join(addRootsArgs, " ")).Info("Adding root to proof set")
+
 	// Check command working directory and secret file
 	cmdDir := filepath.Dir(pdptoolPath)
 	secretPath := filepath.Join(cmdDir, "pdpservice.json")
@@ -784,7 +786,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	updateStatus(UploadProgress{
 		Status:     currentStage,
 		Progress:   currentProgress,
-		Message:    "Confirming Root ID assignment via polling...",
+		Message:    "Confirming Root ID assignment...",
 		CID:        compoundCID,
 		ProofSetID: proofSet.ProofSetID,
 	})

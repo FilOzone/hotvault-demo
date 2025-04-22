@@ -1,6 +1,9 @@
 "use client";
 
-import { useUploadStore, UploadProgress as UploadProgressType } from "@/store/upload-store";
+import {
+  useUploadStore,
+  UploadProgress as UploadProgressType,
+} from "@/store/upload-store";
 import { AlertTriangle, ExternalLink, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./button";

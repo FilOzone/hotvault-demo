@@ -23,6 +23,16 @@ func main() {
 	log.Info("Loading configuration...")
 	cfg := config.LoadConfig()
 
+	// Apply logging configuration
+	loggingConfig := logger.GetLoggingConfig()
+
+	// Configure Gin mode based on logging settings
+	if loggingConfig.DisableGINLogging || loggingConfig.ProductionMode {
+		gin.SetMode(gin.ReleaseMode)
+	} else if ginMode := os.Getenv("GIN_MODE"); ginMode != "" {
+		gin.SetMode(ginMode)
+	}
+
 	log.Info("Attempting to connect to database...")
 	db, err := database.NewPostgresConnection(cfg.Database)
 	if err != nil {
@@ -35,11 +45,6 @@ func main() {
 		log.Fatal(fmt.Sprintf("Failed to migrate database: %v", err))
 	}
 	log.Info("Database migrations completed successfully.")
-
-	env := os.Getenv("ENV")
-	if env == "production" {
-		gin.SetMode(gin.ReleaseMode)
-	}
 
 	router := gin.Default()
 
