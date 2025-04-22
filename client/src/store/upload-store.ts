@@ -13,7 +13,9 @@ export interface UploadProgress {
     | "complete"
     | "error"
     | "warning"
-    | "cancelled";
+    | "cancelled"
+    | "retry"
+    | "pending";
   progress?: number;
   message?: string;
   cid?: string;
@@ -39,17 +41,20 @@ export const useUploadStore = create<UploadStore>()(
       uploadProgress: null,
       setUploadProgress: (progress) => {
         const newProgress =
-          typeof progress === "function" ? progress(get().uploadProgress) : progress;
+          typeof progress === "function"
+            ? progress(get().uploadProgress)
+            : progress;
         console.log("[UploadStore] Setting progress:", newProgress);
-        
+
         // Check if the upload is stalled
         if (newProgress.lastUpdated) {
           const timeSinceLastUpdate = Date.now() - newProgress.lastUpdated;
-          if (timeSinceLastUpdate > 10000) { // 10 seconds
+          if (timeSinceLastUpdate > 10000) {
+            // 10 seconds
             newProgress.isStalled = true;
           }
         }
-        
+
         set({ uploadProgress: newProgress });
       },
       clearUploadProgress: () => {

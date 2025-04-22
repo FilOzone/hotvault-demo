@@ -79,3 +79,4 @@ swagger.yaml
 
 # Air live reload
 tmp/
+pdpservice.json

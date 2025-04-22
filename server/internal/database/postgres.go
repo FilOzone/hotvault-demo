@@ -4,9 +4,10 @@ import (
 	"fmt"
 
 	"github.com/fws/backend/config"
+	applogger "github.com/fws/backend/pkg/logger"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 // NewPostgresConnection creates a new connection to a PostgreSQL database
@@ -16,8 +17,19 @@ func NewPostgresConnection(cfg config.DatabaseConfig) (*gorm.DB, error) {
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,
 	)
 
+	// Get logging configuration
+	loggingConfig := applogger.GetLoggingConfig()
+
+	// Determine the appropriate log level based on configuration
+	logLevel := gormlogger.Info
+	if loggingConfig.DisableGORMLogging {
+		logLevel = gormlogger.Silent // Disable GORM logging completely
+	} else if loggingConfig.ProductionMode {
+		logLevel = gormlogger.Error // Only log errors in production
+	}
+
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: gormlogger.Default.LogMode(logLevel),
 	})
 	if err != nil {
 		return nil, err

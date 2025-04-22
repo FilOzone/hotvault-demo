@@ -1,6 +1,7 @@
 "use client";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { PaymentProvider } from "@/contexts/PaymentContext";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -58,6 +59,14 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     );
+  }
+
+  // Conditionally wrap authenticated routes with PaymentProvider
+  const isAuthenticatedRoute =
+    pathname === "/dashboard" || pathname === "/upload";
+
+  if (isAuthenticatedRoute && account) {
+    return <PaymentProvider>{children}</PaymentProvider>;
   }
 
   return children;

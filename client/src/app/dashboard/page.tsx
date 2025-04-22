@@ -6,6 +6,8 @@ import { useState } from "react";
 import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { FilesTab } from "./_components/FilesTab";
+import { PaymentSetupTab } from "./_components/PaymentSetupTab";
+import { ProofSetBanner } from "@/components/ui/proof-set-banner";
 
 export default function Dashboard() {
   const { account, handleAccountSwitch, disconnectWallet } = useAuth();
@@ -31,6 +33,8 @@ export default function Dashboard() {
         disconnectWallet={disconnectWallet}
       />
 
+      <ProofSetBanner />
+
       <div className="pt-16">
         <main className="container mx-auto px-4 py-8">
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -38,6 +42,7 @@ export default function Dashboard() {
               {activeTab === DASHBOARD_SECTIONS.FILES && (
                 <FilesTab isLoading={isLoading} />
               )}
+              {activeTab === DASHBOARD_SECTIONS.PAYMENTS && <PaymentSetupTab />}
             </AnimatePresence>
           </div>
         </main>

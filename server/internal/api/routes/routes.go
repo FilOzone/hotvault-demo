@@ -16,7 +16,7 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	handlers.Initialize(db, cfg)
 
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "https://fws-demo-app.yourdomain.com"}, // Update with your domains
+		AllowOrigins:     []string{"http://localhost:3000", "https://fws-demo-app.yourdomain.com"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},

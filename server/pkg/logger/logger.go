@@ -1,7 +1,10 @@
 package logger
 
 import (
+	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -13,6 +16,7 @@ type Logger interface {
 	Error(message string)
 	Fatal(message string)
 	WithField(key string, value interface{}) Logger
+	IsDebugEnabled() bool
 }
 
 type LogrusLogger struct {
@@ -20,17 +24,108 @@ type LogrusLogger struct {
 	entry  *logrus.Entry
 }
 
+// LogFormat determines the output format of the logger
+type LogFormat string
+
+const (
+	JSONFormat   LogFormat = "json"
+	TextFormat   LogFormat = "text"
+	PrettyFormat LogFormat = "pretty" // Colored, human-readable format
+)
+
+// Configuration options for the application-wide logging
+type LoggingConfig struct {
+	// Main application log level and format
+	Level  string
+	Format string
+
+	// Controls for specific logging sources
+	DisableGORMLogging bool
+	DisableGINLogging  bool
+
+	// Only log errors in production
+	ProductionMode bool
+}
+
+// GetLoggingConfig reads environment variables to configure logging
+func GetLoggingConfig() LoggingConfig {
+	env := strings.ToLower(os.Getenv("ENV"))
+	isProduction := env == "production"
+
+	// By default, disable verbose logs in production
+	disableGORMLogging := isProduction
+	if val := strings.ToLower(os.Getenv("DISABLE_GORM_LOGGING")); val != "" {
+		disableGORMLogging = val == "true" || val == "1" || val == "yes"
+	}
+
+	disableGINLogging := isProduction
+	if val := strings.ToLower(os.Getenv("DISABLE_GIN_LOGGING")); val != "" {
+		disableGINLogging = val == "true" || val == "1" || val == "yes"
+	}
+
+	// Set default log level based on environment
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		if isProduction {
+			logLevel = "warn" // Reduce noise in production
+		} else {
+			logLevel = "debug"
+		}
+	}
+
+	return LoggingConfig{
+		Level:              logLevel,
+		Format:             os.Getenv("LOG_FORMAT"),
+		DisableGORMLogging: disableGORMLogging,
+		DisableGINLogging:  disableGINLogging,
+		ProductionMode:     isProduction,
+	}
+}
+
+// NewLogger creates a new logger instance with configuration from environment variables
 func NewLogger() Logger {
 	logger := logrus.New()
 	logger.SetOutput(os.Stdout)
-	logger.SetFormatter(&logrus.JSONFormatter{})
 
-	env := os.Getenv("ENV")
-	if env == "production" {
-		logger.SetLevel(logrus.InfoLevel)
-	} else {
-		logger.SetLevel(logrus.DebugLevel)
+	config := GetLoggingConfig()
+
+	// Determine log format from environment
+	format := config.Format
+	if format == "" {
+		format = string(TextFormat) // Default to text format if not specified
 	}
+
+	// Set up formatter based on environment
+	switch strings.ToLower(format) {
+	case string(JSONFormat):
+		logger.SetFormatter(&logrus.JSONFormatter{
+			TimestampFormat: time.RFC3339,
+			PrettyPrint:     false,
+		})
+	case string(PrettyFormat):
+		logger.SetFormatter(&logrus.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: "2006-01-02 15:04:05",
+			ForceColors:     true,
+			DisableQuote:    true,
+		})
+	default: // Text format
+		logger.SetFormatter(&logrus.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: "2006-01-02 15:04:05",
+			DisableColors:   false,
+			DisableQuote:    true,
+		})
+	}
+
+	// Parse and set log level
+	level, err := logrus.ParseLevel(config.Level)
+	if err != nil {
+		// If invalid log level, default to info
+		level = logrus.InfoLevel
+		fmt.Fprintf(os.Stderr, "Invalid LOG_LEVEL: '%s', defaulting to INFO\n", config.Level)
+	}
+	logger.SetLevel(level)
 
 	return &LogrusLogger{
 		logger: logger,
@@ -89,4 +184,8 @@ func (l *LogrusLogger) WithField(key string, value interface{}) Logger {
 		logger: l.logger,
 		entry:  l.entry.WithField(key, value),
 	}
+}
+
+func (l *LogrusLogger) IsDebugEnabled() bool {
+	return l.logger.IsLevelEnabled(logrus.DebugLevel)
 }

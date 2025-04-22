@@ -36,6 +36,7 @@ import { useUpload } from "@/hooks/useUpload";
 import { useUploadStore } from "@/store/upload-store";
 import { UploadProgress } from "@/components/ui/upload-progress";
 import { useAuth } from "@/contexts/AuthContext";
+import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 
 interface Piece {
   id: number;
@@ -162,6 +163,76 @@ export const FilesTab = ({
   const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
   const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
 
+  // Add a useEffect to periodically check for proof sets if they're pending
+  useEffect(() => {
+    // Don't poll if we already have a proof set ID
+    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
+      const proofCheckInterval = setInterval(() => {
+        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
+        fetchProofs();
+      }, 15000); // Check every 15 seconds
+
+      return () => clearInterval(proofCheckInterval);
+    }
+  }, [proofSetStatus, pieces.length, userProofSetId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadData = async () => {
+      try {
+        if (isMounted) {
+          const data = await fetchPieces();
+          // Only proceed if we're still mounted and have data
+          if (isMounted && data) {
+            await fetchProofs();
+          }
+        }
+      } catch (error: unknown) {
+        if (isMounted && !authError) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          toast.error(`Error loading files: ${errorMessage}`);
+        }
+      }
+    };
+
+    loadData();
+
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+    };
+  }, [authError, fetchPieces]);
+
+  // Add useEffect to find the user's proof set ID when pieces are loaded
+  useEffect(() => {
+    // Find the first piece with a valid proofSetDbId (the service ID string)
+    const firstPieceWithProof = pieces.find(
+      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
+    );
+    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
+
+    // Only update state if the derived ID is different from the current state
+    if (derivedProofSetId !== userProofSetId) {
+      setUserProofSetId(derivedProofSetId);
+      if (derivedProofSetId) {
+        console.log(
+          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
+        );
+      } else {
+        console.log(
+          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
+        );
+      }
+    } else {
+      // Log even if the ID hasn't changed, for debugging
+      console.log(
+        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
+      );
+    }
+  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
+
   // Add new function to fetch proofs
   const fetchProofs = useCallback(async () => {
     try {
@@ -275,9 +346,26 @@ export const FilesTab = ({
 
     loadData();
 
+    // Add event listener for upload completion to refresh the file list
+    const handleUploadCompleted = () => {
+      console.log(
+        "[FilesTab] Detected upload completion, refreshing file list"
+      );
+      fetchPieces().catch((err) => {
+        console.error(
+          "[FilesTab] Error refreshing file list after upload",
+          err
+        );
+      });
+    };
+
+    // Listen for the custom upload completed event
+    window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
+
     // Cleanup function to prevent state updates after unmount
     return () => {
       isMounted = false;
+      window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
     };
   }, [authError, fetchPieces, fetchProofs]);
 
@@ -309,6 +397,29 @@ export const FilesTab = ({
     }
   }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
 
+  // Add this useEffect to check token on component mount and set up periodic token check
+  useEffect(() => {
+    const checkToken = () => {
+      const token = localStorage.getItem("jwt_token");
+      if (!token) {
+        setAuthError("Authentication required. Please login again.");
+      } else {
+        // Only clear auth error if it was previously set
+        if (authError) setAuthError(null);
+      }
+    };
+
+    // Check on mount
+    checkToken();
+
+    // Check token periodically
+    const tokenInterval = setInterval(checkToken, 60000); // Check every minute
+
+    return () => {
+      clearInterval(tokenInterval);
+    };
+  }, [authError]);
+
   // Modify the onDrop function to handle all file types, not just images
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -331,9 +442,14 @@ export const FilesTab = ({
     }
   }, []);
 
+  // Add a helper to determine if uploads should be disabled
+  const isUploadDisabled =
+    proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId;
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     maxFiles: 1,
+    disabled: isUploadDisabled, // Disable dropzone when proof set is being created
   });
 
   const handleSubmitImage = async () => {
@@ -1048,14 +1164,22 @@ export const FilesTab = ({
     if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
       return (
         <motion.div
-          className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-2"
+          className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-3"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="animate-spin h-4 w-4 border-2 border-blue-500 rounded-full border-t-transparent"></div>
-          <Typography variant="small">
-            Generating proof sets for your files... This may take a few minutes.
-          </Typography>
+          <div className="flex-shrink-0 bg-blue-100 p-2 rounded-full">
+            <div className="animate-spin h-5 w-5 border-2 border-blue-500 rounded-full border-t-transparent"></div>
+          </div>
+          <div className="flex-1">
+            <p className="font-medium mb-1">Proof Set Creation in Progress</p>
+            <p className="text-sm">
+              Your proof set is being created on the blockchain. This process
+              typically takes 5-10 minutes to complete. During this time, you
+              can upload files but proof verification will not be available
+              until the proof set creation is finalized.
+            </p>
+          </div>
         </motion.div>
       );
     }
@@ -1163,10 +1287,19 @@ export const FilesTab = ({
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
-                disabled={!selectedImage}
+                disabled={
+                  !selectedImage ||
+                  (proofSetStatus === "pending" &&
+                    pieces.length > 0 &&
+                    !userProofSetId)
+                }
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {selectedImage ? "Upload Selected File" : "Upload File"}
+                {isUploadDisabled
+                  ? "Upload Disabled (Proof Set Creating)"
+                  : selectedImage
+                  ? "Upload Selected File"
+                  : "Upload File"}
               </Button>
             </motion.div>
           </div>
@@ -1176,7 +1309,9 @@ export const FilesTab = ({
         <div
           {...getRootProps()}
           className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer mb-6 ${
-            isDragActive
+            isUploadDisabled
+              ? "border-gray-300 bg-gray-100 cursor-not-allowed"
+              : isDragActive
               ? "border-blue-500 bg-blue-50 scale-[1.01]"
               : selectedImage
               ? "border-green-500 bg-green-50"
@@ -1185,7 +1320,42 @@ export const FilesTab = ({
         >
           <input {...getInputProps()} />
           <AnimatePresence mode="wait">
-            {selectedImage ? (
+            {isUploadDisabled ? (
+              <motion.div
+                key="disabled"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="py-8 px-4 flex flex-col items-center"
+              >
+                <motion.div className="w-16 h-16 mb-4 rounded-full bg-gray-200 flex items-center justify-center transition-colors duration-300 border-2 border-gray-300">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-7 w-7 text-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                    />
+                  </svg>
+                </motion.div>
+                <Typography
+                  variant="body"
+                  className="text-gray-500 transition-colors duration-300 mb-1"
+                >
+                  Uploads disabled
+                </Typography>
+                <Typography variant="small" className="text-gray-400">
+                  Please wait for proof set creation to complete
+                </Typography>
+              </motion.div>
+            ) : selectedImage ? (
               <motion.div
                 key="preview"
                 className="relative mx-auto flex flex-col items-center"
