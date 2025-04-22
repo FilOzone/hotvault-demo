@@ -495,17 +495,16 @@ export const PaymentSetupTab = () => {
   // Helper to render the new proof set creation step
   const renderCreateProofSetStep = () => {
     const isActive = currentStep === PaymentStep.CREATE_PROOF_SET;
-    const isCompleted =
-      currentStep > PaymentStep.CREATE_PROOF_SET ||
-      paymentStatus.isCreatingProofSet;
-    const isProcessingCreation = paymentStatus.isCreatingProofSet;
+    const isTrulyCompleted = currentStep > PaymentStep.CREATE_PROOF_SET;
+    const isProcessingCreation =
+      paymentStatus.isCreatingProofSet && !isTrulyCompleted;
 
     return (
       <div
         className={`w-full p-4 rounded-lg transition-all ${
-          isActive
+          isActive || isProcessingCreation
             ? "bg-blue-50 border border-blue-200"
-            : isCompleted
+            : isTrulyCompleted
             ? "bg-green-50 border border-green-200"
             : "bg-gray-50 border border-gray-200 opacity-60"
         }`}
@@ -513,15 +512,19 @@ export const PaymentSetupTab = () => {
         <div className="flex items-center gap-3 mb-3">
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              isActive
+              isProcessingCreation
                 ? "bg-blue-100 text-blue-600"
-                : isCompleted
+                : isActive
+                ? "bg-blue-100 text-blue-600"
+                : isTrulyCompleted
                 ? "bg-green-100 text-green-600"
                 : "bg-gray-100 text-gray-500"
             }`}
           >
-            {isCompleted ? (
+            {isTrulyCompleted ? (
               <CheckCircle size={18} />
+            ) : isProcessingCreation ? (
+              <Loader size={18} className="animate-spin" />
             ) : (
               <span className="text-sm font-semibold">4</span>
             )}
@@ -529,9 +532,9 @@ export const PaymentSetupTab = () => {
           <div className="flex-1">
             <p
               className={`font-medium ${
-                isActive
+                isActive || isProcessingCreation
                   ? "text-blue-700"
-                  : isCompleted
+                  : isTrulyCompleted
                   ? "text-green-700"
                   : "text-gray-600"
               }`}
@@ -539,15 +542,15 @@ export const PaymentSetupTab = () => {
               Create Proof Set
             </p>
             <p className="text-xs text-gray-500">
-              {isActive && isProcessingCreation ? (
+              {isProcessingCreation ? (
                 <span className="flex items-center text-blue-600">
                   <Loader size={12} className="animate-spin mr-1" />
-                  Creation in progress...
+                  Creation in progress... (This may take several minutes)
                 </span>
               ) : isActive ? (
                 "Final step: Initiate proof set creation on the network"
-              ) : isCompleted ? (
-                "Creation in progress..."
+              ) : isTrulyCompleted ? (
+                "Completed"
               ) : (
                 "Pending"
               )}
@@ -598,12 +601,16 @@ export const PaymentSetupTab = () => {
   const renderCompletionStep = () => {
     const isCompleted =
       paymentStatus.proofSetReady && currentStep === PaymentStep.COMPLETE;
+    const isCreating =
+      paymentStatus.isCreatingProofSet && currentStep === PaymentStep.COMPLETE;
 
     return (
       <div
         className={`w-full p-4 rounded-lg transition-all ${
           isCompleted
             ? "bg-green-50 border border-green-200"
+            : isCreating
+            ? "bg-blue-50 border border-blue-200"
             : "bg-gray-50 border border-gray-200 opacity-60"
         }`}
       >
@@ -612,11 +619,15 @@ export const PaymentSetupTab = () => {
             className={`w-8 h-8 rounded-full flex items-center justify-center ${
               isCompleted
                 ? "bg-green-100 text-green-600"
+                : isCreating
+                ? "bg-blue-100 text-blue-600"
                 : "bg-gray-100 text-gray-500"
             }`}
           >
             {isCompleted ? (
               <CheckCircle size={18} />
+            ) : isCreating ? (
+              <Loader size={18} className="animate-spin" />
             ) : (
               <span className="text-sm font-semibold">5</span>
             )}
@@ -624,13 +635,21 @@ export const PaymentSetupTab = () => {
           <div>
             <p
               className={`font-medium ${
-                isCompleted ? "text-green-700" : "text-gray-600"
+                isCompleted
+                  ? "text-green-700"
+                  : isCreating
+                  ? "text-blue-700"
+                  : "text-gray-600"
               }`}
             >
               Setup Complete
             </p>
             <p className="text-xs text-gray-500">
-              {isCompleted ? "All steps completed" : "Pending"}
+              {isCompleted
+                ? "All steps completed"
+                : isCreating
+                ? "Creating proof set..."
+                : "Pending"}
             </p>
           </div>
         </div>
@@ -643,6 +662,22 @@ export const PaymentSetupTab = () => {
               <p className="text-sm mt-1">
                 Your payment setup is complete. You can now use all features of
                 the FWS service.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isCreating && (
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg text-blue-700 flex items-start">
+            <Loader
+              size={20}
+              className="animate-spin mr-3 mt-0.5 flex-shrink-0"
+            />
+            <div>
+              <p className="font-semibold">Creating your proof set...</p>
+              <p className="text-sm mt-1">
+                This process typically takes 5-10 minutes. Please wait while we
+                set up your proof set on the blockchain.
               </p>
             </div>
           </div>

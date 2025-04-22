@@ -271,17 +271,33 @@ func (h *AuthHandler) CreateProofSet(c *gin.Context) {
 		return
 	}
 
-	// Check if proof set already exists
-	var proofSetCount int64
-	if err := h.db.Model(&models.ProofSet{}).Where("user_id = ?", user.ID).Count(&proofSetCount).Error; err != nil {
-		authLog.WithField("userID", user.ID).Errorf("Error counting proof sets before creation: %v", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to check existing proof sets"})
+	// Check if proof set already exists or is in progress
+	var existingProofSet models.ProofSet
+	err := h.db.Where("user_id = ?", user.ID).First(&existingProofSet).Error
+	if err == nil {
+		// Found a record
+		if existingProofSet.ProofSetID != "" {
+			authLog.WithField("userID", user.ID).Warn("CreateProofSet called but ProofSetID already exists.")
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Proof set already exists and is complete for this user"})
+			return
+		}
+		if existingProofSet.TransactionHash != "" {
+			// This means creation was initiated but might not be complete yet.
+			authLog.WithField("userID", user.ID).Warn("CreateProofSet called but TransactionHash exists (creation likely in progress).")
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Proof set creation is already in progress for this user. Check status."})
+			return
+		}
+		// If record exists but both fields are empty, we can proceed (maybe a previous attempt failed early)
+		authLog.WithField("userID", user.ID).Info("Found existing proof set record with empty fields, proceeding with creation attempt.")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// Database error other than not found
+		authLog.WithField("userID", user.ID).Errorf("Error checking for existing proof set: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to check for existing proof sets"})
 		return
-	}
-
-	if proofSetCount > 0 {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Proof set already exists for this user"})
-		return
+	} else {
+		// Record not found, create a placeholder if needed (optional, CreateProofSetForUser will handle it)
+		// We can let createProofSetForUser handle creation/update entirely.
+		authLog.WithField("userID", user.ID).Info("No existing proof set record found.")
 	}
 
 	// Initiate creation in a goroutine so the request returns quickly
@@ -289,11 +305,11 @@ func (h *AuthHandler) CreateProofSet(c *gin.Context) {
 		authLog.WithField("userID", u.ID).Info("Starting background proof set creation...")
 		if err := h.createProofSetForUser(u); err != nil {
 			authLog.WithField("userID", u.ID).Errorf("Background proof set creation failed: %v", err)
-			// TODO: Implement a way to notify the user or system about the failure
+			// Consider updating the DB record status to "Failed" here if using status field
 		} else {
-			authLog.WithField("userID", u.ID).Info("Background proof set creation completed.")
+			authLog.WithField("userID", u.ID).Info("Background proof set creation completed successfully.")
 		}
-	}(&user) // Pass a pointer to a copy if needed, but CreateProofSetForUser seems okay
+	}(&user)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Proof set creation initiated successfully. Monitor /auth/status for readiness."})
 }
@@ -366,6 +382,7 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	if err := createProofSetCmd.Run(); err != nil {
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to run create-proof-set command for user %d: %v, stderr: %s", user.ID, err, createProofSetError.String())
 		authLog.Error(errMsg)
+		// Optionally: Update DB status to failed here
 		return errors.New(errMsg)
 	}
 
@@ -378,35 +395,71 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 
 	if len(txHashMatches) > 1 {
 		txHash = txHashMatches[1]
-		authLog.WithField("txHash", txHash).Infof("[Goroutine Create] Extracted transaction hash for user %d, polling...", user.ID)
+		authLog.WithField("txHash", txHash).Infof("[Goroutine Create] Extracted transaction hash for user %d. Updating database and starting polling...", user.ID)
+
+		// --- Update database immediately with TransactionHash ---
+		proofSetToUpdate := models.ProofSet{
+			UserID:          user.ID,
+			TransactionHash: txHash,
+			ServiceName:     serviceName, // Store service details early
+			ServiceURL:      serviceURL,
+		}
+		// Use FirstOrCreate to handle both new and existing placeholder records
+		result := h.db.Where(models.ProofSet{UserID: user.ID}).Assign(proofSetToUpdate).FirstOrCreate(&models.ProofSet{})
+		if result.Error != nil {
+			errMsg := fmt.Sprintf("[Goroutine Create] Failed to save/update proof set with txHash for user %d: %v", user.ID, result.Error)
+			authLog.Error(errMsg)
+			return errors.New(errMsg) // Stop if we can't save the txHash
+		}
+		// -------------------------------------------------------
+
 	} else {
 		authLog.Warn("[Goroutine Create] Could not extract transaction hash using Location regex for user ", user.ID, ". Check pdptool output format.")
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to extract transaction hash needed for polling for user %d. Output: %s", user.ID, outputStr)
 		authLog.Error(errMsg)
+		// Optionally: Update DB status to failed here
 		return errors.New(errMsg)
 	}
 
 	extractedID, pollErr := h.pollForProofSetID(pdptoolPath, serviceURL, serviceName, txHash, user)
 	if pollErr != nil {
 		authLog.Errorf("[Goroutine Create] Failed to poll for proof set ID for user %d: %v", user.ID, pollErr)
+		// Optionally: Update DB status to failed polling here
 		return pollErr
 	}
 
-	newProofSet := models.ProofSet{
-		UserID:          user.ID,
-		ProofSetID:      extractedID,
-		TransactionHash: txHash,
-		ServiceName:     serviceName,
-		ServiceURL:      serviceURL,
+	// --- Update database with the final ProofSetID ---
+	finalUpdate := models.ProofSet{
+		ProofSetID: extractedID,
 	}
-
-	if result := h.db.Create(&newProofSet); result.Error != nil {
-		errMsg := fmt.Sprintf("[Goroutine Create] Failed to save new proof set info for user %d: %v", user.ID, result.Error)
+	// Update only the ProofSetID field for the user's record
+	result := h.db.Model(&models.ProofSet{}).Where("user_id = ?", user.ID).Updates(finalUpdate)
+	if result.Error != nil {
+		errMsg := fmt.Sprintf("[Goroutine Create] Failed to update proof set with ProofSetID for user %d: %v", user.ID, result.Error)
 		authLog.Error(errMsg)
 		return errors.New(errMsg)
 	}
+	if result.RowsAffected == 0 {
+		errMsg := fmt.Sprintf("[Goroutine Create] Failed to find proof set record for user %d to update with ProofSetID", user.ID)
+		authLog.Error(errMsg)
+		return errors.New(errMsg)
+	}
+	// --- Remove the old save logic ---
+	// newProofSet := models.ProofSet{
+	// 	UserID:          user.ID,
+	// 	ProofSetID:      extractedID,
+	// 	TransactionHash: txHash,
+	// 	ServiceName:     serviceName,
+	// 	ServiceURL:      serviceURL,
+	// }
+	// if result := h.db.Create(&newProofSet); result.Error != nil {
+	// 	errMsg := fmt.Sprintf("[Goroutine Create] Failed to save new proof set info for user %d: %v", user.ID, result.Error)
+	// 	authLog.Error(errMsg)
+	// 	return errors.New(errMsg)
+	// }
+	// authLog.WithField("proofSetDBID", newProofSet.ID).WithField("proofSetPdpID", newProofSet.ProofSetID).Infof("[Goroutine Create] Successfully created and saved proof set for user %d", user.ID)
 
-	authLog.WithField("proofSetDBID", newProofSet.ID).WithField("proofSetPdpID", newProofSet.ProofSetID).Infof("[Goroutine Create] Successfully created and saved proof set for user %d", user.ID)
+	authLog.WithField("proofSetPdpID", extractedID).Infof("[Goroutine Create] Successfully updated proof set with ID for user %d", user.ID)
 	return nil
 }
 

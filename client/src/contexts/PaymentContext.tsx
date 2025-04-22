@@ -84,6 +84,9 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     isCreatingProofSet: false,
   });
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
+    null
+  );
 
   // Function to add a transaction to history
   const addTransaction = (transaction: Omit<TransactionRecord, "id">) => {
@@ -168,6 +171,64 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [account]);
 
+  // Function to start polling
+  const startPolling = useCallback(() => {
+    // Clear any existing polling
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
+    // Set up new polling interval
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(
+          `${Constants.API_BASE_URL}/api/v1/auth/status`,
+          {
+            method: "GET",
+            credentials: "include",
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+
+          // Update status based on response
+          setPaymentStatus((prev) => ({
+            ...prev,
+            proofSetReady: data.proofSetReady,
+            isCreatingProofSet: data.proofSetInitiated && !data.proofSetReady,
+          }));
+
+          // If proof set is ready, stop polling
+          if (data.proofSetReady) {
+            clearInterval(interval);
+            setPollingInterval(null);
+          }
+        }
+      } catch (error) {
+        console.error("Error polling for proof set status:", error);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    setPollingInterval(interval);
+
+    // Cleanup function
+    return () => {
+      clearInterval(interval);
+      setPollingInterval(null);
+    };
+  }, []);
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
+
+  // Function to refresh the payment setup status
   const refreshPaymentSetupStatus = useCallback(async () => {
     if (!account) return;
 
@@ -184,8 +245,9 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         window.ethereum as ethers.Eip1193Provider
       );
 
-      // Fetch proofSetReady status from the auth endpoint
+      // Fetch proof set status from the auth endpoint
       let fetchedProofSetReady = false;
+      let fetchedProofSetInitiated = false;
       try {
         const statusResponse = await fetch(
           `${Constants.API_BASE_URL}/api/v1/auth/status`,
@@ -197,13 +259,22 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         if (statusResponse.ok) {
           const statusData = await statusResponse.json();
           fetchedProofSetReady = statusData.proofSetReady;
+          fetchedProofSetInitiated = statusData.proofSetInitiated;
+
+          // Start polling if proof set is initiated but not ready
+          if (
+            fetchedProofSetInitiated &&
+            !fetchedProofSetReady &&
+            !pollingInterval
+          ) {
+            startPolling();
+          }
         }
       } catch (authStatusError) {
         console.error(
           "Error fetching auth status for proofSetReady:",
           authStatusError
         );
-        // Keep proofSetReady as false if status check fails
       }
 
       // Check if user has deposited funds into the Payments contract
@@ -234,6 +305,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           isOperatorApproved: operatorStatus.isApproved,
           accountFunds: accountStatus.funds,
           proofSetReady: fetchedProofSetReady,
+          isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
           isLoading: false,
         }));
 
@@ -251,6 +323,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           isOperatorApproved: false,
           accountFunds: "0",
           proofSetReady: fetchedProofSetReady,
+          isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
         }));
       }
 
@@ -275,7 +348,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       setPaymentStatus((prev) => ({
         ...prev,
         isTokenApproved,
-        isLoading: false,
       }));
     } catch (error) {
       console.error("Error checking payment setup status:", error);
@@ -284,9 +356,10 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         error: "Failed to check payment setup status",
         isLoading: false,
         proofSetReady: false,
+        isCreatingProofSet: false,
       }));
     }
-  }, [account]);
+  }, [account, startPolling, pollingInterval]);
 
   // Approve the Payments contract to spend tokens
   const approveToken = async (amount: string): Promise<boolean> => {
@@ -494,53 +567,38 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
   const initiateProofSetCreation = async (): Promise<boolean> => {
     if (!account) return false;
 
-    setPaymentStatus((prev) => ({
-      ...prev,
-      isLoading: true,
-      isCreatingProofSet: true,
-      error: null,
-    }));
+    setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const token = localStorage.getItem("jwt_token"); // Or get from cookie if not using localStorage
-      if (!token) {
-        throw new Error("Authentication token not found.");
-      }
-
       const response = await fetch(
         `${Constants.API_BASE_URL}/api/v1/proof-set/create`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include", // Include if using cookies primarily
+          credentials: "include",
         }
       );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(
-          errorData.error || "Failed to initiate proof set creation"
-        );
+        throw new Error(errorData.error || "Failed to create proof set");
       }
 
-      console.log("Proof set creation initiated successfully.");
-      // Optionally trigger a delayed refresh or rely on polling in the UI
-      setTimeout(() => refreshPaymentSetupStatus(), 5000); // Refresh status after 5s
+      // Start polling for status updates
+      startPolling();
 
       setPaymentStatus((prev) => ({
         ...prev,
+        isCreatingProofSet: true,
         isLoading: false,
-        isCreatingProofSet: false,
       }));
+
       return true;
     } catch (error) {
-      console.error("Error initiating proof set creation:", error);
+      console.error("Error creating proof set:", error);
       setPaymentStatus((prev) => ({
         ...prev,
         error:
-          error instanceof Error ? error.message : "Unknown error occurred",
+          error instanceof Error ? error.message : "Failed to create proof set",
         isLoading: false,
         isCreatingProofSet: false,
       }));
