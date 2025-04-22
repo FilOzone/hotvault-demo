@@ -4,6 +4,7 @@ import { TokenBalanceCard } from "./TokenBalanceCard";
 import { Wallet, CheckCircle, AlertCircle, Loader, Info } from "lucide-react";
 import * as Constants from "@/lib/constants";
 import { toast } from "react-hot-toast";
+import { TransactionHistory } from "./TransactionHistory";
 
 enum PaymentStep {
   APPROVE_TOKEN = 0,
@@ -599,6 +600,9 @@ export const PaymentSetupTab = () => {
               </div>
             )}
           </div>
+
+          {/* Transaction History Component */}
+          <TransactionHistory />
         </div>
 
         <div className="md:col-span-3">

@@ -83,7 +83,14 @@ export async function approveUSDFCSpending(
 
     // Send approval transaction
     const tx = await tokenContract.approve(spenderAddress, amountInWei);
-    return await tx.wait();
+    // Wait for transaction to be mined
+    const receipt = await tx.wait();
+
+    // Return transaction details including hash
+    return {
+      hash: tx.hash,
+      receipt,
+    };
   } catch (error) {
     console.error("Error approving USDFC spending:", error);
     throw error;
@@ -138,7 +145,14 @@ export async function depositUSDFC(
       amountInWei
     );
 
-    return await tx.wait();
+    // Wait for transaction to be mined
+    const receipt = await tx.wait();
+
+    // Return transaction details including hash
+    return {
+      hash: tx.hash,
+      receipt,
+    };
   } catch (error) {
     console.error("Error depositing USDFC:", error);
     throw error;
@@ -187,7 +201,14 @@ export async function approveOperator(
       lockupInWei
     );
 
-    return await tx.wait();
+    // Wait for transaction to be mined
+    const receipt = await tx.wait();
+
+    // Return transaction details including hash
+    return {
+      hash: tx.hash,
+      receipt,
+    };
   } catch (error) {
     console.error("Error approving operator:", error);
     throw error;

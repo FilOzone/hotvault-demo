@@ -18,6 +18,17 @@ import {
 } from "@/lib/contracts";
 import * as Constants from "@/lib/constants";
 
+// Define interface for transaction history
+export interface TransactionRecord {
+  id: string;
+  type: "token_approval" | "deposit" | "operator_approval";
+  txHash: string;
+  amount?: string;
+  timestamp: number;
+  status: "pending" | "success" | "failed";
+  error?: string;
+}
+
 // Define the payment status interface
 interface PaymentStatus {
   usdcBalance: string;
@@ -41,10 +52,16 @@ interface PaymentContextType {
     rateAllowance: string,
     lockupAllowance: string
   ) => Promise<boolean>;
+  transactions: TransactionRecord[];
+  clearTransactionHistory: () => void;
 }
 
 // Create the context
 const PaymentContext = createContext<PaymentContextType | undefined>(undefined);
+
+// Helper to generate a unique ID
+const generateId = () =>
+  `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 // Create provider component
 export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
@@ -61,6 +78,32 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     isOperatorApproved: false,
     accountFunds: "0",
   });
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+
+  // Function to add a transaction to history
+  const addTransaction = (transaction: Omit<TransactionRecord, "id">) => {
+    const newTransaction = {
+      ...transaction,
+      id: generateId(),
+    };
+    setTransactions((prev) => [newTransaction, ...prev]);
+    return newTransaction.id;
+  };
+
+  // Function to update a transaction in history
+  const updateTransaction = (
+    id: string,
+    updates: Partial<TransactionRecord>
+  ) => {
+    setTransactions((prev) =>
+      prev.map((tx) => (tx.id === id ? { ...tx, ...updates } : tx))
+    );
+  };
+
+  // Function to clear transaction history
+  const clearTransactionHistory = () => {
+    setTransactions([]);
+  };
 
   // Function to refresh the balance
   const refreshBalance = useCallback(async () => {
@@ -221,6 +264,15 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
+    // Create transaction record
+    const txId = addTransaction({
+      type: "token_approval",
+      txHash: "",
+      amount,
+      timestamp: Date.now(),
+      status: "pending",
+    });
+
     try {
       // Ensure ethereum exists
       if (!window.ethereum) {
@@ -234,12 +286,18 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       const signer = await provider.getSigner();
 
       // Approve spending
-      await approveUSDFCSpending(
+      const txResponse = await approveUSDFCSpending(
         signer,
         Constants.USDFC_TOKEN_ADDRESS,
         Constants.PAYMENT_PROXY_ADDRESS,
         amount
       );
+
+      // Update transaction with hash
+      updateTransaction(txId, {
+        txHash: txResponse.hash,
+        status: "success",
+      });
 
       // Update status
       setPaymentStatus((prev) => ({
@@ -251,6 +309,13 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       return true;
     } catch (error) {
       console.error("Error approving token spending:", error);
+
+      // Update transaction with error
+      updateTransaction(txId, {
+        status: "failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
       setPaymentStatus((prev) => ({
         ...prev,
         error: "Failed to approve token spending",
@@ -266,6 +331,15 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
+    // Create transaction record
+    const txId = addTransaction({
+      type: "deposit",
+      txHash: "",
+      amount,
+      timestamp: Date.now(),
+      status: "pending",
+    });
+
     try {
       // Ensure ethereum exists
       if (!window.ethereum) {
@@ -279,12 +353,18 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       const signer = await provider.getSigner();
 
       // Deposit funds
-      await depositUSDFC(
+      const txResponse = await depositUSDFC(
         signer,
         Constants.PAYMENT_PROXY_ADDRESS,
         Constants.USDFC_TOKEN_ADDRESS,
         amount
       );
+
+      // Update transaction with hash
+      updateTransaction(txId, {
+        txHash: txResponse.hash,
+        status: "success",
+      });
 
       // Update status and refresh account funds
       await refreshPaymentSetupStatus();
@@ -292,6 +372,13 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       return true;
     } catch (error) {
       console.error("Error depositing funds:", error);
+
+      // Update transaction with error
+      updateTransaction(txId, {
+        status: "failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
       setPaymentStatus((prev) => ({
         ...prev,
         error: "Failed to deposit funds",
@@ -310,6 +397,15 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
+    // Create transaction record
+    const txId = addTransaction({
+      type: "operator_approval",
+      txHash: "",
+      amount: `Rate: ${rateAllowance}, Lockup: ${lockupAllowance}`,
+      timestamp: Date.now(),
+      status: "pending",
+    });
+
     try {
       // Ensure ethereum exists
       if (!window.ethereum) {
@@ -323,7 +419,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       const signer = await provider.getSigner();
 
       // Approve operator
-      await approveOperator(
+      const txResponse = await approveOperator(
         signer,
         Constants.PAYMENT_PROXY_ADDRESS,
         Constants.USDFC_TOKEN_ADDRESS,
@@ -331,6 +427,12 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         rateAllowance,
         lockupAllowance
       );
+
+      // Update transaction with hash
+      updateTransaction(txId, {
+        txHash: txResponse.hash,
+        status: "success",
+      });
 
       // Update status
       setPaymentStatus((prev) => ({
@@ -342,6 +444,13 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       return true;
     } catch (error) {
       console.error("Error approving service operator:", error);
+
+      // Update transaction with error
+      updateTransaction(txId, {
+        status: "failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
       setPaymentStatus((prev) => ({
         ...prev,
         error: "Failed to approve service operator",
@@ -366,6 +475,8 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         approveToken,
         depositFunds,
         approveServiceOperator,
+        transactions,
+        clearTransactionHistory,
       }}
     >
       {children}

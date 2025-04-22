@@ -79,3 +79,21 @@ export const getFilePreviewType = (
   // Default/generic
   return "generic";
 };
+
+/**
+ * Gets the appropriate block explorer URL for a transaction hash based on the current network
+ * @param txHash - Transaction hash
+ * @returns Full URL to the transaction on the block explorer
+ */
+export function getExplorerUrl(txHash: string): string {
+  // Get network from environment or default to Calibration
+  const network = process.env.NEXT_PUBLIC_NETWORK || "calibration";
+
+  switch (network.toLowerCase()) {
+    case "mainnet":
+      return `https://filfox.info/en/message/${txHash}`;
+    case "calibration":
+    default:
+      return `https://calibration.filfox.info/en/message/${txHash}`;
+  }
+}
