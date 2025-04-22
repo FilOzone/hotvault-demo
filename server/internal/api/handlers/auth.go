@@ -431,7 +431,7 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 	txStatusRegex := regexp.MustCompile(`Transaction Status:[ \t]*(confirmed|pending|failed)`)
 	txSuccessRegex := regexp.MustCompile(`Transaction Successful:[ \t]*(true|false|Pending)`)
 
-	sleepDuration := 10 * time.Second
+	sleepDuration := 30 * time.Second
 	attemptCounter := 0
 	const maxLogInterval = 6
 

@@ -218,7 +218,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       } catch (error) {
         console.error("Error polling for proof set status:", error);
       }
-    }, 5000); // Poll every 5 seconds
+    }, 30000); // Changed from 5000 to 30000 (30 seconds)
 
     setPollingInterval(interval);
 
