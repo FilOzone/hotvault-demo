@@ -37,6 +37,7 @@ import { useUploadStore } from "@/store/upload-store";
 import { UploadProgress } from "@/components/ui/upload-progress";
 import { useAuth } from "@/contexts/AuthContext";
 import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
+import { ROOT_REMOVED_EVENT } from "./PaymentBalanceHeader";
 
 interface Piece {
   id: number;
@@ -114,59 +115,77 @@ export const FilesTab = ({
   const [userProofSetId, setUserProofSetId] = useState<string | null>(null);
 
   // Replace existing proofSetStatus with more specific type
-  const [proofSetStatus, setProofSetStatus] = useState<ProofSetStatus>("none");
+  const [proofSetStatus, setProofSetStatus] = useState<ProofSetStatus>(
+    userProofSetId ? "ready" : "none"
+  );
 
   // Move fetchProofs function here, before the useEffect that uses it
   const fetchProofs = useCallback(async () => {
     try {
       if (userProofSetId) {
+        console.log(
+          "[FilesTab] Using existing userProofSetId:",
+          userProofSetId
+        );
         setProofSetStatus("ready");
         return;
       }
 
-      const token = localStorage.getItem("jwt_token");
-      if (!token) {
-        setAuthError("Authentication required. Please login again.");
-        return;
-      }
-
       const response = await fetch(`${API_BASE_URL}/api/v1/auth/status`, {
+        method: "GET",
+        credentials: "include",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
         },
       });
 
       if (response.status === 401) {
+        console.log(
+          "[FilesTab] Auth status response 401:",
+          await response.json()
+        );
         setAuthError("Your session has expired. Please login again.");
         return;
       }
 
       if (!response.ok) {
         const data = await response.json();
+        console.log("[FilesTab] Auth status response not OK:", data);
         if (data.error?.includes("Proof set not found")) {
           setProofSetStatus("none");
         } else {
           console.warn(
             `[FilesTab.tsx:fetchProofs] Failed to fetch proofs: ${response.statusText}`
           );
-          setProofSetStatus("creating");
+          // Keep the current status instead of assuming "creating"
+          return;
         }
         return;
       }
 
       const data = await response.json();
+      console.log("[FilesTab] Auth status response:", data);
 
       // Check the auth status response for proof set state
       if (data.proofSetReady) {
+        console.log("[FilesTab] Setting proof set status to ready");
         setProofSetStatus("ready");
+        if (data.proofSetId) {
+          console.log("[FilesTab] Setting userProofSetId:", data.proofSetId);
+          setUserProofSetId(data.proofSetId);
+        }
       } else if (data.proofSetInitiated) {
+        console.log("[FilesTab] Setting proof set status to creating");
         setProofSetStatus("creating");
       } else {
+        console.log("[FilesTab] Setting proof set status to none");
         setProofSetStatus("none");
       }
 
       // Update pieces with proof data if available
       if (data.pieces) {
+        console.log("[FilesTab] Updating pieces with proof data:", data.pieces);
         setPieces((prevPieces) =>
           prevPieces.map((piece) => {
             const pieceWithProof = data.pieces.find(
@@ -190,6 +209,13 @@ export const FilesTab = ({
       );
     }
   }, [userProofSetId, setProofSetStatus, setAuthError, setPieces]);
+
+  // Effect to update proofSetStatus when userProofSetId changes
+  useEffect(() => {
+    if (userProofSetId) {
+      setProofSetStatus("ready");
+    }
+  }, [userProofSetId]);
 
   // Add useEffect to periodically check for proof sets if they're pending
   useEffect(() => {
@@ -653,6 +679,9 @@ export const FilesTab = ({
         prevPieces.filter((p) => p.id !== pieceToRemove.id)
       );
 
+      // Dispatch the ROOT_REMOVED_EVENT to trigger balance refresh
+      window.dispatchEvent(new Event(ROOT_REMOVED_EVENT));
+
       // Close dialog
       setIsRemoveDialogOpen(false);
       setPieceToRemove(null);
@@ -1099,7 +1128,15 @@ export const FilesTab = ({
 
   // Modify the renderProofSetStatusBanner to show different messages
   const renderProofSetStatusBanner = () => {
+    console.log(
+      "[FilesTab] Rendering banner - status:",
+      proofSetStatus,
+      "pieces:",
+      pieces.length
+    );
+
     if (proofSetStatus === "none" && pieces.length === 0) {
+      console.log("[FilesTab] Showing 'Proof Set Required' banner");
       return (
         <motion.div
           className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 flex items-center gap-3"
@@ -1133,6 +1170,7 @@ export const FilesTab = ({
     }
 
     if (proofSetStatus === "creating") {
+      console.log("[FilesTab] Showing 'Proof Set Creating' banner");
       return (
         <motion.div
           className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-3"
@@ -1154,6 +1192,7 @@ export const FilesTab = ({
       );
     }
 
+    console.log("[FilesTab] No banner shown");
     return null;
   };
 

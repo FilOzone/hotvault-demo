@@ -41,7 +41,7 @@ export default function Dashboard() {
         disconnectWallet={disconnectWallet}
       />
 
-      <ProofSetBanner />
+      {/* <ProofSetBanner /> */}
 
       <div className="pt-16">
         <main className="container mx-auto px-4 py-8">

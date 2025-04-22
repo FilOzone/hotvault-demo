@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -188,6 +189,17 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	prepareWeight := 20
 	uploadWeight := 80
 
+	// Add base delay for rate limiting
+	const baseDelay = 8 * time.Second // Increased from 3s to 8s
+
+	// Helper function to wait with jitter
+	waitWithJitter := func(baseDelay time.Duration) {
+		jitter := time.Duration(rand.Int63n(int64(baseDelay) / 2))
+		delay := baseDelay + jitter
+		log.WithField("delay", delay.String()).Info("Rate limit delay before pdptool call")
+		time.Sleep(delay)
+	}
+
 	if _, err := os.Stat("pdpservice.json"); os.IsNotExist(err) {
 		currentStage = "preparing"
 		updateStatus(UploadProgress{
@@ -195,6 +207,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			Progress: currentProgress,
 			Message:  "Creating service secret",
 		})
+
+		// Add delay before create-service-secret
+		waitWithJitter(baseDelay)
 
 		createSecretCmd := exec.Command(pdptoolPath, "create-service-secret")
 		createSecretCmd.Dir = filepath.Dir(pdptoolPath)
@@ -271,6 +286,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  "Preparing piece",
 	})
 
+	// Add delay before prepare-piece
+	waitWithJitter(baseDelay)
+
 	var prepareOutput bytes.Buffer
 	var prepareError bytes.Buffer
 	prepareCmd := exec.Command(pdptoolPath, "prepare-piece", tempFilePath)
@@ -319,6 +337,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Progress: currentProgress,
 		Message:  "Starting file upload",
 	})
+
+	// Add delay before upload-file
+	waitWithJitter(baseDelay * 2) // Double delay before upload as it's more intensive
 
 	uploadCmd := exec.Command(
 		pdptoolPath,
@@ -449,6 +470,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		} else {
 			log.Error("Upload completed but failed to extract CID from pdptool output.")
 			updateStatus(UploadProgress{
+
 				Status:  "error",
 				Error:   "Failed to extract CID from upload response",
 				Message: "Could not determine upload result CID.",
@@ -479,7 +501,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	})
 
 	// Increased initial delay before attempting to add root
-	preAddRootDelay := 5 * time.Second
+	preAddRootDelay := 30 * time.Second // Increased from 10s to 30s
 	log.Info(fmt.Sprintf("Waiting %v before adding root to allow service registration...", preAddRootDelay))
 	time.Sleep(preAddRootDelay)
 
@@ -536,12 +558,15 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	// Verification retry configuration
 	verifyMaxRetries := 5
-	verifyBackoff := 3 * time.Second
-	verifyMaxBackoff := 15 * time.Second
+	verifyBackoff := 15 * time.Second    // Increased from 5s to 15s
+	verifyMaxBackoff := 60 * time.Second // Increased from 30s to 60s
 	verifySuccess := false
 
 	// Try to verify the proof set with retries
 	for verifyAttempt := 1; verifyAttempt <= verifyMaxRetries; verifyAttempt++ {
+		// Add delay before verification
+		waitWithJitter(baseDelay)
+
 		log.WithField("attempt", verifyAttempt).
 			WithField("maxRetries", verifyMaxRetries).
 			WithField("proofSetID", proofSet.ProofSetID).
@@ -586,41 +611,15 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 			// Check specific errors that suggest the proof set is still initializing
 			isRetryableError := false
-			var retryMessage string
 
 			if verifyCtx.Err() == context.DeadlineExceeded {
 				isRetryableError = true
-				retryMessage = "Verification timed out, proof set may still be initializing."
-			} else if strings.Contains(stderrStr, "status code 500") {
-				isRetryableError = true
-				retryMessage = "Service returned internal error, proof set may still be initializing."
-			} else if strings.Contains(stderrStr, "Failed to retrieve next challenge epoch") ||
-				strings.Contains(stderrStr, "can't scan NULL into") {
-				isRetryableError = true
-				retryMessage = "Proof set is still initializing on the blockchain."
-			} else if strings.Contains(stderrStr, "not found") {
-				isRetryableError = true
-				retryMessage = "Proof set not found yet, may still be registering."
 			}
 
 			if isRetryableError && verifyAttempt < verifyMaxRetries {
-				log.WithField("backoff", verifyBackoff).
-					WithField("attempt", verifyAttempt).
-					Info(retryMessage)
-
-				// Update UI with retry information
-				updateStatus(UploadProgress{
-					Status:     currentStage,
-					Progress:   currentProgress,
-					Message:    fmt.Sprintf("%s Waiting before retry %d/%d...", retryMessage, verifyAttempt+1, verifyMaxRetries),
-					CID:        compoundCID,
-					ProofSetID: proofSet.ProofSetID,
-				})
-
-				// Wait with exponential backoff
-				time.Sleep(verifyBackoff)
-
-				// Increase backoff for next attempt
+				retryDelay := verifyBackoff + time.Duration(rand.Int63n(int64(verifyBackoff/2)))
+				log.WithField("retryDelay", retryDelay.String()).Info("Waiting before retry")
+				time.Sleep(retryDelay)
 				verifyBackoff *= 2
 				if verifyBackoff > verifyMaxBackoff {
 					verifyBackoff = verifyMaxBackoff
@@ -667,7 +666,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		ProofSetID: proofSet.ProofSetID,
 	})
 
-	// Implement retry mechanism with exponential backoff for add-roots command
 	rootArgument := compoundCID
 	addRootsArgs := []string{
 		"add-roots",
@@ -693,14 +691,17 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	}
 
 	// Retry configuration for add-roots
-	maxRetries := 10                  // Increased from 5 to 10
-	initialBackoff := 5 * time.Second // Increased from 3 to 5 seconds
-	maxBackoff := 60 * time.Second    // Increased from 30 to 60 seconds
+	maxRetries := 10
+	initialBackoff := 20 * time.Second // Increased from 8s to 20s
+	maxBackoff := 180 * time.Second    // Increased from 90s to 180s
 	backoff := initialBackoff
 	success := false
 
 	// Execute add-roots command with retries
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Add delay before add-roots
+		waitWithJitter(baseDelay * 2) // Double delay for add-roots as it's intensive
+
 		log.WithField("command", pdptoolPath).
 			WithField("args", strings.Join(addRootsArgs, " ")).
 			WithField("attempt", attempt).
@@ -786,52 +787,31 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 			// Check for specific error patterns that indicate a retry might succeed
 			shouldRetry := false
-			retryMessage := ""
 
 			if strings.Contains(stderrStr, "subroot CID") && strings.Contains(stderrStr, "not found or does not belong to service") {
 				shouldRetry = true
-				retryMessage = "CID not yet registered with service. Will retry after delay."
 			} else if strings.Contains(stderrStr, "Size must be a multiple of 32") {
 				shouldRetry = true
-				retryMessage = "Validation error. Will retry after delay."
 			} else if strings.Contains(stderrStr, "Failed to send transaction") {
 				shouldRetry = true
-				retryMessage = "Transaction error. Will retry after delay."
 			} else if strings.Contains(stderrStr, "status code 500") || strings.Contains(stderrStr, "status code 400") {
 				shouldRetry = true
-				retryMessage = "Service error. Will retry after delay."
 			} else if strings.Contains(stderrStr, "Failed to retrieve next challenge epoch") ||
 				strings.Contains(stderrStr, "can't scan NULL into") {
 				shouldRetry = true
-				retryMessage = "Proof set is still initializing on the blockchain. Will retry after delay."
 			} else if strings.Contains(stderrStr, "not found") {
 				shouldRetry = true
-				retryMessage = "Proof set not found yet, may still be registering. Will retry after delay."
 			} else if strings.Contains(stderrStr, "can't add root to non-existing proof set") {
 				shouldRetry = true
-				retryMessage = "Proof set is newly created and not fully registered. Will retry after delay."
 			} else {
 				// For any other error, let's retry anyway since the proof set might just need more time
 				shouldRetry = true
-				retryMessage = "Encountered an error. Waiting before retrying..."
 			}
 
 			if shouldRetry && attempt < maxRetries {
-				log.WithField("backoff", backoff).WithField("attempt", attempt).Info(retryMessage)
-
-				// Update UI with retry status
-				updateStatus(UploadProgress{
-					Status:     currentStage,
-					Progress:   currentProgress,
-					Message:    fmt.Sprintf("%s Waiting %v before retry %d/%d...", retryMessage, backoff, attempt, maxRetries),
-					CID:        compoundCID,
-					ProofSetID: proofSet.ProofSetID,
-				})
-
-				// Wait with exponential backoff
-				time.Sleep(backoff)
-
-				// Double the backoff for next attempt, capped at maxBackoff
+				retryDelay := backoff + time.Duration(rand.Int63n(int64(backoff/2)))
+				log.WithField("retryDelay", retryDelay.String()).Info("Waiting before retry")
+				time.Sleep(retryDelay)
 				backoff *= 2
 				if backoff > maxBackoff {
 					backoff = maxBackoff
@@ -901,16 +881,19 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	})
 
 	var extractedIntegerRootID string
-	initialPollInterval := 3 * time.Second
-	maxPollInterval := 10 * time.Second
+	initialPollInterval := 15 * time.Second // Increased from 5s to 15s
+	maxPollInterval := 45 * time.Second     // Increased from 15s to 45s
 	pollInterval := initialPollInterval
-	maxPollAttempts := 120 // Increased to 120 attempts (up to 10-20 minutes)
+	maxPollAttempts := 60 // Reduced from 120 to 60 since intervals are longer
 	pollAttempt := 0
 	foundRootInPoll := false
 	consecutiveErrors := 0
 	maxConsecutiveErrors := 10
 
 	for pollAttempt < maxPollAttempts {
+		// Add delay before get-proof-set
+		waitWithJitter(baseDelay)
+
 		pollAttempt++
 
 		// Update UI every 5 attempts to show progress
@@ -1130,7 +1113,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	currentProgress = 100
 
 	updateStatus(UploadProgress{
-		Status:     "complete",
+		Status:     currentStage,
 		Progress:   currentProgress,
 		Message:    "Upload completed successfully",
 		CID:        compoundCID,

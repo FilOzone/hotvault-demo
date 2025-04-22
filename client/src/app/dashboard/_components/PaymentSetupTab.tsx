@@ -688,103 +688,110 @@ export const PaymentSetupTab = () => {
 
   return (
     <div className="animate-fadeIn">
-      <div className="px-6 py-4 border-b border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-          <Wallet size={20} className="mr-2 text-blue-500" />
+      <div className="px-6 py-4">
+        <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+          <Wallet className="w-5 h-5 text-blue-500" />
           Payment Setup
-        </h2>
+        </h1>
         <p className="text-gray-600 mt-1">
           Configure your payment settings to use the FWS service
         </p>
       </div>
 
-      <div className="p-6 grid md:grid-cols-5 gap-6">
-        <div className="md:col-span-2">
+      <div className="px-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column */}
+        <div>
           <TokenBalanceCard />
 
-          {/* Helpful info card */}
-          <div className="mt-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
-            <h3 className="text-sm font-semibold text-blue-800 mb-2">
-              Why do I need to set up payments?
-            </h3>
-            <p className="text-sm text-blue-700">
-              FWS requires a one-time payment setup to create your proof set.
-              This includes approving the token, depositing USDFC, and allowing
-              the service to create proofs on your behalf.
-            </p>
-
-            <h3 className="text-sm font-semibold text-blue-800 mt-4 mb-2">
-              Payment Details
-            </h3>
-            <div className="bg-white bg-opacity-50 rounded p-3 text-xs">
-              <div className="flex justify-between py-1 border-b border-blue-100">
-                <span>Proof Set Creation Fee</span>
-                <span className="font-medium">
-                  {Constants.PROOF_SET_FEE} USDFC
-                </span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span>Payment Contract</span>
-                <span className="font-mono text-xs truncate max-w-[140px]">
-                  {Constants.PAYMENT_PROXY_ADDRESS.substring(0, 6)}...
-                  {Constants.PAYMENT_PROXY_ADDRESS.substring(
-                    Constants.PAYMENT_PROXY_ADDRESS.length - 4
-                  )}
-                </span>
-              </div>
+          <div className="mt-6 bg-blue-50 rounded-lg border border-blue-100 overflow-hidden">
+            <div className="p-4 border-b border-blue-100">
+              <h3 className="text-sm font-medium text-blue-900">
+                Why do I need to set up payments?
+              </h3>
             </div>
+            <div className="p-4">
+              <p className="text-sm text-blue-700">
+                FWS requires a one-time payment setup to create your proof set.
+                This includes approving the token, depositing USDFC, and
+                allowing the service to create proofs on your behalf.
+              </p>
 
-            {/* Display Account Status */}
-            {paymentStatus.isDeposited && (
               <div className="mt-4">
-                <h3 className="text-sm font-semibold text-blue-800 mb-2">
-                  Account Status
-                </h3>
-                <div className="bg-white bg-opacity-50 rounded p-3 text-xs">
-                  <div className="flex justify-between py-1 border-b border-blue-100">
-                    <span>Funds in Payments Contract</span>
-                    <span className="font-medium">
-                      {parseFloat(paymentStatus.accountFunds).toFixed(6)} USDFC
+                <h4 className="text-sm font-medium text-blue-900 mb-2">
+                  Payment Details
+                </h4>
+                <div className="bg-white bg-opacity-50 rounded p-3 space-y-2">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-blue-700">
+                      Proof Set Creation Fee
+                    </span>
+                    <span className="font-medium text-blue-900">
+                      {Constants.PROOF_SET_FEE} USDFC
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-blue-700">Payment Contract</span>
+                    <span className="font-mono text-xs text-blue-900">
+                      {Constants.PAYMENT_PROXY_ADDRESS.slice(0, 6)}...
+                      {Constants.PAYMENT_PROXY_ADDRESS.slice(-4)}
                     </span>
                   </div>
                 </div>
               </div>
-            )}
+
+              {paymentStatus.isDeposited && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-blue-900 mb-2">
+                    Account Status
+                  </h4>
+                  <div className="bg-white bg-opacity-50 rounded p-3">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-blue-700">
+                        Funds in Payments Contract
+                      </span>
+                      <span className="font-medium text-blue-900">
+                        {parseFloat(paymentStatus.accountFunds).toFixed(6)}{" "}
+                        USDFC
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Transaction History Component */}
-          <TransactionHistory />
+          <div className="mt-6">
+            <TransactionHistory />
+          </div>
         </div>
 
-        <div className="md:col-span-3">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+        {/* Right Column - Setup Steps */}
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <div className="p-5 border-b border-gray-100">
-              <h3 className="text-lg font-medium text-gray-800">
+              <h3 className="text-lg font-medium text-gray-900">
                 Payment Setup Steps
               </h3>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-600 mt-1">
                 Complete these steps to enable FWS service
               </p>
             </div>
 
-            <div className="p-5 space-y-3">
-              {/* Custom Step Components */}
+            <div className="p-5 space-y-4">
               {renderTokenApprovalStep()}
               {renderDepositStep()}
               {renderOperatorApprovalStep()}
               {renderCreateProofSetStep()}
               {renderCompletionStep()}
 
-              {/* Warning for insufficient balance */}
               {!paymentStatus.hasMinimumBalance && (
-                <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200 text-amber-700 flex items-start">
-                  <AlertCircle
-                    size={20}
-                    className="mr-3 mt-0.5 flex-shrink-0"
-                  />
+                <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
                   <div>
-                    <p className="font-semibold">Insufficient USDFC Balance</p>
-                    <p className="text-sm mt-1">
+                    <p className="font-medium text-amber-800">
+                      Insufficient USDFC Balance
+                    </p>
+                    <p className="text-sm text-amber-700 mt-1">
                       You need at least {Constants.MINIMUM_USDFC_BALANCE} USDFC
                       to complete the setup. Please obtain USDFC tokens before
                       proceeding.
@@ -793,16 +800,14 @@ export const PaymentSetupTab = () => {
                 </div>
               )}
 
-              {/* Show any errors from the context */}
               {paymentStatus.error && (
-                <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200 text-red-700 flex items-start">
-                  <AlertCircle
-                    size={20}
-                    className="mr-3 mt-0.5 flex-shrink-0"
-                  />
+                <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-100 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
                   <div>
-                    <p className="font-semibold">Error</p>
-                    <p className="text-sm mt-1">{paymentStatus.error}</p>
+                    <p className="font-medium text-red-800">Error</p>
+                    <p className="text-sm text-red-700 mt-1">
+                      {paymentStatus.error}
+                    </p>
                   </div>
                 </div>
               )}

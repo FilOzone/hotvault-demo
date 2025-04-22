@@ -42,6 +42,12 @@ interface PaymentStatus {
   lockedFunds: string;
   proofSetReady: boolean;
   isCreatingProofSet: boolean;
+  operatorApproval: {
+    rateAllowance: string;
+    lockupAllowance: string;
+    rateUsage: string;
+    lockupUsage: string;
+  } | null;
 }
 
 // Define the context type
@@ -84,6 +90,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     lockedFunds: "0",
     proofSetReady: false,
     isCreatingProofSet: false,
+    operatorApproval: null,
   });
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
@@ -201,10 +208,11 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
             isCreatingProofSet: data.proofSetInitiated && !data.proofSetReady,
           }));
 
-          // If proof set is ready, stop polling
+          // If proof set is ready, stop polling and refresh payment setup status
           if (data.proofSetReady) {
             clearInterval(interval);
             setPollingInterval(null);
+            refreshPaymentSetupStatus();
           }
         }
       } catch (error) {
@@ -351,6 +359,35 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         ...prev,
         isTokenApproved,
       }));
+
+      // Get operator approval details
+      const paymentContract = new ethers.Contract(
+        Constants.PAYMENT_PROXY_ADDRESS,
+        [
+          "function operatorApprovals(address token, address client, address operator) view returns (bool isApproved, uint256 rateAllowance, uint256 lockupAllowance, uint256 rateUsage, uint256 lockupUsage)",
+        ],
+        provider
+      );
+
+      try {
+        const approval = await paymentContract.operatorApprovals(
+          Constants.USDFC_TOKEN_ADDRESS,
+          account,
+          Constants.PDP_SERVICE_ADDRESS
+        );
+
+        setPaymentStatus((prev) => ({
+          ...prev,
+          operatorApproval: {
+            rateAllowance: ethers.formatUnits(approval.rateAllowance, 6),
+            lockupAllowance: ethers.formatUnits(approval.lockupAllowance, 6),
+            rateUsage: ethers.formatUnits(approval.rateUsage, 6),
+            lockupUsage: ethers.formatUnits(approval.lockupUsage, 6),
+          },
+        }));
+      } catch (error) {
+        console.error("Error fetching operator approval details:", error);
+      }
     } catch (error) {
       console.error("Error checking payment setup status:", error);
       setPaymentStatus((prev) => ({
@@ -359,6 +396,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         isLoading: false,
         proofSetReady: false,
         isCreatingProofSet: false,
+        operatorApproval: null,
       }));
     }
   }, [account, startPolling, pollingInterval]);
@@ -569,9 +607,13 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
   const initiateProofSetCreation = async (): Promise<boolean> => {
     if (!account) return false;
 
-    setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
-
     try {
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isCreatingProofSet: true,
+        error: null,
+      }));
+
       const response = await fetch(
         `${Constants.API_BASE_URL}/api/v1/proof-set/create`,
         {
@@ -596,13 +638,15 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
       return true;
     } catch (error) {
-      console.error("Error creating proof set:", error);
+      console.error("Failed to create proof set:", error);
       setPaymentStatus((prev) => ({
         ...prev,
-        error:
-          error instanceof Error ? error.message : "Failed to create proof set",
-        isLoading: false,
         isCreatingProofSet: false,
+        isLoading: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to create proof set. Please try again.",
       }));
       return false;
     }
