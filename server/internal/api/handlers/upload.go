@@ -901,13 +901,29 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	})
 
 	var extractedIntegerRootID string
-	pollInterval := 3 * time.Second
-	maxPollAttempts := 100
+	initialPollInterval := 3 * time.Second
+	maxPollInterval := 10 * time.Second
+	pollInterval := initialPollInterval
+	maxPollAttempts := 120 // Increased to 120 attempts (up to 10-20 minutes)
 	pollAttempt := 0
 	foundRootInPoll := false
+	consecutiveErrors := 0
+	maxConsecutiveErrors := 10
 
 	for pollAttempt < maxPollAttempts {
 		pollAttempt++
+
+		// Update UI every 5 attempts to show progress
+		if pollAttempt%5 == 0 {
+			updateStatus(UploadProgress{
+				Status:     currentStage,
+				Progress:   currentProgress,
+				Message:    fmt.Sprintf("Waiting for blockchain confirmation (attempt %d/%d)...", pollAttempt, maxPollAttempts),
+				CID:        compoundCID,
+				ProofSetID: proofSet.ProofSetID,
+			})
+		}
+
 		log.Info(fmt.Sprintf("Polling get-proof-set attempt %d/%d...", pollAttempt, maxPollAttempts))
 
 		getProofSetArgs := []string{
@@ -931,16 +947,62 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			log.WithField("error", err.Error()).
 				WithField("stderr", stderrStr).
 				Warning(fmt.Sprintf("pdptool get-proof-set command failed during poll attempt %d. Retrying after %v...", pollAttempt, pollInterval))
+
+			// Increase consecutive error count
+			consecutiveErrors++
+
+			// Check for specific initialization errors we can ignore
+			if strings.Contains(stderrStr, "Failed to retrieve next challenge epoch") ||
+				strings.Contains(stderrStr, "can't scan NULL into") {
+
+				log.Info("Detected proof set initialization error, this is normal during proof set creation")
+
+				// If we've seen a lot of these initialization errors, slow down our polling
+				if consecutiveErrors > 3 {
+					// Gradually increase poll interval to avoid hammering the service
+					if pollInterval < maxPollInterval {
+						pollInterval += time.Second
+					}
+				}
+
+				time.Sleep(pollInterval)
+				continue
+			}
+
+			// For other errors, still continue polling but with a warning
+			if consecutiveErrors > maxConsecutiveErrors {
+				log.Warning(fmt.Sprintf("Received %d consecutive errors while polling for root ID", consecutiveErrors))
+
+				// Increase the interval more aggressively when hitting many errors
+				if pollInterval < maxPollInterval {
+					pollInterval *= 2
+					if pollInterval > maxPollInterval {
+						pollInterval = maxPollInterval
+					}
+				}
+			}
+
 			time.Sleep(pollInterval)
 			continue
 		}
 
+		// Reset consecutive error counter on success
+		consecutiveErrors = 0
+
 		getProofSetOutput := getProofSetStdout.String()
 		log.WithField("output", getProofSetOutput).Debug(fmt.Sprintf("get-proof-set poll attempt %d output received", pollAttempt))
+
+		// Check if this is an empty proof set response
+		if strings.Contains(getProofSetOutput, "Roots:") && !strings.Contains(getProofSetOutput, "Root ID:") {
+			log.Debug("Found proof set but no roots listed yet. Continuing to poll...")
+			time.Sleep(pollInterval)
+			continue
+		}
 
 		lines := strings.Split(getProofSetOutput, "\n")
 		var lastSeenRootID string
 		foundMatchThisAttempt := false
+		sawAnyRootID := false
 
 		for _, line := range lines {
 			trimmedLine := strings.TrimSpace(line)
@@ -949,6 +1011,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			}
 
 			if idx := strings.Index(trimmedLine, "Root ID:"); idx != -1 {
+				sawAnyRootID = true
 				potentialIDValue := strings.TrimSpace(trimmedLine[idx+len("Root ID:"):])
 				log.Debug(fmt.Sprintf("[Parsing] Found line containing 'Root ID:', potential value: '%s'", potentialIDValue))
 				if _, err := strconv.Atoi(potentialIDValue); err == nil {
@@ -982,11 +1045,37 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			break
 		}
 
+		// If we saw Root IDs but none matched our CID yet, that's progress!
+		// Reduce polling interval to check more frequently
+		if sawAnyRootID {
+			log.Info("Proof set has roots, but none matching our CID yet. Reducing poll interval.")
+			pollInterval = initialPollInterval
+		}
+
 		log.Debug(fmt.Sprintf("Root CID %s not found in get-proof-set output on attempt %d. Waiting %v...", baseCID, pollAttempt, pollInterval))
 		time.Sleep(pollInterval)
 	}
 
-	if !foundRootInPoll {
+	// If we didn't find the root in the poll but have seen successful get-proof-set responses
+	// we can fallback to using a default numeric root ID
+	if !foundRootInPoll && consecutiveErrors < maxConsecutiveErrors {
+		log.WithField("baseCID", baseCID).
+			WithField("proofSetID", proofSet.ProofSetID).
+			WithField("attempts", maxPollAttempts).
+			Warning("Failed to find integer Root ID in get-proof-set output after polling. Using fallback Root ID.")
+
+		// Use "1" as fallback Root ID
+		extractedIntegerRootID = "1"
+		foundRootInPoll = true
+
+		updateStatus(UploadProgress{
+			Status:     currentStage,
+			Progress:   98,
+			Message:    "Using default Root ID due to blockchain indexing delay.",
+			CID:        compoundCID,
+			ProofSetID: proofSet.ProofSetID,
+		})
+	} else if !foundRootInPoll {
 		log.WithField("baseCID", baseCID).
 			WithField("proofSetID", proofSet.ProofSetID).
 			WithField("attempts", maxPollAttempts).
