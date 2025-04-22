@@ -69,9 +69,10 @@ type NonceResponse struct {
 // StatusResponse represents the response for checking authentication status
 // @Description Response containing authentication status
 type StatusResponse struct {
-	Authenticated bool   `json:"authenticated"`
-	Address       string `json:"address,omitempty"`
-	ProofSetReady bool   `json:"proofSetReady"`
+	Authenticated     bool   `json:"authenticated"`
+	Address           string `json:"address,omitempty"`
+	ProofSetReady     bool   `json:"proofSetReady"`
+	ProofSetInitiated bool   `json:"proofSetInitiated"`
 }
 
 // GenerateNonce godoc
@@ -519,7 +520,11 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 func (h *AuthHandler) CheckAuthStatus(c *gin.Context) {
 	tokenString, err := c.Cookie("jwt_token")
 	if err != nil {
-		c.JSON(http.StatusOK, StatusResponse{Authenticated: false, ProofSetReady: false})
+		c.JSON(http.StatusOK, StatusResponse{
+			Authenticated:     false,
+			ProofSetReady:     false,
+			ProofSetInitiated: false,
+		})
 		return
 	}
 
@@ -529,31 +534,44 @@ func (h *AuthHandler) CheckAuthStatus(c *gin.Context) {
 
 	if err != nil || !token.Valid {
 		c.SetCookie("jwt_token", "", -1, "/", "", false, true)
-		c.JSON(http.StatusOK, StatusResponse{Authenticated: false, ProofSetReady: false})
+		c.JSON(http.StatusOK, StatusResponse{
+			Authenticated:     false,
+			ProofSetReady:     false,
+			ProofSetInitiated: false,
+		})
 		return
 	}
 
 	claims, ok := token.Claims.(*models.JWTClaims)
 	if !ok {
 		c.SetCookie("jwt_token", "", -1, "/", "", false, true)
-		c.JSON(http.StatusOK, StatusResponse{Authenticated: false, ProofSetReady: false})
+		c.JSON(http.StatusOK, StatusResponse{
+			Authenticated:     false,
+			ProofSetReady:     false,
+			ProofSetInitiated: false,
+		})
 		return
 	}
 
 	var proofSet models.ProofSet
 	isReady := false
+	isInitiated := false
 	if err := h.db.Where("user_id = ?", claims.UserID).First(&proofSet).Error; err == nil {
 		if proofSet.ProofSetID != "" {
 			isReady = true
+		}
+		if proofSet.TransactionHash != "" {
+			isInitiated = true
 		}
 	} else if err != gorm.ErrRecordNotFound {
 		authLog.WithField("userID", claims.UserID).Errorf("Error checking proof set readiness in /auth/status: %v", err)
 	}
 
 	c.JSON(http.StatusOK, StatusResponse{
-		Authenticated: true,
-		Address:       claims.WalletAddress,
-		ProofSetReady: isReady,
+		Authenticated:     true,
+		Address:           claims.WalletAddress,
+		ProofSetReady:     isReady,
+		ProofSetInitiated: isInitiated,
 	})
 }
 

@@ -6,19 +6,14 @@ export const ProofSetBanner: React.FC = () => {
   const [proofSetStatus, setProofSetStatus] = useState<
     "idle" | "pending" | "ready"
   >("idle");
+  const [hasInitiated, setHasInitiated] = useState(false);
 
   useEffect(() => {
     // Only poll if we're in a pending state or we haven't checked yet
     if (proofSetStatus === "pending" || proofSetStatus === "idle") {
       const checkProofSetStatus = async () => {
         try {
-          const token = localStorage.getItem("jwt_token");
-          if (!token) return;
-
           const response = await fetch(`${API_BASE_URL}/api/v1/auth/status`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
             credentials: "include",
           });
 
@@ -28,9 +23,13 @@ export const ProofSetBanner: React.FC = () => {
             if (data.proofSetReady) {
               setProofSetStatus("ready");
               console.log("[ProofSetBanner] Proof set is ready");
-            } else {
+            } else if (data.proofSetInitiated) {
+              setHasInitiated(true);
               setProofSetStatus("pending");
               console.log("[ProofSetBanner] Proof set is pending");
+            } else {
+              setProofSetStatus("idle");
+              console.log("[ProofSetBanner] Proof set not initiated");
             }
           }
         } catch (error) {
@@ -51,7 +50,8 @@ export const ProofSetBanner: React.FC = () => {
     }
   }, [proofSetStatus]);
 
-  if (proofSetStatus !== "pending") return null;
+  // Only show banner if proof set creation has been initiated and is pending
+  if (!hasInitiated || proofSetStatus !== "pending") return null;
 
   return (
     <motion.div

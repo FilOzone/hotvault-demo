@@ -47,6 +47,8 @@ export const PaymentSetupTab = () => {
   useEffect(() => {
     if (paymentStatus.proofSetReady) {
       setCurrentStep(PaymentStep.COMPLETE);
+    } else if (paymentStatus.isCreatingProofSet) {
+      setCurrentStep(PaymentStep.COMPLETE);
     } else if (paymentStatus.isOperatorApproved) {
       setCurrentStep(PaymentStep.CREATE_PROOF_SET);
     } else if (paymentStatus.isDeposited) {
@@ -493,7 +495,9 @@ export const PaymentSetupTab = () => {
   // Helper to render the new proof set creation step
   const renderCreateProofSetStep = () => {
     const isActive = currentStep === PaymentStep.CREATE_PROOF_SET;
-    const isCompleted = currentStep > PaymentStep.CREATE_PROOF_SET;
+    const isCompleted =
+      currentStep > PaymentStep.CREATE_PROOF_SET ||
+      paymentStatus.isCreatingProofSet;
     const isProcessingCreation = paymentStatus.isCreatingProofSet;
 
     return (
@@ -543,7 +547,7 @@ export const PaymentSetupTab = () => {
               ) : isActive ? (
                 "Final step: Initiate proof set creation on the network"
               ) : isCompleted ? (
-                "Completed"
+                "Creation in progress..."
               ) : (
                 "Pending"
               )}
@@ -551,7 +555,7 @@ export const PaymentSetupTab = () => {
           </div>
         </div>
 
-        {isActive && (
+        {isActive && !isProcessingCreation && (
           <div className="mt-3 bg-white p-3 rounded border border-blue-100">
             <div className="flex items-center mb-3">
               <Info size={14} className="text-blue-500 mr-2" />
