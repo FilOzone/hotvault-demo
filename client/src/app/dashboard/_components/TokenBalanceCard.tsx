@@ -46,14 +46,6 @@ export const TokenBalanceCard = () => {
               </span>{" "}
               to create a proof set.
             </div>
-            <a
-              href="https://faucet.calibration.fildev.network/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-3 px-3 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-md text-xs font-medium transition-colors"
-            >
-              Get USDFC
-            </a>
           </div>
         ) : (
           <div className="p-3 bg-green-50 text-green-700 rounded-md text-sm">

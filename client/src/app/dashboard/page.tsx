@@ -17,6 +17,14 @@ export default function Dashboard() {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isLoading] = useState(false);
 
+  const handleTabChange = (tab: string) => {
+    if (tab === "payment") {
+      setActiveTab(DASHBOARD_SECTIONS.PAYMENTS);
+    } else if (tab === "files") {
+      setActiveTab(DASHBOARD_SECTIONS.FILES);
+    }
+  };
+
   if (!account) {
     return null;
   }
@@ -40,7 +48,7 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <AnimatePresence mode="wait">
               {activeTab === DASHBOARD_SECTIONS.FILES && (
-                <FilesTab isLoading={isLoading} />
+                <FilesTab isLoading={isLoading} onTabChange={handleTabChange} />
               )}
               {activeTab === DASHBOARD_SECTIONS.PAYMENTS && <PaymentSetupTab />}
             </AnimatePresence>

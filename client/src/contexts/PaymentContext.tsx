@@ -39,6 +39,7 @@ interface PaymentStatus {
   isDeposited: boolean;
   isOperatorApproved: boolean;
   accountFunds: string;
+  lockedFunds: string;
   proofSetReady: boolean;
   isCreatingProofSet: boolean;
 }
@@ -80,6 +81,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     isDeposited: false,
     isOperatorApproved: false,
     accountFunds: "0",
+    lockedFunds: "0",
     proofSetReady: false,
     isCreatingProofSet: false,
   });

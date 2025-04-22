@@ -646,26 +646,40 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 // encodeExtraData encodes the metadata and payer address according to the expected ABI.
 func encodeExtraData(metadata string, payerAddress string) (string, error) {
-	StringTy, err := abi.NewType("string", "", nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create string type: %w", err)
-	}
-	AddressTy, err := abi.NewType("address", "", nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create address type: %w", err)
-	}
-
-	arguments := abi.Arguments{
-		{Type: StringTy, Name: "metadata"},
-		{Type: AddressTy, Name: "payer"},
-	}
-
 	if !common.IsHexAddress(payerAddress) {
 		return "", fmt.Errorf("invalid payer address format: %s", payerAddress)
 	}
-	payer := common.HexToAddress(payerAddress)
 
-	packedBytes, err := arguments.Pack(metadata, payer)
+	structTy, err := abi.NewType("tuple", "", []abi.ArgumentMarshaling{
+		{
+			Name: "metadata",
+			Type: "string",
+		},
+		{
+			Name: "payer",
+			Type: "address",
+		},
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to create struct type: %w", err)
+	}
+
+	arguments := abi.Arguments{
+		{
+			Type: structTy,
+		},
+	}
+
+	structData := struct {
+		Metadata string
+		Payer    common.Address
+	}{
+		Metadata: metadata,
+		Payer:    common.HexToAddress(payerAddress),
+	}
+
+	packedBytes, err := arguments.Pack(structData)
 	if err != nil {
 		return "", fmt.Errorf("failed to pack ABI arguments: %w", err)
 	}

@@ -97,3 +97,13 @@ export function getExplorerUrl(txHash: string): string {
       return `https://calibration.filfox.info/en/message/${txHash}`;
   }
 }
+
+/**
+ * Formats a currency amount with 2 decimal places
+ * @param amount - Amount as a string or number
+ * @returns Formatted string with 2 decimal places
+ */
+export const formatCurrency = (amount: string | number): string => {
+  const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
+  return numAmount.toFixed(2);
+};

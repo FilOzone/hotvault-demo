@@ -468,7 +468,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setIsConnectionLocked(true);
     try {
+      if (!window.ethereum) {
+        throw new Error("MetaMask not available");
+      }
+
+      // Request MetaMask to show the account selector
+      await window.ethereum.request({
+        method: "wallet_requestPermissions",
+        params: [{ eth_accounts: {} }],
+      });
+
+      // After permission is granted, connect the selected account
       await connectWallet();
+    } catch (error) {
+      console.error("Failed to switch account:", error);
+      setError("Failed to switch account. Please try again.");
     } finally {
       // Small delay before unlocking to prevent accidental double-clicks
       setTimeout(() => {

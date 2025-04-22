@@ -56,6 +56,7 @@ interface Piece {
 
 interface FilesTabProps {
   isLoading: boolean;
+  onTabChange?: (tab: string) => void;
 }
 
 interface DownloadError extends Error {
@@ -81,8 +82,12 @@ const tableRowVariants = {
   }),
 };
 
+// Add new type for proof set status
+type ProofSetStatus = "none" | "creating" | "ready";
+
 export const FilesTab = ({
   isLoading: initialLoading,
+  onTabChange,
 }: FilesTabProps): ReactElement => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -108,11 +113,98 @@ export const FilesTab = ({
   // Add state for the user's proof set ID
   const [userProofSetId, setUserProofSetId] = useState<string | null>(null);
 
-  // Add state for tracking proof set creation status
-  const [proofSetStatus, setProofSetStatus] = useState<
-    "idle" | "pending" | "ready"
-  >("idle");
+  // Replace existing proofSetStatus with more specific type
+  const [proofSetStatus, setProofSetStatus] = useState<ProofSetStatus>("none");
 
+  // Move fetchProofs function here, before the useEffect that uses it
+  const fetchProofs = useCallback(async () => {
+    try {
+      if (userProofSetId) {
+        setProofSetStatus("ready");
+        return;
+      }
+
+      const token = localStorage.getItem("jwt_token");
+      if (!token) {
+        setAuthError("Authentication required. Please login again.");
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/status`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.status === 401) {
+        setAuthError("Your session has expired. Please login again.");
+        return;
+      }
+
+      if (!response.ok) {
+        const data = await response.json();
+        if (data.error?.includes("Proof set not found")) {
+          setProofSetStatus("none");
+        } else {
+          console.warn(
+            `[FilesTab.tsx:fetchProofs] Failed to fetch proofs: ${response.statusText}`
+          );
+          setProofSetStatus("creating");
+        }
+        return;
+      }
+
+      const data = await response.json();
+
+      // Check the auth status response for proof set state
+      if (data.proofSetReady) {
+        setProofSetStatus("ready");
+      } else if (data.proofSetInitiated) {
+        setProofSetStatus("creating");
+      } else {
+        setProofSetStatus("none");
+      }
+
+      // Update pieces with proof data if available
+      if (data.pieces) {
+        setPieces((prevPieces) =>
+          prevPieces.map((piece) => {
+            const pieceWithProof = data.pieces.find(
+              (p: Piece) => p.id === piece.id
+            );
+            if (pieceWithProof?.proofSetDbId) {
+              return {
+                ...piece,
+                proofSetDbId: pieceWithProof.proofSetDbId,
+                rootId: pieceWithProof.rootId,
+              };
+            }
+            return piece;
+          })
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "[FilesTab.tsx:fetchProofs] Error checking proof status:",
+        error
+      );
+    }
+  }, [userProofSetId, setProofSetStatus, setAuthError, setPieces]);
+
+  // Add useEffect to periodically check for proof sets if they're pending
+  useEffect(() => {
+    // Don't poll if we already have a proof set ID
+    if (proofSetStatus === "creating" && pieces.length > 0 && !userProofSetId) {
+      const proofCheckInterval = setInterval(() => {
+        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
+        fetchProofs();
+      }, 15000);
+
+      return () => clearInterval(proofCheckInterval);
+    }
+  }, [proofSetStatus, pieces.length, userProofSetId, fetchProofs]);
+
+  // Restore fetchPieces function
   const fetchPieces = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -159,23 +251,7 @@ export const FilesTab = ({
   } = useUpload(fetchPieces);
   const uploadProgress = useUploadStore((state) => state.uploadProgress);
 
-  // Add new state for root removal dialog
-  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
-  const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
-
-  // Add a useEffect to periodically check for proof sets if they're pending
-  useEffect(() => {
-    // Don't poll if we already have a proof set ID
-    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
-      const proofCheckInterval = setInterval(() => {
-        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
-        fetchProofs();
-      }, 15000); // Check every 15 seconds
-
-      return () => clearInterval(proofCheckInterval);
-    }
-  }, [proofSetStatus, pieces.length, userProofSetId]);
-
+  // Restore the upload completed event listener
   useEffect(() => {
     let isMounted = true;
 
@@ -183,7 +259,6 @@ export const FilesTab = ({
       try {
         if (isMounted) {
           const data = await fetchPieces();
-          // Only proceed if we're still mounted and have data
           if (isMounted && data) {
             await fetchProofs();
           }
@@ -199,170 +274,21 @@ export const FilesTab = ({
 
     loadData();
 
-    // Cleanup function to prevent state updates after unmount
-    return () => {
-      isMounted = false;
-    };
-  }, [authError, fetchPieces]);
-
-  // Add useEffect to find the user's proof set ID when pieces are loaded
-  useEffect(() => {
-    // Find the first piece with a valid proofSetDbId (the service ID string)
-    const firstPieceWithProof = pieces.find(
-      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
-    );
-    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
-
-    // Only update state if the derived ID is different from the current state
-    if (derivedProofSetId !== userProofSetId) {
-      setUserProofSetId(derivedProofSetId);
-      if (derivedProofSetId) {
-        console.log(
-          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
-        );
-      } else {
-        console.log(
-          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
-        );
-      }
-    } else {
-      // Log even if the ID hasn't changed, for debugging
-      console.log(
-        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
-      );
-    }
-  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
-
-  // Add new function to fetch proofs
-  const fetchProofs = useCallback(async () => {
-    try {
-      // If we already have a userProofSetId, no need to keep checking
-      if (userProofSetId) {
-        setProofSetStatus("ready");
-        return;
-      }
-
-      const token = localStorage.getItem("jwt_token");
-      if (!token) {
-        setAuthError("Authentication required. Please login again.");
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/pieces/proof-sets`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      // If we get a 500 error, it likely means proof sets are still being created
-      if (response.status === 500) {
-        console.log(
-          "[FilesTab.tsx:fetchProofs] Proof sets are being created..."
-        );
-        setProofSetStatus("pending");
-        return;
-      }
-
-      if (response.status === 401) {
-        setAuthError("Your session has expired. Please login again.");
-        return;
-      }
-
-      if (!response.ok) {
-        console.warn(
-          `[FilesTab.tsx:fetchProofs] Failed to fetch proofs: ${response.statusText}`
-        );
-        setProofSetStatus("pending");
-        return;
-      }
-
-      const data = await response.json();
-
-      // Validate data structure before using it
-      if (!data || (data.pieces && !Array.isArray(data.pieces))) {
-        console.warn(
-          "[FilesTab.tsx:fetchProofs] Unexpected data format:",
-          data
-        );
-        return;
-      }
-
-      // Update the pieces with proof data
-      setPieces((prevPieces) =>
-        prevPieces.map((piece) => {
-          // Find the matching piece with proof data
-          const piecesArray = Array.isArray(data.pieces)
-            ? data.pieces
-            : Array.isArray(data)
-            ? data
-            : [];
-          const pieceWithProof = piecesArray.find(
-            (p: Piece) => p.id === piece.id
-          );
-          if (pieceWithProof && pieceWithProof.proofSetDbId) {
-            // Update with proof data
-            return {
-              ...piece,
-              proofSetDbId: pieceWithProof.proofSetDbId,
-              rootId: pieceWithProof.rootId,
-            };
-          }
-          return piece;
-        })
-      );
-
-      setProofSetStatus("ready");
-      console.log("[FilesTab.tsx:fetchProofs] ✅ Proofs loaded:", data);
-    } catch (error) {
-      // Don't show error toast to the user
-      console.warn(
-        "[FilesTab.tsx:fetchProofs] ℹ️ Error fetching proofs (might be pending creation):",
-        error
-      );
-      setProofSetStatus("pending");
-    }
-  }, [userProofSetId, setProofSetStatus, setAuthError, setPieces]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadData = async () => {
-      try {
-        if (isMounted) {
-          const data = await fetchPieces();
-          // Only proceed if we're still mounted and have data
-          if (isMounted && data) {
-            await fetchProofs();
-          }
-        }
-      } catch (error: unknown) {
-        if (isMounted && !authError) {
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
-          toast.error(`Error loading files: ${errorMessage}`);
-        }
-      }
-    };
-
-    loadData();
-
-    // Add event listener for upload completion to refresh the file list
+    // Add event listener for upload completion
     const handleUploadCompleted = () => {
       console.log(
         "[FilesTab] Detected upload completion, refreshing file list"
       );
-      fetchPieces().catch((err) => {
+      fetchPieces().catch((error: Error) => {
         console.error(
-          "[FilesTab] Error refreshing file list after upload",
-          err
+          "[FilesTab] Error refreshing file list after upload:",
+          error
         );
       });
     };
 
-    // Listen for the custom upload completed event
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
 
-    // Cleanup function to prevent state updates after unmount
     return () => {
       isMounted = false;
       window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
@@ -396,6 +322,10 @@ export const FilesTab = ({
       );
     }
   }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
+
+  // Add new state for root removal dialog
+  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
+  const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
 
   // Add this useEffect to check token on component mount and set up periodic token check
   useEffect(() => {
@@ -442,14 +372,23 @@ export const FilesTab = ({
     }
   }, []);
 
-  // Add a helper to determine if uploads should be disabled
-  const isUploadDisabled =
-    proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId;
+  // Add helper function to determine if uploads should be disabled
+  const isUploadDisabled = useCallback(() => {
+    // Case 1: No proof set exists yet
+    if (proofSetStatus === "none" && pieces.length === 0) {
+      return true;
+    }
+    // Case 2: Proof set is being created
+    if (proofSetStatus === "creating") {
+      return true;
+    }
+    return false;
+  }, [proofSetStatus, pieces.length]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     maxFiles: 1,
-    disabled: isUploadDisabled, // Disable dropzone when proof set is being created
+    disabled: isUploadDisabled(),
   });
 
   const handleSubmitImage = async () => {
@@ -1158,10 +1097,42 @@ export const FilesTab = ({
     );
   };
 
-  // In the render method or somewhere appropriate in the component
+  // Modify the renderProofSetStatusBanner to show different messages
   const renderProofSetStatusBanner = () => {
-    // Don't show the banner if we already have a proof set ID, even if status is pending
-    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
+    if (proofSetStatus === "none" && pieces.length === 0) {
+      return (
+        <motion.div
+          className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 flex items-center gap-3"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex-shrink-0 bg-amber-100 p-2 rounded-full">
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <p className="font-medium mb-1">Proof Set Required</p>
+            <p className="text-sm">
+              You need to create a proof set in the Payment Setup tab before you
+              can upload files. This is a one-time setup required for file
+              verification.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => {
+                // Use the onTabChange prop to navigate
+                onTabChange?.("payment");
+              }}
+            >
+              Go to Payment Setup
+            </Button>
+          </div>
+        </motion.div>
+      );
+    }
+
+    if (proofSetStatus === "creating") {
       return (
         <motion.div
           className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-3"
@@ -1175,15 +1146,28 @@ export const FilesTab = ({
             <p className="font-medium mb-1">Proof Set Creation in Progress</p>
             <p className="text-sm">
               Your proof set is being created on the blockchain. This process
-              typically takes 5-10 minutes to complete. During this time, you
-              can upload files but proof verification will not be available
-              until the proof set creation is finalized.
+              typically takes 5-10 minutes to complete. During this time,
+              uploads are disabled until the proof set creation is finalized.
             </p>
           </div>
         </motion.div>
       );
     }
+
     return null;
+  };
+
+  // Update the dropzone UI to show different messages based on status
+  const getDropzoneMessage = () => {
+    if (proofSetStatus === "none" && pieces.length === 0) {
+      return "Create a proof set in Payment Setup before uploading";
+    }
+    if (proofSetStatus === "creating") {
+      return "Uploads disabled while proof set is being created";
+    }
+    return isDragActive
+      ? "Drop to upload"
+      : "Drag and drop any file here, or click to select";
   };
 
   return (
@@ -1287,15 +1271,10 @@ export const FilesTab = ({
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
-                disabled={
-                  !selectedImage ||
-                  (proofSetStatus === "pending" &&
-                    pieces.length > 0 &&
-                    !userProofSetId)
-                }
+                disabled={isUploadDisabled()}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isUploadDisabled
+                {isUploadDisabled()
                   ? "Upload Disabled (Proof Set Creating)"
                   : selectedImage
                   ? "Upload Selected File"
@@ -1309,7 +1288,7 @@ export const FilesTab = ({
         <div
           {...getRootProps()}
           className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer mb-6 ${
-            isUploadDisabled
+            isUploadDisabled()
               ? "border-gray-300 bg-gray-100 cursor-not-allowed"
               : isDragActive
               ? "border-blue-500 bg-blue-50 scale-[1.01]"
@@ -1320,7 +1299,7 @@ export const FilesTab = ({
         >
           <input {...getInputProps()} />
           <AnimatePresence mode="wait">
-            {isUploadDisabled ? (
+            {isUploadDisabled() ? (
               <motion.div
                 key="disabled"
                 initial={{ opacity: 0 }}
@@ -1589,12 +1568,14 @@ export const FilesTab = ({
                 <Typography
                   variant="body"
                   className={`${
-                    isDragActive ? "text-blue-600 font-medium" : "text-gray-700"
+                    isUploadDisabled()
+                      ? "text-gray-500"
+                      : isDragActive
+                      ? "text-blue-600 font-medium"
+                      : "text-gray-700"
                   } transition-colors duration-300 mb-1`}
                 >
-                  {isDragActive
-                    ? "Drop to upload"
-                    : "Drag and drop any file here, or click to select"}
+                  {getDropzoneMessage()}
                 </Typography>
                 <Typography variant="small" className="text-gray-400">
                   Accepts any file type
