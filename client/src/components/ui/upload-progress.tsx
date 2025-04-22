@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  useUploadStore,
-  UploadProgress as UploadProgressType,
-} from "@/store/upload-store";
+import { UploadProgress as UploadProgressType } from "@/store/upload-store";
 import { AlertTriangle, ExternalLink, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./button";
@@ -11,13 +8,12 @@ import { Button } from "./button";
 interface UploadProgressProps {
   uploadProgress: UploadProgressType | null;
   onCancel: () => void;
-  hasActiveAbortController: boolean;
+  hasActiveAbortController: boolean; // Keeping this for API compatibility even if unused
 }
 
 export const UploadProgress = ({
   uploadProgress,
   onCancel,
-  hasActiveAbortController,
 }: UploadProgressProps) => {
   if (!uploadProgress) return null;
 
@@ -118,7 +114,7 @@ export const UploadProgress = ({
             <div className="flex items-center gap-2">
               {uploadProgress.progress !== undefined && (
                 <div className="text-sm font-medium">
-                  {uploadProgress.progress}%
+                  {Math.min(uploadProgress.progress, 100)}%
                 </div>
               )}
               {uploadProgress.status !== "complete" && (
@@ -146,7 +142,7 @@ export const UploadProgress = ({
                     ? "bg-amber-500"
                     : "bg-blue-500"
                 }`}
-                style={{ width: `${uploadProgress.progress}%` }}
+                style={{ width: `${Math.min(uploadProgress.progress, 100)}%` }}
               ></div>
             </div>
           )}

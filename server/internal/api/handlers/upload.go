@@ -534,35 +534,130 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		proofSet.ProofSetID,
 	}
 
-	verifyCmd := exec.Command(pdptoolPath, verifyProofSetArgs...)
-	verifyCmd.Dir = filepath.Dir(pdptoolPath)
+	// Verification retry configuration
+	verifyMaxRetries := 5
+	verifyBackoff := 3 * time.Second
+	verifyMaxBackoff := 15 * time.Second
+	verifySuccess := false
 
-	var verifyOutput bytes.Buffer
-	var verifyError bytes.Buffer
-	verifyCmd.Stdout = &verifyOutput
-	verifyCmd.Stderr = &verifyError
-
-	verifyErr := verifyCmd.Run()
-	if verifyErr != nil {
-		stderrStr := verifyError.String()
-		log.WithField("error", verifyErr.Error()).
-			WithField("stderr", stderrStr).
+	// Try to verify the proof set with retries
+	for verifyAttempt := 1; verifyAttempt <= verifyMaxRetries; verifyAttempt++ {
+		log.WithField("attempt", verifyAttempt).
+			WithField("maxRetries", verifyMaxRetries).
 			WithField("proofSetID", proofSet.ProofSetID).
-			Error("Failed to verify proof set exists")
+			Info(fmt.Sprintf("Verifying proof set (attempt %d/%d)", verifyAttempt, verifyMaxRetries))
 
-		// If we can't verify the proof set, we need to create a new one or use a different one
-		updateStatus(UploadProgress{
-			Status:     "error",
-			Error:      "Proof set verification failed",
-			Message:    "Could not verify proof set. Please try again or contact support.",
-			CID:        compoundCID,
-			ProofSetID: proofSet.ProofSetID,
-		})
-		return
+		if verifyAttempt > 1 {
+			// Update UI with retry status for verification
+			updateStatus(UploadProgress{
+				Status:     currentStage,
+				Progress:   currentProgress,
+				Message:    fmt.Sprintf("Verifying proof set (attempt %d/%d)...", verifyAttempt, verifyMaxRetries),
+				CID:        compoundCID,
+				ProofSetID: proofSet.ProofSetID,
+			})
+		}
+
+		verifyCmd := exec.Command(pdptoolPath, verifyProofSetArgs...)
+		verifyCmd.Dir = filepath.Dir(pdptoolPath)
+
+		var verifyOutput bytes.Buffer
+		var verifyError bytes.Buffer
+		verifyCmd.Stdout = &verifyOutput
+		verifyCmd.Stderr = &verifyError
+
+		// Add a timeout context for verification
+		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		verifyCmdWithTimeout := exec.CommandContext(verifyCtx, pdptoolPath, verifyProofSetArgs...)
+		verifyCmdWithTimeout.Dir = filepath.Dir(pdptoolPath)
+		verifyCmdWithTimeout.Stdout = &verifyOutput
+		verifyCmdWithTimeout.Stderr = &verifyError
+
+		verifyErr := verifyCmdWithTimeout.Run()
+		verifyCancel()
+
+		if verifyErr != nil {
+			stderrStr := verifyError.String()
+			log.WithField("error", verifyErr.Error()).
+				WithField("stderr", stderrStr).
+				WithField("proofSetID", proofSet.ProofSetID).
+				WithField("attempt", verifyAttempt).
+				Warning("Proof set verification attempt failed")
+
+			// Check specific errors that suggest the proof set is still initializing
+			isRetryableError := false
+			var retryMessage string
+
+			if verifyCtx.Err() == context.DeadlineExceeded {
+				isRetryableError = true
+				retryMessage = "Verification timed out, proof set may still be initializing."
+			} else if strings.Contains(stderrStr, "status code 500") {
+				isRetryableError = true
+				retryMessage = "Service returned internal error, proof set may still be initializing."
+			} else if strings.Contains(stderrStr, "Failed to retrieve next challenge epoch") ||
+				strings.Contains(stderrStr, "can't scan NULL into") {
+				isRetryableError = true
+				retryMessage = "Proof set is still initializing on the blockchain."
+			} else if strings.Contains(stderrStr, "not found") {
+				isRetryableError = true
+				retryMessage = "Proof set not found yet, may still be registering."
+			}
+
+			if isRetryableError && verifyAttempt < verifyMaxRetries {
+				log.WithField("backoff", verifyBackoff).
+					WithField("attempt", verifyAttempt).
+					Info(retryMessage)
+
+				// Update UI with retry information
+				updateStatus(UploadProgress{
+					Status:     currentStage,
+					Progress:   currentProgress,
+					Message:    fmt.Sprintf("%s Waiting before retry %d/%d...", retryMessage, verifyAttempt+1, verifyMaxRetries),
+					CID:        compoundCID,
+					ProofSetID: proofSet.ProofSetID,
+				})
+
+				// Wait with exponential backoff
+				time.Sleep(verifyBackoff)
+
+				// Increase backoff for next attempt
+				verifyBackoff *= 2
+				if verifyBackoff > verifyMaxBackoff {
+					verifyBackoff = verifyMaxBackoff
+				}
+				continue
+			}
+
+			// If we've reached max retries for verification
+			if verifyAttempt >= verifyMaxRetries {
+				log.WithField("proofSetID", proofSet.ProofSetID).
+					Warning("Proof set verification failed after max retries, proceeding anyway")
+
+				// Continue with adding roots anyway - the proof set might be in the process of being created
+				// and we're going to retry the add-roots operation multiple times
+				updateStatus(UploadProgress{
+					Status:     currentStage,
+					Progress:   currentProgress,
+					Message:    "Proceeding to add root despite verification issues...",
+					CID:        compoundCID,
+					ProofSetID: proofSet.ProofSetID,
+				})
+				// Don't return, continue to add-roots
+				break
+			}
+		} else {
+			// Verification succeeded
+			verifySuccess = true
+			log.WithField("proofSetID", proofSet.ProofSetID).Info("Proof set verification successful")
+			break
+		}
 	}
 
-	// Proof set verification successful, proceed to add roots
-	log.WithField("proofSetID", proofSet.ProofSetID).Info("Proof set verification successful")
+	if verifySuccess {
+		log.WithField("proofSetID", proofSet.ProofSetID).Info("Proof set verification successful")
+	} else {
+		log.WithField("proofSetID", proofSet.ProofSetID).Warning("Proceeding without successful verification")
+	}
 
 	updateStatus(UploadProgress{
 		Status:     currentStage,
@@ -597,10 +692,10 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		log.WithField("error", errStat.Error()).Error("Error checking for pdpservice.json")
 	}
 
-	// Retry configuration
-	maxRetries := 5
-	initialBackoff := 3 * time.Second
-	maxBackoff := 30 * time.Second
+	// Retry configuration for add-roots
+	maxRetries := 10                  // Increased from 5 to 10
+	initialBackoff := 5 * time.Second // Increased from 3 to 5 seconds
+	maxBackoff := 60 * time.Second    // Increased from 30 to 60 seconds
 	backoff := initialBackoff
 	success := false
 
@@ -630,7 +725,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		addRootCmd.Stderr = &addRootError
 
 		// Add a timeout context to prevent hanging on the command execution
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // Increased from 45 to 60 seconds
 		defer cancel()
 
 		// Use the context with the command
@@ -647,7 +742,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			if ctx.Err() == context.DeadlineExceeded {
 				log.WithField("attempt", attempt).
 					WithField("maxRetries", maxRetries).
-					Error("Command execution timed out after 45 seconds")
+					Error("Command execution timed out after 60 seconds")
 
 				if attempt < maxRetries {
 					// Update UI with timeout status
@@ -705,6 +800,20 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			} else if strings.Contains(stderrStr, "status code 500") || strings.Contains(stderrStr, "status code 400") {
 				shouldRetry = true
 				retryMessage = "Service error. Will retry after delay."
+			} else if strings.Contains(stderrStr, "Failed to retrieve next challenge epoch") ||
+				strings.Contains(stderrStr, "can't scan NULL into") {
+				shouldRetry = true
+				retryMessage = "Proof set is still initializing on the blockchain. Will retry after delay."
+			} else if strings.Contains(stderrStr, "not found") {
+				shouldRetry = true
+				retryMessage = "Proof set not found yet, may still be registering. Will retry after delay."
+			} else if strings.Contains(stderrStr, "can't add root to non-existing proof set") {
+				shouldRetry = true
+				retryMessage = "Proof set is newly created and not fully registered. Will retry after delay."
+			} else {
+				// For any other error, let's retry anyway since the proof set might just need more time
+				shouldRetry = true
+				retryMessage = "Encountered an error. Waiting before retrying..."
 			}
 
 			if shouldRetry && attempt < maxRetries {

@@ -482,7 +482,7 @@ export const GlobalUploadProgress = () => {
             </div>
             {uploadProgress.progress !== undefined && (
               <div className="text-sm font-medium ml-2">
-                {uploadProgress.progress}%
+                {Math.min(uploadProgress.progress, 100)}%
               </div>
             )}
           </div>
@@ -491,7 +491,9 @@ export const GlobalUploadProgress = () => {
             <div className="w-full bg-gray-200 rounded-full h-2.5 mt-3">
               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: `${uploadProgress.progress || 0}%` }}
+                animate={{
+                  width: `${Math.min(uploadProgress.progress || 0, 100)}%`,
+                }}
                 transition={{ duration: 0.3 }}
                 className={`h-2.5 rounded-full ${
                   uploadProgress.status === "error"

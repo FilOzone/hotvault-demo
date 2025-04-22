@@ -71,7 +71,11 @@ export const ProofSetBanner: React.FC = () => {
             </p>
             <p className="text-xs">
               Your proof set is being created on the blockchain. This process
-              typically takes 5-10 minutes.
+              typically takes 5-10 minutes.{" "}
+              <span className="font-semibold">
+                File uploads are temporarily disabled
+              </span>{" "}
+              and will become available once the proof set is ready.
             </p>
           </div>
         </div>

@@ -442,9 +442,14 @@ export const FilesTab = ({
     }
   }, []);
 
+  // Add a helper to determine if uploads should be disabled
+  const isUploadDisabled =
+    proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId;
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     maxFiles: 1,
+    disabled: isUploadDisabled, // Disable dropzone when proof set is being created
   });
 
   const handleSubmitImage = async () => {
@@ -1282,10 +1287,19 @@ export const FilesTab = ({
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
-                disabled={!selectedImage}
+                disabled={
+                  !selectedImage ||
+                  (proofSetStatus === "pending" &&
+                    pieces.length > 0 &&
+                    !userProofSetId)
+                }
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {selectedImage ? "Upload Selected File" : "Upload File"}
+                {isUploadDisabled
+                  ? "Upload Disabled (Proof Set Creating)"
+                  : selectedImage
+                  ? "Upload Selected File"
+                  : "Upload File"}
               </Button>
             </motion.div>
           </div>
@@ -1295,7 +1309,9 @@ export const FilesTab = ({
         <div
           {...getRootProps()}
           className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer mb-6 ${
-            isDragActive
+            isUploadDisabled
+              ? "border-gray-300 bg-gray-100 cursor-not-allowed"
+              : isDragActive
               ? "border-blue-500 bg-blue-50 scale-[1.01]"
               : selectedImage
               ? "border-green-500 bg-green-50"
@@ -1304,7 +1320,42 @@ export const FilesTab = ({
         >
           <input {...getInputProps()} />
           <AnimatePresence mode="wait">
-            {selectedImage ? (
+            {isUploadDisabled ? (
+              <motion.div
+                key="disabled"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="py-8 px-4 flex flex-col items-center"
+              >
+                <motion.div className="w-16 h-16 mb-4 rounded-full bg-gray-200 flex items-center justify-center transition-colors duration-300 border-2 border-gray-300">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-7 w-7 text-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                    />
+                  </svg>
+                </motion.div>
+                <Typography
+                  variant="body"
+                  className="text-gray-500 transition-colors duration-300 mb-1"
+                >
+                  Uploads disabled
+                </Typography>
+                <Typography variant="small" className="text-gray-400">
+                  Please wait for proof set creation to complete
+                </Typography>
+              </motion.div>
+            ) : selectedImage ? (
               <motion.div
                 key="preview"
                 className="relative mx-auto flex flex-col items-center"
