@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import { usePayment } from "@/contexts/PaymentContext";
 import { TokenBalanceCard } from "./TokenBalanceCard";
-import { Wallet, CheckCircle, AlertCircle, Loader, Info } from "lucide-react";
+import {
+  Wallet,
+  CheckCircle,
+  AlertCircle,
+  Loader,
+  Info,
+  ShieldCheck,
+} from "lucide-react";
 import * as Constants from "@/lib/constants";
 import { toast } from "react-hot-toast";
 import { TransactionHistory } from "./TransactionHistory";
@@ -10,7 +17,8 @@ enum PaymentStep {
   APPROVE_TOKEN = 0,
   DEPOSIT = 1,
   APPROVE_OPERATOR = 2,
-  COMPLETE = 3,
+  CREATE_PROOF_SET = 3,
+  COMPLETE = 4,
 }
 
 export const PaymentSetupTab = () => {
@@ -20,6 +28,7 @@ export const PaymentSetupTab = () => {
     depositFunds,
     approveServiceOperator,
     refreshPaymentSetupStatus,
+    initiateProofSetCreation,
   } = usePayment();
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState<PaymentStep>(
@@ -36,8 +45,10 @@ export const PaymentSetupTab = () => {
 
   // Determine the current step based on payment status
   useEffect(() => {
-    if (paymentStatus.isOperatorApproved) {
+    if (paymentStatus.proofSetReady) {
       setCurrentStep(PaymentStep.COMPLETE);
+    } else if (paymentStatus.isOperatorApproved) {
+      setCurrentStep(PaymentStep.CREATE_PROOF_SET);
     } else if (paymentStatus.isDeposited) {
       setCurrentStep(PaymentStep.APPROVE_OPERATOR);
     } else if (paymentStatus.isTokenApproved) {
@@ -479,9 +490,110 @@ export const PaymentSetupTab = () => {
     );
   };
 
+  // Helper to render the new proof set creation step
+  const renderCreateProofSetStep = () => {
+    const isActive = currentStep === PaymentStep.CREATE_PROOF_SET;
+    const isCompleted = currentStep > PaymentStep.CREATE_PROOF_SET;
+    const isProcessingCreation = paymentStatus.isCreatingProofSet;
+
+    return (
+      <div
+        className={`w-full p-4 rounded-lg transition-all ${
+          isActive
+            ? "bg-blue-50 border border-blue-200"
+            : isCompleted
+            ? "bg-green-50 border border-green-200"
+            : "bg-gray-50 border border-gray-200 opacity-60"
+        }`}
+      >
+        <div className="flex items-center gap-3 mb-3">
+          <div
+            className={`w-8 h-8 rounded-full flex items-center justify-center ${
+              isActive
+                ? "bg-blue-100 text-blue-600"
+                : isCompleted
+                ? "bg-green-100 text-green-600"
+                : "bg-gray-100 text-gray-500"
+            }`}
+          >
+            {isCompleted ? (
+              <CheckCircle size={18} />
+            ) : (
+              <span className="text-sm font-semibold">4</span>
+            )}
+          </div>
+          <div className="flex-1">
+            <p
+              className={`font-medium ${
+                isActive
+                  ? "text-blue-700"
+                  : isCompleted
+                  ? "text-green-700"
+                  : "text-gray-600"
+              }`}
+            >
+              Create Proof Set
+            </p>
+            <p className="text-xs text-gray-500">
+              {isActive && isProcessingCreation ? (
+                <span className="flex items-center text-blue-600">
+                  <Loader size={12} className="animate-spin mr-1" />
+                  Creation in progress...
+                </span>
+              ) : isActive ? (
+                "Final step: Initiate proof set creation on the network"
+              ) : isCompleted ? (
+                "Completed"
+              ) : (
+                "Pending"
+              )}
+            </p>
+          </div>
+        </div>
+
+        {isActive && (
+          <div className="mt-3 bg-white p-3 rounded border border-blue-100">
+            <div className="flex items-center mb-3">
+              <Info size={14} className="text-blue-500 mr-2" />
+              <span className="text-xs text-blue-700">
+                This action will register your unique proof set with the FWS
+                service. It may take a few minutes.
+              </span>
+            </div>
+
+            <button
+              onClick={initiateProofSetCreation}
+              disabled={isProcessingCreation || paymentStatus.isLoading}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center"
+            >
+              {isProcessingCreation ? (
+                <>
+                  <Loader size={14} className="animate-spin mr-1" />
+                  Processing...
+                </>
+              ) : (
+                <span className="flex items-center">
+                  <ShieldCheck size={14} className="mr-1.5" />
+                  Create Proof Set
+                </span>
+              )}
+            </button>
+            {paymentStatus.error &&
+              paymentStatus.error.includes("already exists") && (
+                <p className="mt-2 text-xs text-amber-600">
+                  Proof set already exists. Refreshing status...
+                </p>
+              )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Helper to render completion step
   const renderCompletionStep = () => {
-    const isCompleted = currentStep === PaymentStep.COMPLETE;
+    const isCompleted =
+      paymentStatus.proofSetReady && currentStep === PaymentStep.COMPLETE;
 
     return (
       <div
@@ -502,7 +614,7 @@ export const PaymentSetupTab = () => {
             {isCompleted ? (
               <CheckCircle size={18} />
             ) : (
-              <span className="text-sm font-semibold">4</span>
+              <span className="text-sm font-semibold">5</span>
             )}
           </div>
           <div>
@@ -621,6 +733,7 @@ export const PaymentSetupTab = () => {
               {renderTokenApprovalStep()}
               {renderDepositStep()}
               {renderOperatorApprovalStep()}
+              {renderCreateProofSetStep()}
               {renderCompletionStep()}
 
               {/* Warning for insufficient balance */}

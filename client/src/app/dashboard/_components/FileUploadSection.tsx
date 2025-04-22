@@ -1,15 +1,18 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Typography } from "@/components/ui/typography";
 import { API_BASE_URL } from "@/lib/constants";
 import { toast } from "sonner";
 import { FileIcon } from "./FileIcon";
 import { useUploadStore } from "@/store/upload-store";
+import { AlertCircle, Loader } from "lucide-react";
 
 interface FileUploadProps {
   onUploadSuccess: () => void;
@@ -20,6 +23,8 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 }) => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const router = useRouter();
+  const { proofSetReady, isLoading: isAuthLoading } = useAuth();
   const { uploadProgress, setUploadProgress } = useUploadStore();
 
   // Refs for upload state management
@@ -457,6 +462,17 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
     maxFiles: 1,
   });
 
+  if (isAuthLoading) {
+    return (
+      <div className="space-y-4 mb-8 p-6 bg-white rounded-xl shadow-sm border flex items-center justify-center min-h-[200px]">
+        <Loader className="animate-spin text-gray-400" size={24} />
+        <Typography variant="muted" className="ml-2">
+          Loading user status...
+        </Typography>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 mb-8">
       <Typography variant="h3" className="text-xl font-semibold mb-4">
@@ -467,18 +483,19 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div className="flex-1">
             <Typography variant="h4" className="text-lg font-medium mb-1">
-              Add a file to storage
+              {proofSetReady ? "Add a file to storage" : "Proof Set Required"}
             </Typography>
             <Typography variant="muted" className="text-gray-500 text-sm">
-              Upload any file to store it securely on the network with automated
-              proof generation.
+              {proofSetReady
+                ? "Upload any file to store it securely on the network with automated proof generation."
+                : "Please complete the payment setup to activate your proof set before uploading files."}
             </Typography>
           </div>
           <div className="flex space-x-2">
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
-                disabled={!selectedImage}
+                disabled={!selectedImage || !proofSetReady}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {selectedImage ? "Upload Selected File" : "Upload File"}
@@ -490,17 +507,52 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         {/* Improved Dropzone with enhanced animations */}
         <div
           {...getRootProps()}
-          className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer mb-6 ${
+          className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 mb-6 ${
+            proofSetReady
+              ? "cursor-pointer"
+              : "cursor-not-allowed bg-gray-50 opacity-70"
+          } ${
             isDragActive
               ? "border-blue-500 bg-blue-50 scale-[1.01]"
               : selectedImage
               ? "border-green-500 bg-green-50"
               : "border-gray-200 hover:border-blue-300 hover:bg-gray-50"
           }`}
+          onClick={(e) => !proofSetReady && e.stopPropagation()}
         >
-          <input {...getInputProps()} />
+          <input {...getInputProps()} disabled={!proofSetReady} />
           <AnimatePresence mode="wait">
-            {selectedImage ? (
+            {!proofSetReady ? (
+              <motion.div
+                key="proof-set-required"
+                className="flex flex-col items-center justify-center text-gray-500"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <AlertCircle size={40} className="mb-3 text-orange-400" />
+                <Typography
+                  variant="h4"
+                  className="font-medium text-orange-600 mb-1"
+                >
+                  Proof Set Required
+                </Typography>
+                <Typography variant="muted" className="text-sm">
+                  Go to the{" "}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      router.push("/dashboard?tab=payment");
+                    }}
+                    className="text-blue-500 hover:underline font-medium"
+                  >
+                    Payment Setup
+                  </a>{" "}
+                  tab to complete the required steps.
+                </Typography>
+              </motion.div>
+            ) : selectedImage ? (
               <motion.div
                 key="preview"
                 className="relative mx-auto flex flex-col items-center"
@@ -728,7 +780,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
           </AnimatePresence>
         </div>
 
-        {renderUploadProgress()}
+        {proofSetReady && renderUploadProgress()}
       </div>
     </div>
   );

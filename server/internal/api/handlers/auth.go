@@ -210,7 +210,7 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 	}
 
 	// Check if the user has a proof set, create one in background if not
-	go h.ensureProofSetExists(&user)
+	// go h.ensureProofSetExists(&user) // REMOVED: Proof set creation is now manual
 
 	// Generate a JWT token IMMEDIATELY
 	expirationTime := time.Now().Add(h.cfg.JWT.Expiration)
@@ -244,6 +244,57 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		Token:   tokenString,
 		Expires: expirationTime.Unix(),
 	})
+}
+
+// CreateProofSet godoc
+// @Summary Create Proof Set
+// @Description Manually initiates the creation of a proof set for the authenticated user if one doesn't exist.
+// @Tags Proof Set
+// @Security ApiKeyAuth
+// @Produce json
+// @Success 200 {object} map[string]string{"message": "Proof set creation initiated successfully"}
+// @Failure 400 {object} ErrorResponse "Proof set already exists"
+// @Failure 401 {object} ErrorResponse "Unauthorized"
+// @Failure 500 {object} ErrorResponse "Failed to initiate proof set creation"
+// @Router /proof-set/create [post]
+func (h *AuthHandler) CreateProofSet(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized: User ID not found in token"})
+		return
+	}
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "User not found"})
+		return
+	}
+
+	// Check if proof set already exists
+	var proofSetCount int64
+	if err := h.db.Model(&models.ProofSet{}).Where("user_id = ?", user.ID).Count(&proofSetCount).Error; err != nil {
+		authLog.WithField("userID", user.ID).Errorf("Error counting proof sets before creation: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to check existing proof sets"})
+		return
+	}
+
+	if proofSetCount > 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Proof set already exists for this user"})
+		return
+	}
+
+	// Initiate creation in a goroutine so the request returns quickly
+	go func(u *models.User) {
+		authLog.WithField("userID", u.ID).Info("Starting background proof set creation...")
+		if err := h.createProofSetForUser(u); err != nil {
+			authLog.WithField("userID", u.ID).Errorf("Background proof set creation failed: %v", err)
+			// TODO: Implement a way to notify the user or system about the failure
+		} else {
+			authLog.WithField("userID", u.ID).Info("Background proof set creation completed.")
+		}
+	}(&user) // Pass a pointer to a copy if needed, but CreateProofSetForUser seems okay
+
+	c.JSON(http.StatusOK, gin.H{"message": "Proof set creation initiated successfully. Monitor /auth/status for readiness."})
 }
 
 // New helper function to check and potentially create proof set in background

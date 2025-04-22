@@ -39,6 +39,8 @@ interface PaymentStatus {
   isDeposited: boolean;
   isOperatorApproved: boolean;
   accountFunds: string;
+  proofSetReady: boolean;
+  isCreatingProofSet: boolean;
 }
 
 // Define the context type
@@ -52,6 +54,7 @@ interface PaymentContextType {
     rateAllowance: string,
     lockupAllowance: string
   ) => Promise<boolean>;
+  initiateProofSetCreation: () => Promise<boolean>;
   transactions: TransactionRecord[];
   clearTransactionHistory: () => void;
 }
@@ -77,6 +80,8 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     isDeposited: false,
     isOperatorApproved: false,
     accountFunds: "0",
+    proofSetReady: false,
+    isCreatingProofSet: false,
   });
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
 
@@ -179,6 +184,28 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         window.ethereum as ethers.Eip1193Provider
       );
 
+      // Fetch proofSetReady status from the auth endpoint
+      let fetchedProofSetReady = false;
+      try {
+        const statusResponse = await fetch(
+          `${Constants.API_BASE_URL}/api/v1/auth/status`,
+          {
+            method: "GET",
+            credentials: "include",
+          }
+        );
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          fetchedProofSetReady = statusData.proofSetReady;
+        }
+      } catch (authStatusError) {
+        console.error(
+          "Error fetching auth status for proofSetReady:",
+          authStatusError
+        );
+        // Keep proofSetReady as false if status check fails
+      }
+
       // Check if user has deposited funds into the Payments contract
       try {
         const accountStatus = await getAccountStatus(
@@ -206,6 +233,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           isDeposited,
           isOperatorApproved: operatorStatus.isApproved,
           accountFunds: accountStatus.funds,
+          proofSetReady: fetchedProofSetReady,
           isLoading: false,
         }));
 
@@ -222,6 +250,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           isDeposited: false,
           isOperatorApproved: false,
           accountFunds: "0",
+          proofSetReady: fetchedProofSetReady,
         }));
       }
 
@@ -254,6 +283,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         ...prev,
         error: "Failed to check payment setup status",
         isLoading: false,
+        proofSetReady: false,
       }));
     }
   }, [account]);
@@ -460,6 +490,64 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
+  // Function to initiate proof set creation
+  const initiateProofSetCreation = async (): Promise<boolean> => {
+    if (!account) return false;
+
+    setPaymentStatus((prev) => ({
+      ...prev,
+      isLoading: true,
+      isCreatingProofSet: true,
+      error: null,
+    }));
+
+    try {
+      const token = localStorage.getItem("jwt_token"); // Or get from cookie if not using localStorage
+      if (!token) {
+        throw new Error("Authentication token not found.");
+      }
+
+      const response = await fetch(
+        `${Constants.API_BASE_URL}/api/v1/proof-set/create`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include", // Include if using cookies primarily
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error || "Failed to initiate proof set creation"
+        );
+      }
+
+      console.log("Proof set creation initiated successfully.");
+      // Optionally trigger a delayed refresh or rely on polling in the UI
+      setTimeout(() => refreshPaymentSetupStatus(), 5000); // Refresh status after 5s
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isLoading: false,
+        isCreatingProofSet: false,
+      }));
+      return true;
+    } catch (error) {
+      console.error("Error initiating proof set creation:", error);
+      setPaymentStatus((prev) => ({
+        ...prev,
+        error:
+          error instanceof Error ? error.message : "Unknown error occurred",
+        isLoading: false,
+        isCreatingProofSet: false,
+      }));
+      return false;
+    }
+  };
+
   // Check balance and payment setup status when account changes
   useEffect(() => {
     refreshBalance();
@@ -475,6 +563,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         approveToken,
         depositFunds,
         approveServiceOperator,
+        initiateProofSetCreation,
         transactions,
         clearTransactionHistory,
       }}

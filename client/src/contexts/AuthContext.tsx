@@ -20,6 +20,7 @@ export interface AuthContextType {
   isConnecting: boolean;
   isLoading: boolean;
   error: string;
+  proofSetReady: boolean;
   handleAccountSwitch: () => Promise<void>;
   disconnectWallet: () => void;
   connectWallet: () => Promise<void>;
@@ -38,6 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [proofSetReady, setProofSetReady] = useState<boolean>(false);
   const router = useRouter();
 
   // Add connection lock
@@ -116,6 +118,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       // Mark as connected in localStorage
       localStorage.setItem(STORAGE_KEY, "true");
 
+      // Check auth status immediately to get proofSetReady state
+      try {
+        const statusResponse = await fetch(
+          `${API_BASE_URL}/api/v1/auth/status`,
+          {
+            method: "GET",
+            credentials: "include",
+          }
+        );
+        if (statusResponse.ok) {
+          const data = await statusResponse.json();
+          setProofSetReady(data.proofSetReady);
+          console.log(
+            "🔒 Updated proofSetReady status after auth:",
+            data.proofSetReady
+          );
+        } else {
+          console.warn(
+            "⚠️ Could not fetch status after authentication to update proofSetReady"
+          );
+          setProofSetReady(false); // Assume not ready if status check fails
+        }
+      } catch (statusError) {
+        console.error(
+          "🚨 Error fetching status after authentication:",
+          statusError
+        );
+        setProofSetReady(false);
+      }
+
       return token;
     } catch (error) {
       console.error("❌ Authentication error:", error);
@@ -167,6 +199,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             data.address.toLowerCase() === newAccount.toLowerCase()
           ) {
             console.log("✅ Already authenticated with this account");
+            setProofSetReady(data.proofSetReady);
             setAccount(newAccount);
             localStorage.setItem(STORAGE_KEY, "true");
             setIsLoading(false);
@@ -214,6 +247,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const handleDisconnect = useCallback(() => {
     console.log("🔌 Wallet disconnected");
     setAccount("");
+    setProofSetReady(false);
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(JWT_STORAGE_KEY);
     // Clear the auth cookie
@@ -245,9 +279,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const data = await response.json();
         setAccount(data.address);
         localStorage.setItem(STORAGE_KEY, "true");
+        setProofSetReady(data.proofSetReady);
         console.log(
           "✅ Authenticated via cookie session for address:",
-          data.address
+          data.address,
+          "Proof Set Ready:",
+          data.proofSetReady
         );
         setIsLoading(false);
         return true;
@@ -388,6 +425,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             data.address.toLowerCase() === accounts[0].toLowerCase()
           ) {
             console.log("✅ Already authenticated with this account");
+            setProofSetReady(data.proofSetReady);
             setAccount(accounts[0]);
             localStorage.setItem(STORAGE_KEY, "true");
             setIsLoading(false);
@@ -446,6 +484,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         isConnecting,
         isLoading,
         error,
+        proofSetReady,
         handleAccountSwitch,
         disconnectWallet,
         connectWallet,

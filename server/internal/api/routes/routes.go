@@ -56,6 +56,9 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 				pieces.GET("/proofs", handlers.GetPieceProofs)
 			}
 
+			// New route for manually creating a proof set
+			protected.POST("/proof-set/create", authHandler.CreateProofSet)
+
 			roots := protected.Group("/roots")
 			{
 				roots.POST("/remove", handlers.RemoveRoot)
