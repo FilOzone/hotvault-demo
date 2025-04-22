@@ -1,3 +1,4 @@
+// Package routes contains the API route definitions
 package routes
 
 import (
@@ -11,6 +12,12 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
 )
+
+// @title FWS Backend API
+// @version 1.0
+// @description API Server for FWS Backend Application
+// @host localhost:8080
+// @BasePath /api/v1
 
 func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	handlers.Initialize(db, cfg)

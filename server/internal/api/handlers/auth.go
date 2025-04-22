@@ -31,12 +31,6 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"Invalid request"`
 }
 
-// @title FWS Backend API
-// @version 1.0
-// @description API Server for FWS Backend Application
-// @host localhost:8080
-// @BasePath /api/v1
-
 // AuthHandler handles authentication related requests
 type AuthHandler struct {
 	db         *gorm.DB
@@ -69,10 +63,25 @@ type NonceResponse struct {
 // StatusResponse represents the response for checking authentication status
 // @Description Response containing authentication status
 type StatusResponse struct {
-	Authenticated     bool   `json:"authenticated"`
-	Address           string `json:"address,omitempty"`
-	ProofSetReady     bool   `json:"proofSetReady"`
-	ProofSetInitiated bool   `json:"proofSetInitiated"`
+	Authenticated     bool   `json:"authenticated" example:"true"`
+	Address           string `json:"address,omitempty" example:"0x742d35Cc6634C0532925a3b844Bc454e4438f44e"`
+	ProofSetReady     bool   `json:"proofSetReady" example:"true"`
+	ProofSetInitiated bool   `json:"proofSetInitiated" example:"true"`
+}
+
+// VerifyRequest represents the request for verifying a signature
+// @Description Request body for verifying a signature
+type VerifyRequest struct {
+	Address   string `json:"address" binding:"required,hexadecimal" example:"0x742d35Cc6634C0532925a3b844Bc454e4438f44e"`
+	Signature string `json:"signature" binding:"required,hexadecimal" example:"0x1234567890abcdef"`
+	Message   string `json:"message,omitempty" example:"Sign this message to authenticate with FWS: 7a39f642c2608fd2"`
+}
+
+// VerifyResponse represents the response for a verification request
+// @Description Response containing the JWT token and expiration
+type VerifyResponse struct {
+	Token   string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	Expires int64  `json:"expires" example:"1679529600"`
 }
 
 // GenerateNonce godoc
@@ -120,21 +129,6 @@ func (h *AuthHandler) GenerateNonce(c *gin.Context) {
 	c.JSON(http.StatusOK, NonceResponse{
 		Nonce: nonce,
 	})
-}
-
-// VerifyRequest represents the request for verifying a signature
-// @Description Request body for verifying a signature
-type VerifyRequest struct {
-	Address   string `json:"address" binding:"required,hexadecimal" example:"0x742d35Cc6634C0532925a3b844Bc454e4438f44e"`
-	Signature string `json:"signature" binding:"required,hexadecimal" example:"0x..."`
-	Message   string `json:"message,omitempty" example:"Sign this message to authenticate with FWS: abcd1234..."`
-}
-
-// VerifyResponse represents the response for a verification request
-// @Description Response containing the JWT token and expiration
-type VerifyResponse struct {
-	Token   string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
-	Expires int64  `json:"expires" example:"1679529600"`
 }
 
 // VerifySignature godoc
@@ -253,10 +247,10 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 // @Tags Proof Set
 // @Security ApiKeyAuth
 // @Produce json
-// @Success 200 {object} map[string]string{"message": "Proof set creation initiated successfully"}
-// @Failure 400 {object} ErrorResponse "Proof set already exists"
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Failure 500 {object} ErrorResponse "Failed to initiate proof set creation"
+// @Success 200 {object} map[string]interface{} "message:Proof set creation initiated successfully"
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /proof-set/create [post]
 func (h *AuthHandler) CreateProofSet(c *gin.Context) {
 	userID, exists := c.Get("userID")
@@ -312,24 +306,6 @@ func (h *AuthHandler) CreateProofSet(c *gin.Context) {
 	}(&user)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Proof set creation initiated successfully. Monitor /auth/status for readiness."})
-}
-
-// New helper function to check and potentially create proof set in background
-func (h *AuthHandler) ensureProofSetExists(user *models.User) {
-	var proofSetCount int64
-	if err := h.db.Model(&models.ProofSet{}).Where("user_id = ?", user.ID).Count(&proofSetCount).Error; err != nil {
-		authLog.WithField("userID", user.ID).Errorf("[Goroutine Check] Error counting proof sets: %v", err)
-		return
-	}
-
-	if proofSetCount == 0 {
-		authLog.WithField("userID", user.ID).Info("[Goroutine Check] No proof set found, initiating creation.")
-		if createErr := h.createProofSetForUser(user); createErr != nil {
-			authLog.WithField("userID", user.ID).Errorf("[Goroutine Create] Background proof set creation failed: %v", createErr)
-		}
-	} else {
-		authLog.WithField("userID", user.ID).Debug("[Goroutine Check] Proof set already exists.")
-	}
 }
 
 // createProofSetForUser remains mostly the same - designed to be called by ensureProofSetExists
@@ -444,21 +420,6 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 		authLog.Error(errMsg)
 		return errors.New(errMsg)
 	}
-	// --- Remove the old save logic ---
-	// newProofSet := models.ProofSet{
-	// 	UserID:          user.ID,
-	// 	ProofSetID:      extractedID,
-	// 	TransactionHash: txHash,
-	// 	ServiceName:     serviceName,
-	// 	ServiceURL:      serviceURL,
-	// }
-	// if result := h.db.Create(&newProofSet); result.Error != nil {
-	// 	errMsg := fmt.Sprintf("[Goroutine Create] Failed to save new proof set info for user %d: %v", user.ID, result.Error)
-	// 	authLog.Error(errMsg)
-	// 	return errors.New(errMsg)
-	// }
-	// authLog.WithField("proofSetDBID", newProofSet.ID).WithField("proofSetPdpID", newProofSet.ProofSetID).Infof("[Goroutine Create] Successfully created and saved proof set for user %d", user.ID)
-
 	authLog.WithField("proofSetPdpID", extractedID).Infof("[Goroutine Create] Successfully updated proof set with ID for user %d", user.ID)
 	return nil
 }
