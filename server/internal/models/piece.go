@@ -9,7 +9,7 @@ import (
 type Piece struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
 	UserID         uint           `gorm:"index;not null" json:"userId"`
-	CID            string         `gorm:"uniqueIndex;not null" json:"cid"`
+	CID            string         `gorm:"not null" json:"cid"`
 	Filename       string         `gorm:"not null" json:"filename"`
 	Size           int64          `json:"size"`
 	ServiceName    string         `gorm:"not null" json:"serviceName"`
