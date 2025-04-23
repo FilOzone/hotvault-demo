@@ -38,6 +38,7 @@ import { UploadProgress } from "@/components/ui/upload-progress";
 import { useAuth } from "@/contexts/AuthContext";
 import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 import { ROOT_REMOVED_EVENT } from "./PaymentBalanceHeader";
+import { CostBanner } from "./CostBanner";
 
 interface Piece {
   id: number;
@@ -98,6 +99,7 @@ export const FilesTab = ({
   const [downloadsInProgress, setDownloadsInProgress] = useState<{
     [cid: string]: boolean;
   }>({});
+  const [fileSizeGB, setFileSizeGB] = useState<number>(0);
 
   const { disconnectWallet } = useAuth();
 
@@ -378,23 +380,21 @@ export const FilesTab = ({
 
   // Modify the onDrop function to handle all file types, not just images
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      setSelectedImage(file);
+    if (acceptedFiles.length === 0) return;
 
-      // Only create a preview URL for image files
-      const isImage = file.type.startsWith("image/");
+    const file = acceptedFiles[0];
+    setSelectedImage(file);
 
-      if (isImage) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setPreviewUrl(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-      } else {
-        // For non-image files, we won't set a preview URL
-        setPreviewUrl(null);
-      }
+    // Calculate file size in GB (with more precision)
+    const sizeInGB = file.size / (1024 * 1024 * 1024);
+    setFileSizeGB(Number(sizeInGB.toFixed(6))); // Keep 6 decimal places for better precision
+
+    // Create preview URL for images
+    if (file.type.startsWith("image/")) {
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewUrl(objectUrl);
+    } else {
+      setPreviewUrl(null);
     }
   }, []);
 
@@ -1258,6 +1258,18 @@ export const FilesTab = ({
 
       {renderProofSetStatusBanner()}
 
+      {/* Cost Banner */}
+      {proofSetStatus === "ready" && (
+        <CostBanner
+          fileSizeGB={fileSizeGB}
+          existingFiles={pieces.map((piece) => ({
+            id: piece.id,
+            filename: piece.filename,
+            size: piece.size,
+          }))}
+        />
+      )}
+
       {/* Upload Section */}
       <motion.div
         className="mb-8 bg-white rounded-xl shadow-sm p-6 overflow-hidden"
@@ -1539,6 +1551,7 @@ export const FilesTab = ({
                       e.stopPropagation();
                       setSelectedImage(null);
                       setPreviewUrl(null);
+                      setFileSizeGB(0); // Reset file size when removing file
                     }}
                     className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none shadow-sm"
                     aria-label="Remove file"

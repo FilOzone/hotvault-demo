@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { FileIcon } from "./FileIcon";
 import { useUploadStore } from "@/store/upload-store";
 import { AlertCircle, Loader } from "lucide-react";
+import { CostBanner } from "./CostBanner";
 
 interface FileUploadProps {
   onUploadSuccess: () => void;
@@ -23,6 +24,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 }) => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fileSizeGB, setFileSizeGB] = useState<number>(0);
   const router = useRouter();
   const { proofSetReady, isLoading: isAuthLoading } = useAuth();
   const { uploadProgress, setUploadProgress } = useUploadStore();
@@ -443,17 +445,19 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length === 0) return;
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      setSelectedImage(file);
+      // Calculate file size in GB
+      setFileSizeGB(file.size / (1024 * 1024 * 1024));
 
-    const file = acceptedFiles[0];
-    setSelectedImage(file);
-
-    // Create preview URL for images
-    if (file.type.startsWith("image/")) {
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
-    } else {
-      setPreviewUrl(null);
+      // Create preview URL for images
+      if (file.type.startsWith("image/")) {
+        const url = URL.createObjectURL(file);
+        setPreviewUrl(url);
+      } else {
+        setPreviewUrl(null);
+      }
     }
   }, []);
 
@@ -474,7 +478,8 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
   }
 
   return (
-    <div className="space-y-4 mb-8">
+    <div className="w-full space-y-4">
+      <CostBanner fileSizeGB={fileSizeGB} />
       <Typography variant="h3" className="text-xl font-semibold mb-4">
         Upload New File
       </Typography>
