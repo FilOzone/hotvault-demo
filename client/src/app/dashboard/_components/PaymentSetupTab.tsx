@@ -40,8 +40,8 @@ export const PaymentSetupTab = () => {
   const [depositAmount, setDepositAmount] = useState(
     (parseFloat(Constants.PROOF_SET_FEE) + 0.01).toFixed(2)
   );
-  const [rateAllowance, setRateAllowance] = useState("1");
-  const [lockupAllowance, setLockupAllowance] = useState("1");
+  const [rateAllowance, setRateAllowance] = useState("");
+  const [lockupAllowance, setLockupAllowance] = useState("");
 
   // Determine the current step based on payment status
   useEffect(() => {
@@ -121,7 +121,7 @@ export const PaymentSetupTab = () => {
       !lockupAllowance ||
       parseFloat(lockupAllowance) <= 0
     ) {
-      toast.error("Please enter valid allowance amounts");
+      toast.error("Please enter both rate and lockup allowance values");
       return;
     }
 
@@ -429,7 +429,8 @@ export const PaymentSetupTab = () => {
             <div className="space-y-3">
               <div>
                 <label className="block text-xs text-gray-600 mb-1">
-                  Rate Allowance (USDFC/epoch)
+                  Rate Allowance (USDFC/epoch){" "}
+                  <span className="text-red-500">*</span>
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -437,10 +438,11 @@ export const PaymentSetupTab = () => {
                     value={rateAllowance}
                     onChange={(e) => setRateAllowance(e.target.value)}
                     className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Rate allowance"
+                    placeholder="Enter rate allowance"
                     disabled={isProcessing}
                     min="0.01"
                     step="0.01"
+                    required
                   />
                   <span className="text-sm text-gray-500">USDFC</span>
                 </div>
@@ -451,7 +453,8 @@ export const PaymentSetupTab = () => {
 
               <div>
                 <label className="block text-xs text-gray-600 mb-1">
-                  Lockup Allowance (USDFC)
+                  Lockup Allowance (USDFC){" "}
+                  <span className="text-red-500">*</span>
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -459,10 +462,11 @@ export const PaymentSetupTab = () => {
                     value={lockupAllowance}
                     onChange={(e) => setLockupAllowance(e.target.value)}
                     className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Lockup allowance"
+                    placeholder="Enter lockup allowance"
                     disabled={isProcessing}
                     min="0.01"
                     step="0.01"
+                    required
                   />
                   <span className="text-sm text-gray-500">USDFC</span>
                 </div>
