@@ -70,8 +70,8 @@ export const ProofSetBanner: React.FC = () => {
               Proof Set Creation in Progress
             </p>
             <p className="text-xs">
-              Your proof set is being created on the blockchain. This process
-              typically takes 5-10 minutes.{" "}
+              Your proof set is being created on FWS. This process typically
+              takes 5-10 minutes.{" "}
               <span className="font-semibold">
                 File uploads are temporarily disabled
               </span>{" "}

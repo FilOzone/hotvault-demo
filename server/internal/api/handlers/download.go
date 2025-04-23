@@ -58,7 +58,6 @@ func DownloadFile(c *gin.Context) {
 		gatewayURL := fmt.Sprintf("https://ipfs.io/ipfs/%s", ipfsCid)
 		log.WithField("url", gatewayURL).Info("Redirecting to IPFS gateway")
 
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", piece.Filename))
 		c.Redirect(http.StatusTemporaryRedirect, gatewayURL)
 		return
 	}
@@ -68,20 +67,21 @@ func DownloadFile(c *gin.Context) {
 		log.Error("PDPTool path not configured in environment/config")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Server configuration error: PDPTool path missing",
+			"options": []string{
+				"Use '?gateway=true' parameter to download directly from IPFS gateway",
+				"Contact administrator to configure PDPTool path",
+			},
 		})
 		return
 	}
 
 	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
 		log.WithField("path", pdptoolPath).Error("pdptool not found at configured path")
-
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "pdptool executable not found at configured path",
-			"path":  pdptoolPath,
 			"options": []string{
 				"Use '?gateway=true' parameter to download directly from IPFS gateway",
-				"Ensure PDPTOOL_PATH environment variable is set correctly",
-				"Contact administrator",
+				"Contact administrator to verify PDPTool installation",
 			},
 		})
 		return
@@ -133,11 +133,10 @@ func DownloadFile(c *gin.Context) {
 			"error":   errorMsg,
 			"details": err.Error(),
 			"stderr":  errOutput.String(),
-			"cmd":     downloadCmd.String(),
 			"options": []string{
 				"Try using '?gateway=true' parameter to download directly from IPFS gateway",
-				"Check if the CID format is correct",
 				"Check if the service URL is accessible",
+				"Verify the CID format is correct",
 			},
 		})
 		return
@@ -162,9 +161,13 @@ func DownloadFile(c *gin.Context) {
 
 	c.Header("Content-Description", "File Transfer")
 	c.Header("Content-Transfer-Encoding", "binary")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", piece.Filename))
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
+	encodedFilename := strings.ReplaceAll(piece.Filename, `"`, `\"`)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, encodedFilename))
+	c.Header("Cache-Control", "private, no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 
 	if _, err := io.Copy(c.Writer, file); err != nil {
 		log.WithField("error", err.Error()).Error("Failed to stream file to response")

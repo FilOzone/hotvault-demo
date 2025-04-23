@@ -448,22 +448,25 @@ export const FilesTab = ({
 
     toast.info(`Preparing ${piece.filename} for download...`);
 
+    // Encode CID for URL safety
+    const encodedCid = encodeURIComponent(piece.cid);
+
     // First try normal download
-    downloadWithMethod(piece, false)
+    downloadWithMethod(piece, encodedCid, false)
       .catch((error) => {
         console.error(
           "[FilesTab.tsx:handleDownload] Error with direct download:",
           error
         );
 
-        // If direct download fails, try gateway download
+        // If direct download fails with specific errors, try gateway download
         if (
           error.message &&
           (error.message.includes("pdptool not found") ||
             error.message.includes("Failed to download file"))
         ) {
           toast.info("Direct download failed. Trying IPFS gateway...");
-          return downloadWithMethod(piece, true);
+          return downloadWithMethod(piece, encodedCid, true);
         }
         throw error; // Re-throw if it's not a pdptool error
       })
@@ -477,7 +480,11 @@ export const FilesTab = ({
   };
 
   // Helper function to download with either direct or gateway method
-  const downloadWithMethod = (piece: Piece, useGateway: boolean) => {
+  const downloadWithMethod = (
+    piece: Piece,
+    encodedCid: string,
+    useGateway: boolean
+  ) => {
     const token = localStorage.getItem("jwt_token");
     if (!token) {
       return Promise.reject(new Error("Authentication required"));
@@ -485,8 +492,8 @@ export const FilesTab = ({
 
     // Build URL with gateway parameter if needed
     const url = useGateway
-      ? `${API_BASE_URL}/api/v1/download/${piece.cid}?gateway=true`
-      : `${API_BASE_URL}/api/v1/download/${piece.cid}`;
+      ? `${API_BASE_URL}/api/v1/download/${encodedCid}?gateway=true`
+      : `${API_BASE_URL}/api/v1/download/${encodedCid}`;
 
     return fetch(url, {
       headers: {
@@ -499,23 +506,27 @@ export const FilesTab = ({
           let errorMessage = `Download failed: ${response.statusText}`;
           let errorOptions: string[] = [];
 
-          try {
-            const errorData = await response.json();
-            if (errorData.error) {
-              errorMessage = errorData.error;
-              if (errorData.options) {
-                errorOptions = errorData.options;
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              const errorData = await response.json();
+              if (errorData.error) {
+                errorMessage = errorData.error;
+                if (errorData.options) {
+                  errorOptions = errorData.options;
+                }
+                console.error(
+                  "[FilesTab.tsx:downloadWithMethod] Error details:",
+                  errorData
+                );
               }
+            } catch (e) {
               console.error(
-                "[FilesTab.tsx:downloadWithMethod] Error details:",
-                errorData
+                "[FilesTab.tsx:downloadWithMethod] Failed to parse error as JSON:",
+                e
               );
             }
-          } catch (e) {
-            console.error(
-              "[FilesTab.tsx:downloadWithMethod] Failed to parse error as JSON:",
-              e
-            );
+          } else {
             try {
               const errorText = await response.text();
               if (errorText) {
@@ -584,6 +595,7 @@ export const FilesTab = ({
   // Helper to handle download errors with options
   const handleDownloadError = (piece: Piece, error: DownloadError) => {
     const options = error.options || [];
+    const cid = piece.cid.split(":")[0]; // Get the first part of the CID
 
     if (options.length > 0) {
       // Show error with options
@@ -606,7 +618,6 @@ export const FilesTab = ({
             className="flex items-center gap-2 mt-1"
             onClick={() => {
               // Try to download directly from IPFS gateway
-              const cid = piece.cid.split(":")[0]; // Get the first part of the CID
               const gatewayUrl = `https://ipfs.io/ipfs/${cid}`;
               window.open(gatewayUrl, "_blank");
 
@@ -1058,7 +1069,9 @@ export const FilesTab = ({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleDownload(piece)}
+                  onClick={() => {
+                    handleDownload(piece);
+                  }}
                   disabled={isDownloading}
                   className="h-8 flex items-center transition-all duration-200 hover:text-blue-600"
                 >
@@ -1114,7 +1127,7 @@ export const FilesTab = ({
                       disabled={piece.pendingRemoval}
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Remove Root
+                      Remove File
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
@@ -1139,19 +1152,16 @@ export const FilesTab = ({
       console.log("[FilesTab] Showing 'Proof Set Required' banner");
       return (
         <motion.div
-          className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 flex items-center gap-3"
+          className="mb-6 p-4 bg-blue-100 border border-blue-100 rounded-lg text-blue-700 flex items-center gap-3"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="flex-shrink-0 bg-amber-100 p-2 rounded-full">
-            <AlertTriangle className="h-5 w-5" />
-          </div>
           <div className="flex-1">
             <p className="font-medium mb-1">Proof Set Required</p>
             <p className="text-sm">
               You need to create a proof set in the Payment Setup tab before you
-              can upload files. This is a one-time setup required for file
-              verification.
+              can upload files. This is a one-time setup to onboard you to Hot
+              Vault.
             </p>
             <Button
               variant="outline"
@@ -1183,9 +1193,9 @@ export const FilesTab = ({
           <div className="flex-1">
             <p className="font-medium mb-1">Proof Set Creation in Progress</p>
             <p className="text-sm">
-              Your proof set is being created on the blockchain. This process
-              typically takes 5-10 minutes to complete. During this time,
-              uploads are disabled until the proof set creation is finalized.
+              Your proof set is being created on FWS. This process typically
+              takes 5-10 minutes to complete. During this time, uploads are
+              disabled until the proof set creation is finalized.
             </p>
           </div>
         </motion.div>

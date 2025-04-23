@@ -501,7 +501,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	})
 
 	// Increased initial delay before attempting to add root
-	preAddRootDelay := 30 * time.Second // Increased from 10s to 30s
+	preAddRootDelay := 10 * time.Second // Increased from 10s to 30s
 	log.Info(fmt.Sprintf("Waiting %v before adding root to allow service registration...", preAddRootDelay))
 	time.Sleep(preAddRootDelay)
 

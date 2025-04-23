@@ -230,12 +230,10 @@ export const PaymentSetupTab = () => {
                       : "text-gray-600"
                   }`}
                 >
-                  Approve USDFC Token
+                  Authorize USDFC Token
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  {isCompleted
-                    ? "Completed"
-                    : "Allow the Payments contract to use your USDFC"}
+                  {isCompleted ? "Completed" : "Allow FWS to use your USDFC"}
                 </p>
               </div>
               {isCompleted && (
@@ -254,8 +252,8 @@ export const PaymentSetupTab = () => {
                       Set Token Allowance
                     </p>
                     <p className="text-sm text-blue-700 mt-1">
-                      Specify how many USDFC tokens the Payments contract can
-                      transfer on your behalf.
+                      Specify how many USDFC tokens FWS can transfer on your
+                      behalf.
                     </p>
                   </div>
                 </div>
@@ -267,14 +265,12 @@ export const PaymentSetupTab = () => {
                     onChange={(e) => setTokenAllowance(e.target.value)}
                     className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Allowance amount"
-                    min={Constants.PROOF_SET_FEE}
+                    min="10"
                     step="0.01"
                     disabled={isProcessing}
                   />
                   <div className="flex items-center justify-between text-sm text-gray-500">
-                    <span>
-                      Minimum required: {Constants.PROOF_SET_FEE} USDFC
-                    </span>
+                    <span>Minimum required: 10 USDFC</span>
                   </div>
                   <button
                     onClick={handleApproveToken}
@@ -331,9 +327,7 @@ export const PaymentSetupTab = () => {
                   Deposit USDFC
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  {isCompleted
-                    ? "Completed"
-                    : "Deposit funds into the Payments contract"}
+                  {isCompleted ? "Completed" : "Deposit funds into FWS"}
                 </p>
               </div>
               {isCompleted && (
@@ -352,8 +346,7 @@ export const PaymentSetupTab = () => {
                       Deposit Funds
                     </p>
                     <p className="text-sm text-blue-700 mt-1">
-                      Deposit USDFC tokens to fund your proofs. A minimum amount
-                      is required for proof set creation.
+                      Deposit USDFC tokens to fund your vault.
                     </p>
                   </div>
                 </div>
@@ -365,14 +358,12 @@ export const PaymentSetupTab = () => {
                     onChange={(e) => setDepositAmount(e.target.value)}
                     className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Deposit amount"
-                    min={Constants.PROOF_SET_FEE}
+                    min="10"
                     step="0.01"
                     disabled={isProcessing}
                   />
                   <div className="flex items-center justify-between text-sm text-gray-500">
-                    <span>
-                      Minimum required: {Constants.PROOF_SET_FEE} USDFC
-                    </span>
+                    <span>Minimum required: 10 USDFC</span>
                   </div>
                   <button
                     onClick={handleDeposit}
@@ -431,13 +422,8 @@ export const PaymentSetupTab = () => {
                       : "text-gray-600"
                   }`}
                 >
-                  PDP Service Operator Settings
+                  Approve PDP Service on FWS
                 </h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  {isCompleted && !isUpdating
-                    ? "Completed"
-                    : "Configure payment rail settings"}
-                </p>
               </div>
               {isCompleted && !isUpdating ? (
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
@@ -515,8 +501,8 @@ export const PaymentSetupTab = () => {
                       Configure Payment Settings
                     </p>
                     <p className="text-sm text-blue-700 mt-1">
-                      Set allowances for the PDP Service operator to manage
-                      payments on your behalf.
+                      Set allowances for the PDP Service to manage payments on
+                      your behalf.
                     </p>
                   </div>
                 </div>
@@ -526,6 +512,9 @@ export const PaymentSetupTab = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Rate Allowance (USDFC/epoch)
                     </label>
+                    <p className="text-xs mb-2 font-medium text-gray-500">
+                      Maximum USDFC/epoch that PDP can spend from your FWS funds
+                    </p>
                     <input
                       type="number"
                       value={rateAllowance}
@@ -568,7 +557,7 @@ export const PaymentSetupTab = () => {
                       ) : isUpdating ? (
                         "Update Settings"
                       ) : (
-                        "Approve Operator"
+                        "Approve"
                       )}
                     </button>
                     {isUpdating && (
@@ -639,19 +628,19 @@ export const PaymentSetupTab = () => {
                       : "text-gray-600"
                   }`}
                 >
-                  Create Proof Set
+                  Get Hot Vault Space
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
                   {isTrulyCompleted
                     ? "Completed"
                     : isProcessingCreation || isProofSetClicked
                     ? "Creation in progress..."
-                    : "Create your proof set on the network"}
+                    : "This will cost you a one-time fee of 0.1 USDFC from your FWS funds."}
                 </p>
               </div>
               {isTrulyCompleted && (
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                  Completed
+                  We have deducted 0.1 USDFC from your FWS funds.
                 </span>
               )}
             </div>
@@ -676,7 +665,7 @@ export const PaymentSetupTab = () => {
                   disabled={isProcessingCreation || isProofSetClicked}
                   className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Create Proof Set
+                  Get Hot Vault Space
                 </button>
               </div>
             )}
@@ -689,11 +678,11 @@ export const PaymentSetupTab = () => {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-blue-900">
-                      Creating Proof Set
+                      Setting Up Hot Vault Space
                     </p>
                     <p className="text-sm text-blue-700 mt-1">
-                      Please wait while we set up your proof set. This typically
-                      takes 5-10 minutes.
+                      Please wait while we set up your Hot Vault space. This
+                      typically takes 5-10 minutes. takes 5-10 minutes.
                     </p>
                   </div>
                 </div>
@@ -744,7 +733,8 @@ export const PaymentSetupTab = () => {
                     </p>
                     <p className="text-sm text-green-700 mt-1">
                       Your payment setup is complete. You can now use all
-                      features of the Hot Vault service.
+                      features of the Hot Vault service. Please go the files tab
+                      to upload your files.
                     </p>
                   </div>
                 </div>
@@ -760,12 +750,9 @@ export const PaymentSetupTab = () => {
     <div className="animate-fadeIn">
       <div className="px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-          <Wallet className="w-5 h-5 text-blue-500" />
+          {/* <Wallet className="w-5 h-5 text-blue-500" /> */}
           Payment Setup
         </h1>
-        <p className="text-gray-600 mt-1">
-          Configure your payment settings to use the Hot Vault service
-        </p>
       </div>
 
       <div className="px-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -773,7 +760,7 @@ export const PaymentSetupTab = () => {
         <div>
           <TokenBalanceCard />
 
-          <div className="mt-6 bg-blue-50 rounded-lg border border-blue-100 overflow-hidden">
+          {/* <div className="mt-6 bg-blue-50 rounded-lg border border-blue-100 overflow-hidden">
             <div className="p-4 border-b border-blue-100">
               <h3 className="text-sm font-medium text-blue-900">
                 Why do I need to set up payments?
@@ -828,7 +815,7 @@ export const PaymentSetupTab = () => {
                 </div>
               )}
             </div>
-          </div>
+          </div> */}
 
           <div className="mt-6">
             <TransactionHistory />

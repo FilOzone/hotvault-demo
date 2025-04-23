@@ -61,7 +61,7 @@ const getDetailedMessage = (status: string, message?: string): string => {
     message.includes("Adding root to proof set") &&
     !message.includes("attempt")
   ) {
-    return "Registering file on the blockchain network...";
+    return "Storing file on the Filecoin network...";
   }
 
   // If message has "proof set creation is still pending"
@@ -69,7 +69,7 @@ const getDetailedMessage = (status: string, message?: string): string => {
     message.includes("proof set creation is still pending") ||
     message.includes("proof set is being initialized")
   ) {
-    return "Waiting for blockchain confirmation of your proof set...";
+    return "Waiting for confirmation of your proof set...";
   }
 
   return message;

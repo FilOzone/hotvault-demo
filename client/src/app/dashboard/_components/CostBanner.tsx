@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   Upload,
+  InfoIcon,
 } from "lucide-react";
 import { formatFileSize } from "@/lib/utils";
 import { useState } from "react";

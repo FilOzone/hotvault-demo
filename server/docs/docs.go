@@ -877,7 +877,7 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string",
-                    "example": "Sign this message to authenticate with Hot Vault: 7a39f642c2608fd2"
+                    "example": "Sign this message to login to Hot Vault (No funds will be transferred in this step): 7a39f642c2608fd2"
                 },
                 "signature": {
                     "type": "string",

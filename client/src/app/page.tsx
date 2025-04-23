@@ -4,7 +4,15 @@ import { Container } from "@/theme/components";
 import { Button } from "@/components/ui/button";
 import { Typography } from "@/components/ui/typography";
 import Image from "next/image";
-import { Shield, Lock, Upload, Clock, Key, FileCheck } from "lucide-react";
+import {
+  Shield,
+  Lock,
+  Upload,
+  Clock,
+  Key,
+  FileCheck,
+  DollarSign,
+} from "lucide-react";
 
 export default function Home() {
   const { isConnecting, error, connectWallet } = useAuth();
@@ -100,7 +108,7 @@ export default function Home() {
                       color="black"
                       className="text-5xl md:text-7xl font-mono tracking-tight leading-[1.1] bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600"
                     >
-                      Verify Your Data on Filecoin
+                      Verify Your Data on FWS
                     </Typography>
                   </div>
                   <Typography
@@ -108,9 +116,8 @@ export default function Home() {
                     color="black"
                     className="text-lg md:text-2xl leading-relaxed text-gray-600 max-w-3xl"
                   >
-                    Store and verify your data with cryptographic proofs. Our
-                    smart contracts ensure your data remains intact and
-                    accessible on the decentralized network.
+                    Store and verify your data with cryptographic proofs. All
+                    with real-time on-chain Filecoin backed stablecoin payments.
                   </Typography>
 
                   <div className="flex items-center gap-4 pt-6">
@@ -166,6 +173,11 @@ export default function Home() {
                           icon: Clock,
                           title: "Automated System",
                           description: "Continuous proof validation",
+                        },
+                        {
+                          icon: DollarSign,
+                          title: "Stablecoin Payments",
+                          description: "Real-time on-chain payments",
                         },
                       ].map((feature, i) => (
                         <div

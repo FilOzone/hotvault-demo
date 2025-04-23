@@ -18,9 +18,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Filecoin Web Services",
+  title: "Hot Vault",
   description:
-    "Decentralized infrastructure for the next generation of web applications",
+    "Hot Vault is a decentralized infrastructure for the next generation of web applications",
 };
 
 export default function RootLayout({

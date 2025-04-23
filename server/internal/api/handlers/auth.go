@@ -74,7 +74,7 @@ type StatusResponse struct {
 type VerifyRequest struct {
 	Address   string `json:"address" binding:"required,hexadecimal" example:"0x742d35Cc6634C0532925a3b844Bc454e4438f44e"`
 	Signature string `json:"signature" binding:"required,hexadecimal" example:"0x1234567890abcdef"`
-	Message   string `json:"message,omitempty" example:"Sign this message to authenticate with Hot Vault: 7a39f642c2608fd2"`
+	Message   string `json:"message,omitempty" example:"Sign this message to login to Hot Vault (No funds will be transferred in this step): 7a39f642c2608fd2"`
 }
 
 // VerifyResponse represents the response for a verification request
@@ -164,7 +164,7 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 	var err error
 
 	if req.Message != "" {
-		expectedPrefix := fmt.Sprintf("Sign this message to authenticate with Hot Vault: %s", user.Nonce)
+		expectedPrefix := fmt.Sprintf("Sign this message to login to Hot Vault (No funds will be transferred in this step): %s", user.Nonce)
 		if req.Message == expectedPrefix {
 			valid, err = h.ethService.VerifySignature(req.Address, req.Message, req.Signature)
 		} else {
@@ -174,7 +174,7 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 			return
 		}
 	} else {
-		message := fmt.Sprintf("Sign this message to authenticate with Hot Vault: %s", user.Nonce)
+		message := fmt.Sprintf("Sign this message to login to Hot Vault (No funds will be transferred in this step): %s", user.Nonce)
 		valid, err = h.ethService.VerifySignature(req.Address, message, req.Signature)
 	}
 
@@ -431,7 +431,7 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 	txStatusRegex := regexp.MustCompile(`Transaction Status:[ \t]*(confirmed|pending|failed)`)
 	txSuccessRegex := regexp.MustCompile(`Transaction Successful:[ \t]*(true|false|Pending)`)
 
-	sleepDuration := 30 * time.Second
+	sleepDuration := 10 * time.Second
 	attemptCounter := 0
 	const maxLogInterval = 6
 

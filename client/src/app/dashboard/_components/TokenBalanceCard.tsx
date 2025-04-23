@@ -357,21 +357,17 @@ export const TokenBalanceCard = () => {
         {/* Contract Balances */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-4 bg-gray-50 rounded-xl">
-            <div className="text-[15px] text-gray-600 mb-1">Contract Funds</div>
+            <div className="text-[15px] text-gray-600 mb-1">
+              Total FWS Funds
+            </div>
             <div className="text-2xl font-semibold">
               {formatCurrency(paymentStatus.accountFunds)} USDFC
-            </div>
-            <div className="text-[15px] text-gray-500 mt-1">
-              Total funds in payment contract
             </div>
           </div>
           <div className="p-4 bg-gray-50 rounded-xl">
             <div className="text-[15px] text-gray-600 mb-1">Locked Funds</div>
             <div className="text-2xl font-semibold">
               {formatCurrency(paymentStatus.lockedFunds.current)} USDFC
-            </div>
-            <div className="text-[15px] text-gray-500 mt-1">
-              Currently locked in contract
             </div>
           </div>
         </div>
@@ -389,9 +385,6 @@ export const TokenBalanceCard = () => {
               ).toString()
             )}{" "}
             USDFC
-          </div>
-          <div className="text-[15px] text-gray-600 mt-1">
-            Unlocked funds that can be withdrawn
           </div>
         </div>
       </div>
