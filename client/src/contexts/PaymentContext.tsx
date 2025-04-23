@@ -15,13 +15,14 @@ import {
   approveOperator,
   getAccountStatus,
   getOperatorApproval,
+  withdrawUSDFC,
 } from "@/lib/contracts";
 import * as Constants from "@/lib/constants";
 
 // Define interface for transaction history
 export interface TransactionRecord {
   id: string;
-  type: "token_approval" | "deposit" | "operator_approval";
+  type: "token_approval" | "deposit" | "operator_approval" | "withdraw";
   txHash: string;
   amount?: string;
   timestamp: number;
@@ -39,7 +40,11 @@ interface PaymentStatus {
   isDeposited: boolean;
   isOperatorApproved: boolean;
   accountFunds: string;
-  lockedFunds: string;
+  lockedFunds: {
+    current: string;
+    rate: string;
+    lastSettledAt: string;
+  };
   proofSetReady: boolean;
   isCreatingProofSet: boolean;
   operatorApproval: {
@@ -57,6 +62,7 @@ interface PaymentContextType {
   refreshPaymentSetupStatus: () => Promise<void>;
   approveToken: (amount: string) => Promise<boolean>;
   depositFunds: (amount: string) => Promise<boolean>;
+  withdrawFunds: (amount: string) => Promise<boolean>;
   approveServiceOperator: (
     rateAllowance: string,
     lockupAllowance: string
@@ -87,7 +93,11 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     isDeposited: false,
     isOperatorApproved: false,
     accountFunds: "0",
-    lockedFunds: "0",
+    lockedFunds: {
+      current: "0",
+      rate: "0",
+      lastSettledAt: "0",
+    },
     proofSetReady: false,
     isCreatingProofSet: false,
     operatorApproval: null,
@@ -314,6 +324,11 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           isDeposited,
           isOperatorApproved: operatorStatus.isApproved,
           accountFunds: accountStatus.funds,
+          lockedFunds: {
+            current: accountStatus.lockupCurrent,
+            rate: accountStatus.lockupRate,
+            lastSettledAt: accountStatus.lockupLastSettledAt,
+          },
           proofSetReady: fetchedProofSetReady,
           isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
           isLoading: false,
@@ -322,9 +337,14 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         console.log(`Payment setup status for ${account}:`, {
           isDeposited,
           funds: accountStatus.funds,
+          lockedFunds: {
+            current: accountStatus.lockupCurrent,
+            rate: accountStatus.lockupRate,
+            lastSettledAt: accountStatus.lockupLastSettledAt,
+          },
           isOperatorApproved: operatorStatus.isApproved,
         });
-      } catch {
+      } catch (error) {
         // If we can't get the account status, it likely means the user hasn't interacted with the contract yet
         console.log("User hasn't interacted with the Payments contract yet");
         setPaymentStatus((prev) => ({
@@ -332,6 +352,11 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           isDeposited: false,
           isOperatorApproved: false,
           accountFunds: "0",
+          lockedFunds: {
+            current: "0",
+            rate: "0",
+            lastSettledAt: "0",
+          },
           proofSetReady: fetchedProofSetReady,
           isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
         }));
@@ -531,6 +556,95 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
+  // Withdraw funds from the Payments contract
+  const withdrawFunds = async (amount: string): Promise<boolean> => {
+    if (!account) return false;
+
+    setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      // Ensure ethereum exists
+      if (!window.ethereum) {
+        throw new Error("Ethereum provider not found");
+      }
+
+      // Create a provider and signer
+      const provider = new ethers.BrowserProvider(
+        window.ethereum as ethers.Eip1193Provider
+      );
+
+      // Check USDFC balance before proceeding
+      const balanceResult = await getUSDFCBalance(
+        provider,
+        Constants.USDFC_TOKEN_ADDRESS,
+        account
+      );
+
+      // Convert amount to number for comparison
+      const withdrawAmount = parseFloat(amount);
+      const currentBalance = parseFloat(balanceResult.formattedBalance);
+
+      // Check if user has enough balance to receive the withdrawn funds
+      if (currentBalance < withdrawAmount) {
+        setPaymentStatus((prev) => ({
+          ...prev,
+          error:
+            "Insufficient USDFC balance in wallet to receive withdrawn funds",
+          isLoading: false,
+        }));
+        return false;
+      }
+
+      // Create transaction record
+      const txId = addTransaction({
+        type: "withdraw",
+        txHash: "",
+        amount,
+        timestamp: Date.now(),
+        status: "pending",
+      });
+
+      const signer = await provider.getSigner();
+
+      // Withdraw funds
+      const txResponse = await withdrawUSDFC(
+        signer,
+        Constants.PAYMENT_PROXY_ADDRESS,
+        Constants.USDFC_TOKEN_ADDRESS,
+        amount
+      );
+
+      // Update transaction with hash
+      updateTransaction(txId, {
+        txHash: txResponse.hash,
+        status: "success",
+      });
+
+      // Update status and refresh account funds
+      await refreshPaymentSetupStatus();
+
+      return true;
+    } catch (error) {
+      console.error("Error withdrawing funds:", error);
+
+      // Update transaction with error if it was created
+      if (error instanceof Error) {
+        setPaymentStatus((prev) => ({
+          ...prev,
+          error: error.message,
+          isLoading: false,
+        }));
+      } else {
+        setPaymentStatus((prev) => ({
+          ...prev,
+          error: "Failed to withdraw funds",
+          isLoading: false,
+        }));
+      }
+      return false;
+    }
+  };
+
   // Approve the PDP service operator
   const approveServiceOperator = async (
     rateAllowance: string,
@@ -666,6 +780,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         refreshPaymentSetupStatus,
         approveToken,
         depositFunds,
+        withdrawFunds,
         approveServiceOperator,
         initiateProofSetCreation,
         transactions,

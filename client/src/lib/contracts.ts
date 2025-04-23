@@ -314,3 +314,48 @@ export async function getOperatorApproval(
     throw error;
   }
 }
+
+/**
+ * Withdraws tokens from the Payments contract to the caller's address
+ * @param signer - Connected wallet signer
+ * @param paymentsAddress - Payments contract address
+ * @param tokenAddress - USDFC token address
+ * @param amount - Amount to withdraw (in USDFC)
+ * @returns Transaction response
+ */
+export async function withdrawUSDFC(
+  signer: ethers.Signer,
+  paymentsAddress: string,
+  tokenAddress: string,
+  amount: string
+) {
+  try {
+    const paymentsContract = new ethers.Contract(
+      paymentsAddress,
+      [...PAYMENTS_ABI, "function withdraw(address token, uint256 amount)"],
+      signer
+    );
+
+    // Get token decimals to convert amount
+    const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+    const decimals = await tokenContract.decimals();
+
+    // Convert amount to token units with proper decimals
+    const amountInWei = ethers.parseUnits(amount, decimals);
+
+    // Send withdraw transaction
+    const tx = await paymentsContract.withdraw(tokenAddress, amountInWei);
+
+    // Wait for transaction to be mined
+    const receipt = await tx.wait();
+
+    // Return transaction details including hash
+    return {
+      hash: tx.hash,
+      receipt,
+    };
+  } catch (error) {
+    console.error("Error withdrawing USDFC:", error);
+    throw error;
+  }
+}

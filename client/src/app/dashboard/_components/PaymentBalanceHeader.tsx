@@ -152,22 +152,35 @@ export const PaymentBalanceHeader = () => {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Available Balance:</span>
                   <span className="font-medium">
+                    {formatCurrency(paymentStatus.usdcBalance)} USDFC
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Account Funds:</span>
+                  <span className="font-medium">
                     {formatCurrency(paymentStatus.accountFunds)} USDFC
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Token Allowance:</span>
-                  <span className="font-medium">
-                    {paymentStatus.isTokenApproved
-                      ? formatCurrency(Constants.PROOF_SET_FEE)
-                      : "0.00"}{" "}
-                    USDFC
-                  </span>
+                  <span className="text-gray-600">Locked Funds:</span>
+                  <div className="text-right">
+                    <span className="font-medium">
+                      {formatCurrency(paymentStatus.lockedFunds.current)} USDFC
+                    </span>
+                  </div>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Locked Funds:</span>
+                  <span className="text-gray-600">
+                    Available for Withdrawal:
+                  </span>
                   <span className="font-medium">
-                    {formatCurrency(paymentStatus.lockedFunds || "0")} USDFC
+                    {formatCurrency(
+                      (
+                        parseFloat(paymentStatus.accountFunds) -
+                        parseFloat(paymentStatus.lockedFunds.current)
+                      ).toString()
+                    )}{" "}
+                    USDFC
                   </span>
                 </div>
               </div>

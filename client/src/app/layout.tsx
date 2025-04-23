@@ -4,6 +4,7 @@ import { DM_Sans } from "next/font/google";
 import "./globals.css";
 import ClientLayout from "@/components/layout/client-layout";
 import { GlobalUploadProgress } from "@/components/ui/global-upload-progress";
+import { Toaster } from "sonner";
 
 const dmSans = DM_Sans({ subsets: ["latin"] });
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default function RootLayout({
           {children}
           <GlobalUploadProgress />
         </ClientLayout>
+        <Toaster richColors />
       </body>
     </html>
   );
