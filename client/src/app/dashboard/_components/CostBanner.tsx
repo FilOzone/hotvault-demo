@@ -30,18 +30,26 @@ export const CostBanner: React.FC<CostBannerProps> = ({
   existingFiles = [],
   onSelectFile,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const costPerGBPerMonth = 2; // 2 USDFC per GB per month
-  const lockPeriodDays = 10; // 10 days worth of epochs
+  const [isExpanded, setIsExpanded] = useState(true);
 
+  // Constants aligned with payment system
+  const costPerGBPerMonth = 2; // 2 USDFC per GB per month
+  const lockPeriodDays = 10; // 10 days worth of storage cost
+  const daysInMonth = 30; // Standardized month length
+
+  // Calculate monthly cost for a given size in GB
   const calculateMonthlyCost = (sizeGB: number) => {
     return sizeGB * costPerGBPerMonth;
   };
 
+  // Calculate locked amount (10 days worth of monthly cost)
   const calculateLockedAmount = (sizeGB: number) => {
-    return (calculateMonthlyCost(sizeGB) * lockPeriodDays) / 30; // pro-rated for 10 days
+    // Pro-rated for lockPeriodDays
+    const monthlyCost = calculateMonthlyCost(sizeGB);
+    return (monthlyCost * lockPeriodDays) / daysInMonth;
   };
 
+  // Calculate costs for selected file
   const monthlyCost = calculateMonthlyCost(fileSizeGB);
   const lockedAmount = calculateLockedAmount(fileSizeGB);
 
@@ -120,6 +128,12 @@ export const CostBanner: React.FC<CostBannerProps> = ({
                         {lockPeriodDays} days
                       </span>
                     </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Payment Model:</span>
+                      <span className="font-medium text-gray-900">
+                        Monthly + Lock
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -169,7 +183,12 @@ export const CostBanner: React.FC<CostBannerProps> = ({
                 <Upload className="w-5 h-5 text-blue-600 mt-1" />
                 <div className="w-full">
                   <h3 className="font-medium text-gray-900 mb-2">
-                    Selected File
+                    Selected File{" "}
+                    {fileSizeGB > 0 && (
+                      <span className="text-sm font-normal text-blue-600">
+                        (Not yet uploaded)
+                      </span>
+                    )}
                   </h3>
                   {fileSizeGB > 0 ? (
                     <div className="space-y-2 text-sm">
@@ -240,7 +259,7 @@ export const CostBanner: React.FC<CostBannerProps> = ({
                       </div>
                       <div className="space-y-1">
                         <div className="text-gray-600">Total Locked Amount</div>
-                        <div className="font-semibold text-gray-900">
+                        <div className="font-semibold text-blue-900 text-base">
                           {totalLockedAmount.toFixed(2)} USDFC
                         </div>
                       </div>
@@ -250,6 +269,31 @@ export const CostBanner: React.FC<CostBannerProps> = ({
               </Card>
             </div>
           )}
+
+          {/* Info box with calculation details */}
+          <div className="bg-white/70 rounded-lg border border-blue-100 p-4">
+            <h3 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+              <InfoIcon className="w-4 h-4 text-blue-500" />
+              How Costs Are Calculated
+            </h3>
+            <div className="text-sm text-gray-600 space-y-2">
+              <p>
+                <span className="font-medium text-gray-700">Monthly Cost:</span>{" "}
+                Each GB costs {costPerGBPerMonth} USDFC per month.
+              </p>
+              <p>
+                <span className="font-medium text-gray-700">Lock Amount:</span>{" "}
+                {lockPeriodDays} days worth of storage costs are locked (
+                {((lockPeriodDays / daysInMonth) * 100).toFixed(0)}% of monthly
+                cost).
+              </p>
+              <p className="text-xs text-gray-500 italic">
+                Example: A 5GB file costs 10 USDFC per month, with{" "}
+                {((10 * lockPeriodDays) / daysInMonth).toFixed(2)} USDFC locked
+                amount.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </Card>
