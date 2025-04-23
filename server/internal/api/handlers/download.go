@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/fws/backend/internal/models"
 	"github.com/gin-gonic/gin"
+	"github.com/hotvault/backend/internal/models"
 )
 
 // @Summary Download a file from PDP service

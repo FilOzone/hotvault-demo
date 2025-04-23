@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/fws/backend/internal/models"
 	"github.com/gin-gonic/gin"
+	"github.com/hotvault/backend/internal/models"
 	"gorm.io/gorm"
 )
 

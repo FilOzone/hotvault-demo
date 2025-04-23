@@ -877,7 +877,7 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string",
-                    "example": "Sign this message to authenticate with FWS: 7a39f642c2608fd2"
+                    "example": "Sign this message to authenticate with Hot Vault: 7a39f642c2608fd2"
                 },
                 "signature": {
                     "type": "string",
@@ -908,8 +908,8 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "localhost:8080",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
-	Title:            "FWS Backend API",
-	Description:      "API Server for FWS Backend Application",
+	Title:            "Hot Vault Backend API",
+	Description:      "API Server for Hot Vault Backend Application",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

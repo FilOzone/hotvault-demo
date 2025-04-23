@@ -17,11 +17,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fws/backend/config"
-	"github.com/fws/backend/internal/models"
-	"github.com/fws/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hotvault/backend/config"
+	"github.com/hotvault/backend/internal/models"
+	"github.com/hotvault/backend/pkg/logger"
 	"gorm.io/gorm"
 )
 

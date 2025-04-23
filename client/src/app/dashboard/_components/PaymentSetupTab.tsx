@@ -42,6 +42,15 @@ export const PaymentSetupTab = () => {
   );
   const [rateAllowance, setRateAllowance] = useState("");
   const [lockupAllowance, setLockupAllowance] = useState("");
+  const [isUpdatingAllowances, setIsUpdatingAllowances] = useState(false);
+
+  // Load current allowances when operator is approved
+  useEffect(() => {
+    if (paymentStatus.isOperatorApproved && !isUpdatingAllowances) {
+      setRateAllowance(paymentStatus.operatorApproval?.rateAllowance || "");
+      setLockupAllowance(paymentStatus.operatorApproval?.lockupAllowance || "");
+    }
+  }, [paymentStatus.isOperatorApproved, paymentStatus.operatorApproval]);
 
   // Determine the current step based on payment status
   useEffect(() => {
@@ -133,15 +142,26 @@ export const PaymentSetupTab = () => {
       );
       if (result) {
         toast.success(
-          `PDP Service operator approved with ${rateAllowance} USDFC rate allowance and ${lockupAllowance} USDFC lockup allowance`
+          `PDP Service operator ${
+            paymentStatus.isOperatorApproved ? "updated" : "approved"
+          } with ${rateAllowance} USDFC rate allowance and ${lockupAllowance} USDFC lockup allowance`
         );
+        setIsUpdatingAllowances(false);
         await refreshPaymentSetupStatus();
       } else {
-        toast.error("Failed to approve PDP Service operator");
+        toast.error(
+          `Failed to ${
+            paymentStatus.isOperatorApproved ? "update" : "approve"
+          } PDP Service operator`
+        );
       }
     } catch (error) {
-      console.error("Error approving operator:", error);
-      toast.error("Error approving operator. Please try again.");
+      console.error("Error with operator approval:", error);
+      toast.error(
+        `Error ${
+          paymentStatus.isOperatorApproved ? "updating" : "approving"
+        } operator. Please try again.`
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -365,7 +385,7 @@ export const PaymentSetupTab = () => {
     return (
       <div
         className={`w-full p-4 rounded-lg transition-all ${
-          isActive
+          isActive || isUpdatingAllowances
             ? "bg-blue-50 border border-blue-200"
             : isCompleted
             ? "bg-green-50 border border-green-200"
@@ -375,41 +395,53 @@ export const PaymentSetupTab = () => {
         <div className="flex items-center gap-3 mb-3">
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              isActive
+              isActive || isUpdatingAllowances
                 ? "bg-blue-100 text-blue-600"
                 : isCompleted
                 ? "bg-green-100 text-green-600"
                 : "bg-gray-100 text-gray-500"
             }`}
           >
-            {isCompleted ? (
+            {isCompleted && !isUpdatingAllowances ? (
               <CheckCircle size={18} />
             ) : (
               <span className="text-sm font-semibold">3</span>
             )}
           </div>
           <div className="flex-1">
-            <p
-              className={`font-medium ${
-                isActive
-                  ? "text-blue-700"
-                  : isCompleted
-                  ? "text-green-700"
-                  : "text-gray-600"
-              }`}
-            >
-              Approve PDP Service Operator
-            </p>
+            <div className="flex items-center justify-between">
+              <p
+                className={`font-medium ${
+                  isActive || isUpdatingAllowances
+                    ? "text-blue-700"
+                    : isCompleted
+                    ? "text-green-700"
+                    : "text-gray-600"
+                }`}
+              >
+                PDP Service Operator Settings
+              </p>
+            </div>
             <p className="text-xs text-gray-500">
               {isActive && isProcessing ? (
                 <span className="flex items-center text-blue-600">
                   <Loader size={12} className="animate-spin mr-1" />{" "}
                   Processing...
                 </span>
+              ) : isUpdatingAllowances ? (
+                "Update payment rail settings"
               ) : isActive ? (
                 "Allow the PDP Service to create payment rails"
               ) : isCompleted ? (
-                "Completed"
+                <span className="flex items-center justify-between">
+                  <span>Current Settings:</span>
+                  <span>
+                    Rate: {paymentStatus.operatorApproval?.rateAllowance || "0"}{" "}
+                    USDFC/epoch, Lockup:{" "}
+                    {paymentStatus.operatorApproval?.lockupAllowance || "0"}{" "}
+                    USDFC
+                  </span>
+                </span>
               ) : (
                 "Pending"
               )}
@@ -417,7 +449,54 @@ export const PaymentSetupTab = () => {
           </div>
         </div>
 
-        {isActive && (
+        {/* Show current settings and update button when completed */}
+        {isCompleted && !isUpdatingAllowances && !isActive && (
+          <div className="mt-3 bg-white p-3 rounded border border-green-100">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-sm text-gray-600">Current Allowances</p>
+                <div className="mt-1 space-y-1">
+                  <p className="text-xs text-gray-500">
+                    Rate:{" "}
+                    <span className="font-medium text-gray-700">
+                      {paymentStatus.operatorApproval?.rateAllowance || "0"}{" "}
+                      USDFC/epoch
+                    </span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Lockup:{" "}
+                    <span className="font-medium text-gray-700">
+                      {paymentStatus.operatorApproval?.lockupAllowance || "0"}{" "}
+                      USDFC
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsUpdatingAllowances(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 20V10" />
+                  <path d="M18 14l-6-6-6 6" />
+                </svg>
+                Update Allowances
+              </button>
+            </div>
+          </div>
+        )}
+
+        {(isActive || isUpdatingAllowances) && (
           <div className="mt-3 bg-white p-3 rounded border border-blue-100">
             <div className="flex items-center mb-3">
               <Info size={14} className="text-blue-500 mr-2" />
@@ -475,20 +554,44 @@ export const PaymentSetupTab = () => {
                 </p>
               </div>
 
-              <button
-                onClick={handleApproveOperator}
-                disabled={!paymentStatus.hasMinimumBalance || isProcessing}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader size={14} className="animate-spin mr-1" />
-                    Processing...
-                  </>
-                ) : (
-                  "Approve Operator"
+              <div className="flex gap-2">
+                <button
+                  onClick={handleApproveOperator}
+                  disabled={!paymentStatus.hasMinimumBalance || isProcessing}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader size={14} className="animate-spin mr-1" />
+                      Processing...
+                    </>
+                  ) : (
+                    <span className="flex items-center">
+                      <ShieldCheck size={14} className="mr-1.5" />
+                      {paymentStatus.isOperatorApproved
+                        ? "Update Settings"
+                        : "Approve Operator"}
+                    </span>
+                  )}
+                </button>
+                {isUpdatingAllowances && (
+                  <button
+                    onClick={() => {
+                      setIsUpdatingAllowances(false);
+                      setRateAllowance(
+                        paymentStatus.operatorApproval?.rateAllowance || ""
+                      );
+                      setLockupAllowance(
+                        paymentStatus.operatorApproval?.lockupAllowance || ""
+                      );
+                    }}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded text-sm font-medium hover:bg-gray-50 disabled:bg-gray-100"
+                    disabled={isProcessing}
+                  >
+                    Cancel
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
           </div>
         )}
@@ -567,8 +670,8 @@ export const PaymentSetupTab = () => {
             <div className="flex items-center mb-3">
               <Info size={14} className="text-blue-500 mr-2" />
               <span className="text-xs text-blue-700">
-                This action will register your unique proof set with the FWS
-                service. It may take a few minutes.
+                This action will register your unique proof set with the Hot
+                Vault service. It may take a few minutes.
               </span>
             </div>
 
@@ -665,7 +768,7 @@ export const PaymentSetupTab = () => {
               <p className="font-semibold">Payment setup complete!</p>
               <p className="text-sm mt-1">
                 Your payment setup is complete. You can now use all features of
-                the FWS service.
+                the Hot Vault service.
               </p>
             </div>
           </div>
@@ -698,7 +801,7 @@ export const PaymentSetupTab = () => {
           Payment Setup
         </h1>
         <p className="text-gray-600 mt-1">
-          Configure your payment settings to use the FWS service
+          Configure your payment settings to use the Hot Vault service
         </p>
       </div>
 
@@ -715,8 +818,8 @@ export const PaymentSetupTab = () => {
             </div>
             <div className="p-4">
               <p className="text-sm text-blue-700">
-                FWS requires a one-time payment setup to create your proof set.
-                This includes approving the token, depositing USDFC, and
+                Hot Vault requires a one-time payment setup to create your proof
+                set. This includes approving the token, depositing USDFC, and
                 allowing the service to create proofs on your behalf.
               </p>
 
@@ -777,7 +880,7 @@ export const PaymentSetupTab = () => {
                 Payment Setup Steps
               </h3>
               <p className="text-sm text-gray-600 mt-1">
-                Complete these steps to enable FWS service
+                Complete these steps to enable Hot Vault service
               </p>
             </div>
 

@@ -244,6 +244,8 @@ export async function getAccountStatus(
     );
     const decimals = await tokenContract.decimals();
 
+    console.log("decimals", decimals);
+
     // Get account details from the payments contract
     const account = await paymentsContract.accounts(
       tokenAddress,

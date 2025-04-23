@@ -1,4 +1,4 @@
-module github.com/fws/backend
+module github.com/hotvault/backend
 
 go 1.23.0
 

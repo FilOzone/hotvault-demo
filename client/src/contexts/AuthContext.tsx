@@ -75,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log("🖊️ Requesting signature...");
 
       // Try a standard ethereum message format - this is what most backends expect
-      const message = `Sign this message to authenticate with FWS: ${nonce}`;
+      const message = `Sign this message to authenticate with Hot Vault: ${nonce}`;
       console.log("Message to sign:", message);
 
       const signature = await window.ethereum.request({

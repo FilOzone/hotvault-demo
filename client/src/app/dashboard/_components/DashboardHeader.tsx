@@ -59,7 +59,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 variant="h1"
                 className="text-xl font-mono tracking-tight"
               >
-                FWS
+                Hot Vault
               </Typography>
             </motion.div>
 

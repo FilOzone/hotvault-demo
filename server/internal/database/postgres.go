@@ -3,8 +3,8 @@ package database
 import (
 	"fmt"
 
-	"github.com/fws/backend/config"
-	applogger "github.com/fws/backend/pkg/logger"
+	"github.com/hotvault/backend/config"
+	applogger "github.com/hotvault/backend/pkg/logger"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"

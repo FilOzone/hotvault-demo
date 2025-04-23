@@ -1,7 +1,7 @@
 package database
 
 import (
-	"github.com/fws/backend/internal/models"
+	"github.com/hotvault/backend/internal/models"
 	"gorm.io/gorm"
 )
 

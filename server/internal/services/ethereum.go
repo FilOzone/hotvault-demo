@@ -8,8 +8,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/fws/backend/config"
-	"github.com/fws/backend/pkg/logger"
+	"github.com/hotvault/backend/config"
+	"github.com/hotvault/backend/pkg/logger"
 )
 
 // EthereumService handles interactions with Ethereum blockchain
