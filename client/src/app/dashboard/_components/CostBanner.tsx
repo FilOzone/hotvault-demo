@@ -1,7 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { Typography } from "@/components/ui/typography";
 import {
-  InfoIcon,
   DollarSign,
   Lock,
   HardDrive,

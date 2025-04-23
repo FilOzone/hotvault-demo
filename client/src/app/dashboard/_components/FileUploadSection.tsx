@@ -10,10 +10,10 @@ import { useRouter } from "next/navigation";
 import { Typography } from "@/components/ui/typography";
 import { API_BASE_URL } from "@/lib/constants";
 import { toast } from "sonner";
-import { FileIcon } from "./FileIcon";
 import { useUploadStore } from "@/store/upload-store";
-import { AlertCircle, Loader } from "lucide-react";
+import { Loader, AlertTriangle } from "lucide-react";
 import { CostBanner } from "./CostBanner";
+import { formatFileSize } from "@/lib/utils";
 
 interface FileUploadProps {
   onUploadSuccess: () => void;
@@ -34,88 +34,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const uploadStartTimeRef = useRef<number | null>(null);
-
-  const getFilePreviewType = (
-    filename: string
-  ):
-    | "image"
-    | "document"
-    | "spreadsheet"
-    | "code"
-    | "archive"
-    | "video"
-    | "audio"
-    | "generic" => {
-    const extension = filename.split(".").pop()?.toLowerCase() || "";
-
-    // Image files
-    if (
-      ["jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico"].includes(
-        extension
-      )
-    ) {
-      return "image";
-    }
-
-    // Document files
-    if (["pdf", "doc", "docx", "txt", "rtf", "odt", "md"].includes(extension)) {
-      return "document";
-    }
-
-    // Spreadsheet files
-    if (["xls", "xlsx", "csv", "ods", "numbers"].includes(extension)) {
-      return "spreadsheet";
-    }
-
-    // Code files
-    if (
-      [
-        "js",
-        "ts",
-        "jsx",
-        "tsx",
-        "html",
-        "css",
-        "scss",
-        "json",
-        "xml",
-        "yaml",
-        "yml",
-        "py",
-        "rb",
-        "java",
-        "c",
-        "cpp",
-        "go",
-        "rs",
-        "php",
-      ].includes(extension)
-    ) {
-      return "code";
-    }
-
-    // Archive files
-    if (
-      ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso"].includes(extension)
-    ) {
-      return "archive";
-    }
-
-    // Video files
-    if (
-      ["mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"].includes(extension)
-    ) {
-      return "video";
-    }
-
-    // Audio files
-    if (["mp3", "wav", "ogg", "flac", "aac", "m4a"].includes(extension)) {
-      return "audio";
-    }
-
-    // Default (fallback)
-    return "generic";
-  };
 
   const handleSubmitImage = async () => {
     if (!selectedImage) return;
@@ -445,26 +363,31 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      setSelectedImage(file);
-      // Calculate file size in GB
-      setFileSizeGB(file.size / (1024 * 1024 * 1024));
+    if (acceptedFiles.length === 0) return;
 
-      // Create preview URL for images
-      if (file.type.startsWith("image/")) {
-        const url = URL.createObjectURL(file);
-        setPreviewUrl(url);
-      } else {
-        setPreviewUrl(null);
-      }
+    const file = acceptedFiles[0];
+
+    // Check if file is an image
+    if (!file.type.startsWith("image/")) {
+      toast.error("Only image files are allowed (jpg, png, gif, etc.)");
+      return;
     }
+
+    setSelectedImage(file);
+    // Calculate file size in GB
+    setFileSizeGB(file.size / (1024 * 1024 * 1024));
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
   }, []);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    maxFiles: 1,
-  });
+  const { getRootProps, getInputProps, isDragActive, fileRejections } =
+    useDropzone({
+      onDrop,
+      maxFiles: 1,
+      accept: {
+        "image/*": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"],
+      },
+    });
 
   if (isAuthLoading) {
     return (
@@ -477,23 +400,27 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
     );
   }
 
+  function isUploadDisabled() {
+    return !proofSetReady;
+  }
+
   return (
     <div className="w-full space-y-4">
       <CostBanner fileSizeGB={fileSizeGB} />
       <Typography variant="h3" className="text-xl font-semibold mb-4">
-        Upload New File
+        Upload New Image
       </Typography>
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div className="flex-1">
             <Typography variant="h4" className="text-lg font-medium mb-1">
-              {proofSetReady ? "Add a file to storage" : "Proof Set Required"}
+              {proofSetReady ? "Add an image to storage" : "Proof Set Required"}
             </Typography>
             <Typography variant="muted" className="text-gray-500 text-sm">
               {proofSetReady
-                ? "Upload any file to store it securely on the network with automated proof generation."
-                : "Please complete the payment setup to activate your proof set before uploading files."}
+                ? "Upload any image file (JPG, PNG, GIF, etc.) to store it securely with automated proof generation."
+                : "Please complete the payment setup to activate your proof set before uploading images."}
             </Typography>
           </div>
           <div className="flex space-x-2">
@@ -503,16 +430,16 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 disabled={!selectedImage || !proofSetReady}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {selectedImage ? "Upload Selected File" : "Upload File"}
+                {selectedImage ? "Upload Selected Image" : "Upload Image"}
               </Button>
             </motion.div>
           </div>
         </div>
 
-        {/* Improved Dropzone with enhanced animations */}
+        {/* Dropzone */}
         <div
           {...getRootProps()}
-          className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 mb-6 ${
+          className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 mt-6 ${
             proofSetReady
               ? "cursor-pointer"
               : "cursor-not-allowed bg-gray-50 opacity-70"
@@ -535,7 +462,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
               >
-                <AlertCircle size={40} className="mb-3 text-orange-400" />
+                <AlertTriangle size={40} className="mb-3 text-orange-400" />
                 <Typography
                   variant="h4"
                   className="font-medium text-orange-600 mb-1"
@@ -567,219 +494,110 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 transition={{ duration: 0.2 }}
               >
                 <div className="mb-2 text-base font-medium text-gray-700">
-                  Preview
+                  Image Preview
                 </div>
                 <div className="relative max-w-md overflow-hidden">
-                  {previewUrl ? (
-                    // If we have a preview URL, it's an image
-                    <Image
-                      src={previewUrl}
-                      alt="Preview"
-                      className="block max-h-48 w-auto h-auto rounded-md shadow-sm object-contain bg-white"
-                      width={0}
-                      height={0}
-                      sizes="100vw"
-                    />
-                  ) : (
-                    // Enhanced non-image file preview with specific styles per file type
-                    <div className="w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
-                      <div className="flex flex-col items-center justify-center p-6">
-                        {(() => {
-                          const fileType = getFilePreviewType(
-                            selectedImage.name
-                          );
-                          const extension = selectedImage.name
-                            .split(".")
-                            .pop()
-                            ?.toUpperCase();
-
-                          // Different styling based on file type
-                          switch (fileType) {
-                            case "document":
-                              return (
-                                <>
-                                  <div className="bg-red-50 p-5 rounded-lg mb-3 border border-red-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-red-500 rounded-full">
-                                      {extension} DOCUMENT
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "spreadsheet":
-                              return (
-                                <>
-                                  <div className="bg-green-50 p-5 rounded-lg mb-3 border border-green-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-green-500 rounded-full">
-                                      {extension} SPREADSHEET
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "code":
-                              return (
-                                <>
-                                  <div className="bg-purple-50 p-5 rounded-lg mb-3 border border-purple-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-purple-500 rounded-full">
-                                      {extension} CODE
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "archive":
-                              return (
-                                <>
-                                  <div className="bg-amber-50 p-5 rounded-lg mb-3 border border-amber-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-amber-500 rounded-full">
-                                      {extension} ARCHIVE
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "video":
-                              return (
-                                <>
-                                  <div className="bg-blue-50 p-5 rounded-lg mb-3 border border-blue-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-blue-600 rounded-full">
-                                      {extension} VIDEO
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "audio":
-                              return (
-                                <>
-                                  <div className="bg-green-50 p-5 rounded-lg mb-3 border border-green-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-green-600 rounded-full">
-                                      {extension} AUDIO
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            default:
-                              return (
-                                <>
-                                  <div className="bg-gray-50 p-5 rounded-lg mb-3 border border-gray-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-gray-500 px-3 py-1 bg-gray-100 rounded-full">
-                                      {extension}
-                                    </div>
-                                  </div>
-                                </>
-                              );
-                          }
-                        })()}
-                      </div>
-                    </div>
-                  )}
+                  <Image
+                    src={previewUrl!}
+                    alt="Preview"
+                    className="block max-h-48 w-auto h-auto rounded-md shadow-sm object-contain bg-white"
+                    width={0}
+                    height={0}
+                    sizes="100vw"
+                  />
                   <motion.button
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedImage(null);
                       setPreviewUrl(null);
+                      setFileSizeGB(0);
                     }}
                     className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none shadow-sm"
-                    aria-label="Remove file"
+                    aria-label="Remove image"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                   >
                     <svg
                       className="w-3 h-3"
                       fill="none"
-                      stroke="currentColor"
                       viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
+                      stroke="currentColor"
                     >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        strokeWidth="3"
+                        strokeWidth={3}
                         d="M6 18L18 6M6 6l12 12"
-                      ></path>
+                      />
                     </svg>
                   </motion.button>
+                </div>
+                <div className="mt-4 text-sm text-gray-600">
+                  {formatFileSize(selectedImage.size)}
                 </div>
               </motion.div>
             ) : (
               <motion.div
-                key="dropzone"
+                key="upload-prompt"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="py-8 px-4 flex flex-col items-center"
               >
-                <div className="flex flex-col items-center justify-center">
+                <motion.div
+                  className={`w-16 h-16 mb-4 rounded-full ${
+                    isDragActive ? "bg-blue-100" : "bg-gray-50"
+                  } flex items-center justify-center transition-colors duration-300 border-2 ${
+                    isDragActive ? "border-blue-300" : "border-gray-200"
+                  }`}
+                  animate={{
+                    scale: isDragActive ? 1.05 : 1,
+                    rotate: isDragActive ? [0, -5, 5, -5, 5, 0] : 0,
+                  }}
+                  transition={{
+                    duration: 0.3,
+                    rotate: { duration: 0.5, ease: "easeInOut" },
+                  }}
+                >
                   <svg
-                    className="mx-auto h-12 w-12 text-gray-400"
-                    stroke="currentColor"
+                    className={`w-7 h-7 ${
+                      isDragActive ? "text-blue-600" : "text-gray-500"
+                    } transition-all duration-300`}
                     fill="none"
-                    viewBox="0 0 48 48"
-                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
                   >
                     <path
-                      d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-                      strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                     />
                   </svg>
-                  <div className="mt-4 flex text-gray-600">
-                    <p className="text-center text-sm">
-                      <span className="font-medium text-blue-600 hover:text-blue-500">
-                        Click to browse
-                      </span>{" "}
-                      or drag and drop a file to upload
-                    </p>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Files are stored in the decentralized storage network
-                  </p>
-                </div>
+                </motion.div>
+                <Typography
+                  variant="body"
+                  className={`${
+                    isUploadDisabled()
+                      ? "text-gray-500"
+                      : isDragActive
+                      ? "text-blue-600 font-medium"
+                      : "text-gray-700"
+                  } transition-colors duration-300 mb-1`}
+                >
+                  {isDragActive
+                    ? "Drop image here"
+                    : "Drag and drop an image, or click to select"}
+                </Typography>
+                <Typography variant="small" className="text-gray-400">
+                  Supports JPG, PNG, GIF, WebP, and other image formats
+                </Typography>
+                {fileRejections.length > 0 && (
+                  <Typography variant="small" className="text-red-500 mt-2">
+                    Only image files are allowed
+                  </Typography>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

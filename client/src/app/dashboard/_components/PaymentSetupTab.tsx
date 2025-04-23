@@ -80,7 +80,11 @@ export const PaymentSetupTab = () => {
       setRateAllowance(paymentStatus.operatorApproval?.rateAllowance || "");
       setLockupAllowance(paymentStatus.operatorApproval?.lockupAllowance || "");
     }
-  }, [paymentStatus.isOperatorApproved, paymentStatus.operatorApproval]);
+  }, [
+    paymentStatus.isOperatorApproved,
+    paymentStatus.operatorApproval,
+    isUpdatingAllowances,
+  ]);
 
   // Determine the current step based on payment status
   useEffect(() => {

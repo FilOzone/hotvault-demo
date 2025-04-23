@@ -346,6 +346,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         });
       } catch (error) {
         // If we can't get the account status, it likely means the user hasn't interacted with the contract yet
+        console.error("Error fetching account status:", error);
         console.log("User hasn't interacted with the Payments contract yet");
         setPaymentStatus((prev) => ({
           ...prev,

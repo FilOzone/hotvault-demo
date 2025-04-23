@@ -128,7 +128,7 @@ export const useUpload = (onSuccess?: () => void) => {
         throw error;
       }
     },
-    [setUploadProgress]
+    [setUploadProgress, clearUploadProgress, onSuccess, handleCancelUpload]
   );
 
   const pollStatus = useCallback(

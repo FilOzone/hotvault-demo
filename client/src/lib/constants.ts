@@ -16,3 +16,24 @@ export const PDP_SERVICE_ADDRESS =
 // Payment constants
 export const MINIMUM_USDFC_BALANCE = "10"; // Minimum required balance in USDFC
 export const PROOF_SET_FEE = "0.1";
+
+// Upload status colors
+export const statusColors = {
+  uploading: "bg-blue-100 text-blue-800",
+  processing: "bg-blue-100 text-blue-800",
+  complete: "bg-green-100 text-green-800",
+  error: "bg-red-100 text-red-800",
+  cancelled: "bg-gray-100 text-gray-800",
+} as const;
+
+// Upload status text mapping
+export const getStatusText = (status: string): string => {
+  const statusMap: Record<string, string> = {
+    uploading: "Uploading...",
+    processing: "Processing...",
+    complete: "Upload Complete",
+    error: "Upload Failed",
+    cancelled: "Upload Cancelled",
+  };
+  return statusMap[status] || status;
+};
