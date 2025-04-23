@@ -5,7 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Plus, Loader, Shield, ChevronDown, Wallet } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
-import { toast } from "react-hot-toast";
+import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
 
 // Add a custom event name for root removal
@@ -135,7 +135,7 @@ export const PaymentBalanceHeader = () => {
         >
           <div className="flex items-center gap-2">
             <Wallet className="w-4 h-4 text-gray-500" />
-            <span>{formatCurrency(paymentStatus.accountFunds)} USDFC</span>
+            <span>{formatCurrency(paymentStatus.usdcBalance)} USDFC</span>
           </div>
           <ChevronDown className="w-4 h-4 text-gray-500" />
         </button>
@@ -163,11 +163,9 @@ export const PaymentBalanceHeader = () => {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Locked Funds:</span>
-                  <div className="text-right">
-                    <span className="font-medium">
-                      {formatCurrency(paymentStatus.lockedFunds.current)} USDFC
-                    </span>
-                  </div>
+                  <span className="font-medium">
+                    {formatCurrency(paymentStatus.lockedFunds.current)} USDFC
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">
@@ -195,7 +193,7 @@ export const PaymentBalanceHeader = () => {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Rate Usage:</span>
-                    <span>
+                    <span className="font-mono text-xs">
                       {formatCurrency(paymentStatus.operatorApproval.rateUsage)}
                       /
                       {formatCurrency(
@@ -206,7 +204,7 @@ export const PaymentBalanceHeader = () => {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Lockup Usage:</span>
-                    <span>
+                    <span className="font-mono text-xs">
                       {formatCurrency(
                         paymentStatus.operatorApproval.lockupUsage
                       )}

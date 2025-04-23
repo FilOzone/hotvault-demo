@@ -1,14 +1,7 @@
 import { useState, useEffect } from "react";
 import { usePayment } from "@/contexts/PaymentContext";
 import { TokenBalanceCard } from "./TokenBalanceCard";
-import {
-  Wallet,
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  Info,
-  ShieldCheck,
-} from "lucide-react";
+import { Wallet, CheckCircle, Loader, Info, AlertTriangle } from "lucide-react";
 import * as Constants from "@/lib/constants";
 import { toast } from "react-hot-toast";
 import { TransactionHistory } from "./TransactionHistory";
@@ -20,6 +13,42 @@ enum PaymentStep {
   CREATE_PROOF_SET = 3,
   COMPLETE = 4,
 }
+
+const StepIcon = ({
+  completed,
+  active,
+  number,
+}: {
+  completed: boolean;
+  active: boolean;
+  number: number;
+}) => {
+  if (completed) {
+    return (
+      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+        <CheckCircle className="w-5 h-5 text-green-600" />
+      </div>
+    );
+  }
+  return (
+    <div
+      className={`w-8 h-8 rounded-full ${
+        active ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"
+      } flex items-center justify-center`}
+    >
+      <span className="text-sm font-semibold">{number}</span>
+    </div>
+  );
+};
+
+// First, let's add a helper function at the top of the file to format large numbers
+const formatLargeNumber = (num: string) => {
+  // Remove trailing zeros after decimal
+  const trimmed = num.replace(/\.?0+$/, "");
+  if (trimmed.length <= 12) return trimmed;
+
+  return `${trimmed.slice(0, 8)}...${trimmed.slice(-4)}`;
+};
 
 export const PaymentSetupTab = () => {
   const {
@@ -43,6 +72,7 @@ export const PaymentSetupTab = () => {
   const [rateAllowance, setRateAllowance] = useState("");
   const [lockupAllowance, setLockupAllowance] = useState("");
   const [isUpdatingAllowances, setIsUpdatingAllowances] = useState(false);
+  const [isProofSetClicked, setIsProofSetClicked] = useState(false);
 
   // Load current allowances when operator is approved
   useEffect(() => {
@@ -57,7 +87,7 @@ export const PaymentSetupTab = () => {
     if (paymentStatus.proofSetReady) {
       setCurrentStep(PaymentStep.COMPLETE);
     } else if (paymentStatus.isCreatingProofSet) {
-      setCurrentStep(PaymentStep.COMPLETE);
+      setCurrentStep(PaymentStep.CREATE_PROOF_SET);
     } else if (paymentStatus.isOperatorApproved) {
       setCurrentStep(PaymentStep.CREATE_PROOF_SET);
     } else if (paymentStatus.isDeposited) {
@@ -174,100 +204,93 @@ export const PaymentSetupTab = () => {
 
     return (
       <div
-        className={`w-full p-4 rounded-lg transition-all ${
-          isActive
-            ? "bg-blue-50 border border-blue-200"
-            : isCompleted
-            ? "bg-green-50 border border-green-200"
-            : "bg-gray-50 border border-gray-200 opacity-60"
+        className={`w-full p-6 rounded-2xl transition-all ${
+          isCompleted
+            ? "bg-green-50"
+            : isActive
+            ? "bg-white border border-gray-200"
+            : "bg-gray-50"
         }`}
       >
-        <div className="flex items-center gap-3 mb-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              isActive
-                ? "bg-blue-100 text-blue-600"
-                : isCompleted
-                ? "bg-green-100 text-green-600"
-                : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            {isCompleted ? (
-              <CheckCircle size={18} />
-            ) : (
-              <span className="text-sm font-semibold">1</span>
+        <div className="flex items-start gap-4">
+          <StepIcon completed={isCompleted} active={isActive} number={1} />
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3
+                  className={`font-semibold text-lg ${
+                    isCompleted
+                      ? "text-green-700"
+                      : isActive
+                      ? "text-gray-900"
+                      : "text-gray-600"
+                  }`}
+                >
+                  Approve USDFC Token
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {isCompleted
+                    ? "Completed"
+                    : "Allow the Payments contract to use your USDFC"}
+                </p>
+              </div>
+              {isCompleted && (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                  Completed
+                </span>
+              )}
+            </div>
+
+            {isActive && (
+              <div className="mt-4 space-y-4">
+                <div className="bg-blue-50 rounded-lg p-4 flex items-start gap-3">
+                  <Info className="w-5 h-5 text-blue-500 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-900 font-medium">
+                      Set Token Allowance
+                    </p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Specify how many USDFC tokens the Payments contract can
+                      transfer on your behalf.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <input
+                    type="number"
+                    value={tokenAllowance}
+                    onChange={(e) => setTokenAllowance(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Allowance amount"
+                    min={Constants.PROOF_SET_FEE}
+                    step="0.01"
+                    disabled={isProcessing}
+                  />
+                  <div className="flex items-center justify-between text-sm text-gray-500">
+                    <span>
+                      Minimum required: {Constants.PROOF_SET_FEE} USDFC
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleApproveToken}
+                    disabled={!paymentStatus.hasMinimumBalance || isProcessing}
+                    className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader className="w-4 h-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      "Approve Token"
+                    )}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
-          <div className="flex-1">
-            <p
-              className={`font-medium ${
-                isActive
-                  ? "text-blue-700"
-                  : isCompleted
-                  ? "text-green-700"
-                  : "text-gray-600"
-              }`}
-            >
-              Approve USDFC Token
-            </p>
-            <p className="text-xs text-gray-500">
-              {isActive && isProcessing ? (
-                <span className="flex items-center text-blue-600">
-                  <Loader size={12} className="animate-spin mr-1" />{" "}
-                  Processing...
-                </span>
-              ) : isActive ? (
-                "Allow the Payments contract to use your USDFC"
-              ) : isCompleted ? (
-                "Completed"
-              ) : (
-                "Pending"
-              )}
-            </p>
-          </div>
         </div>
-
-        {isActive && (
-          <div className="mt-3 bg-white p-3 rounded border border-blue-100">
-            <div className="flex items-center mb-2">
-              <Info size={14} className="text-blue-500 mr-2" />
-              <span className="text-xs text-blue-700">
-                Specify how many USDFC tokens the Payments contract can transfer
-                on your behalf
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                value={tokenAllowance}
-                onChange={(e) => setTokenAllowance(e.target.value)}
-                className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="Allowance amount"
-                disabled={isProcessing}
-                min={Constants.PROOF_SET_FEE}
-                step="0.01"
-              />
-              <span className="text-sm text-gray-500">USDFC</span>
-              <button
-                onClick={handleApproveToken}
-                disabled={!paymentStatus.hasMinimumBalance || isProcessing}
-                className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 flex items-center"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader size={14} className="animate-spin mr-1" />
-                    Processing...
-                  </>
-                ) : (
-                  "Approve"
-                )}
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-gray-500">
-              Minimum required: {Constants.PROOF_SET_FEE} USDFC
-            </p>
-          </div>
-        )}
       </div>
     );
   };
@@ -279,100 +302,93 @@ export const PaymentSetupTab = () => {
 
     return (
       <div
-        className={`w-full p-4 rounded-lg transition-all ${
-          isActive
-            ? "bg-blue-50 border border-blue-200"
-            : isCompleted
-            ? "bg-green-50 border border-green-200"
-            : "bg-gray-50 border border-gray-200 opacity-60"
+        className={`w-full p-6 rounded-2xl transition-all ${
+          isCompleted
+            ? "bg-green-50"
+            : isActive
+            ? "bg-white border border-gray-200"
+            : "bg-gray-50"
         }`}
       >
-        <div className="flex items-center gap-3 mb-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              isActive
-                ? "bg-blue-100 text-blue-600"
-                : isCompleted
-                ? "bg-green-100 text-green-600"
-                : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            {isCompleted ? (
-              <CheckCircle size={18} />
-            ) : (
-              <span className="text-sm font-semibold">2</span>
+        <div className="flex items-start gap-4">
+          <StepIcon completed={isCompleted} active={isActive} number={2} />
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3
+                  className={`font-semibold text-lg ${
+                    isCompleted
+                      ? "text-green-700"
+                      : isActive
+                      ? "text-gray-900"
+                      : "text-gray-600"
+                  }`}
+                >
+                  Deposit USDFC
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {isCompleted
+                    ? "Completed"
+                    : "Deposit funds into the Payments contract"}
+                </p>
+              </div>
+              {isCompleted && (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                  Completed
+                </span>
+              )}
+            </div>
+
+            {isActive && (
+              <div className="mt-4 space-y-4">
+                <div className="bg-blue-50 rounded-lg p-4 flex items-start gap-3">
+                  <Info className="w-5 h-5 text-blue-500 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-900 font-medium">
+                      Deposit Funds
+                    </p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Deposit USDFC tokens to fund your proofs. A minimum amount
+                      is required for proof set creation.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <input
+                    type="number"
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Deposit amount"
+                    min={Constants.PROOF_SET_FEE}
+                    step="0.01"
+                    disabled={isProcessing}
+                  />
+                  <div className="flex items-center justify-between text-sm text-gray-500">
+                    <span>
+                      Minimum required: {Constants.PROOF_SET_FEE} USDFC
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleDeposit}
+                    disabled={!paymentStatus.hasMinimumBalance || isProcessing}
+                    className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader className="w-4 h-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      "Deposit Funds"
+                    )}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
-          <div className="flex-1">
-            <p
-              className={`font-medium ${
-                isActive
-                  ? "text-blue-700"
-                  : isCompleted
-                  ? "text-green-700"
-                  : "text-gray-600"
-              }`}
-            >
-              Deposit USDFC
-            </p>
-            <p className="text-xs text-gray-500">
-              {isActive && isProcessing ? (
-                <span className="flex items-center text-blue-600">
-                  <Loader size={12} className="animate-spin mr-1" />{" "}
-                  Processing...
-                </span>
-              ) : isActive ? (
-                "Deposit funds into the Payments contract"
-              ) : isCompleted ? (
-                "Completed"
-              ) : (
-                "Pending"
-              )}
-            </p>
-          </div>
         </div>
-
-        {isActive && (
-          <div className="mt-3 bg-white p-3 rounded border border-blue-100">
-            <div className="flex items-center mb-2">
-              <Info size={14} className="text-blue-500 mr-2" />
-              <span className="text-xs text-blue-700">
-                Deposit USDFC tokens to fund your proofs
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
-                className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="Deposit amount"
-                disabled={isProcessing}
-                min={Constants.PROOF_SET_FEE}
-                step="0.01"
-              />
-              <span className="text-sm text-gray-500">USDFC</span>
-              <button
-                onClick={handleDeposit}
-                disabled={!paymentStatus.hasMinimumBalance || isProcessing}
-                className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 flex items-center"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader size={14} className="animate-spin mr-1" />
-                    Processing...
-                  </>
-                ) : (
-                  "Deposit"
-                )}
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-gray-500">
-              Minimum required: {Constants.PROOF_SET_FEE} USDFC for proof set
-              creation
-            </p>
-          </div>
-        )}
       </div>
     );
   };
@@ -381,220 +397,200 @@ export const PaymentSetupTab = () => {
   const renderOperatorApprovalStep = () => {
     const isActive = currentStep === PaymentStep.APPROVE_OPERATOR;
     const isCompleted = currentStep > PaymentStep.APPROVE_OPERATOR;
+    const isUpdating = isUpdatingAllowances;
 
     return (
       <div
-        className={`w-full p-4 rounded-lg transition-all ${
-          isActive || isUpdatingAllowances
-            ? "bg-blue-50 border border-blue-200"
-            : isCompleted
-            ? "bg-green-50 border border-green-200"
-            : "bg-gray-50 border border-gray-200 opacity-60"
+        className={`w-full p-6 rounded-2xl transition-all ${
+          isCompleted && !isUpdating
+            ? "bg-green-50"
+            : isActive || isUpdating
+            ? "bg-white border border-gray-200"
+            : "bg-gray-50"
         }`}
       >
-        <div className="flex items-center gap-3 mb-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              isActive || isUpdatingAllowances
-                ? "bg-blue-100 text-blue-600"
-                : isCompleted
-                ? "bg-green-100 text-green-600"
-                : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            {isCompleted && !isUpdatingAllowances ? (
-              <CheckCircle size={18} />
-            ) : (
-              <span className="text-sm font-semibold">3</span>
-            )}
-          </div>
+        <div className="flex items-start gap-4">
+          <StepIcon
+            completed={isCompleted && !isUpdating}
+            active={isActive || isUpdating}
+            number={3}
+          />
           <div className="flex-1">
             <div className="flex items-center justify-between">
-              <p
-                className={`font-medium ${
-                  isActive || isUpdatingAllowances
-                    ? "text-blue-700"
-                    : isCompleted
-                    ? "text-green-700"
-                    : "text-gray-600"
-                }`}
-              >
-                PDP Service Operator Settings
-              </p>
+              <div>
+                <h3
+                  className={`font-semibold text-lg ${
+                    isCompleted && !isUpdating
+                      ? "text-green-700"
+                      : isActive || isUpdating
+                      ? "text-gray-900"
+                      : "text-gray-600"
+                  }`}
+                >
+                  PDP Service Operator Settings
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {isCompleted && !isUpdating
+                    ? "Completed"
+                    : "Configure payment rail settings"}
+                </p>
+              </div>
+              {isCompleted && !isUpdating ? (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                  Completed
+                </span>
+              ) : null}
             </div>
-            <p className="text-xs text-gray-500">
-              {isActive && isProcessing ? (
-                <span className="flex items-center text-blue-600">
-                  <Loader size={12} className="animate-spin mr-1" />{" "}
-                  Processing...
-                </span>
-              ) : isUpdatingAllowances ? (
-                "Update payment rail settings"
-              ) : isActive ? (
-                "Allow the PDP Service to create payment rails"
-              ) : isCompleted ? (
-                <span className="flex items-center justify-between">
-                  <span>Current Settings:</span>
-                  <span>
-                    Rate: {paymentStatus.operatorApproval?.rateAllowance || "0"}{" "}
-                    USDFC/epoch, Lockup:{" "}
-                    {paymentStatus.operatorApproval?.lockupAllowance || "0"}{" "}
-                    USDFC
-                  </span>
-                </span>
-              ) : (
-                "Pending"
-              )}
-            </p>
+
+            {isCompleted && !isUpdating && !isActive && (
+              <div className="mt-4 bg-white rounded-lg border border-gray-200 p-4">
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">
+                        Rate Allowance
+                      </span>
+                      <span className="text-xs text-gray-500">USDFC/epoch</span>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <div className="font-mono text-sm break-all">
+                        {formatLargeNumber(
+                          paymentStatus.operatorApproval?.rateAllowance || "0"
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">
+                        Lockup Allowance
+                      </span>
+                      <span className="text-xs text-gray-500">USDFC</span>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <div className="font-mono text-sm break-all">
+                        {formatLargeNumber(
+                          paymentStatus.operatorApproval?.lockupAllowance || "0"
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setIsUpdatingAllowances(true)}
+                    className="mt-2 w-full px-4 py-2.5 bg-white border border-gray-200 text-sm font-medium rounded-lg text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="text-gray-500"
+                    >
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                    Update Settings
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {(isActive || isUpdating) && (
+              <div className="mt-4 space-y-4">
+                <div className="bg-blue-50 rounded-lg p-4 flex items-start gap-3">
+                  <Info className="w-5 h-5 text-blue-500 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-900 font-medium">
+                      Configure Payment Settings
+                    </p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Set allowances for the PDP Service operator to manage
+                      payments on your behalf.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Rate Allowance (USDFC/epoch)
+                    </label>
+                    <input
+                      type="number"
+                      value={rateAllowance}
+                      onChange={(e) => setRateAllowance(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      placeholder="Enter rate allowance"
+                      min="0.01"
+                      step="0.01"
+                      disabled={isProcessing}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Lockup Allowance (USDFC)
+                    </label>
+                    <input
+                      type="number"
+                      value={lockupAllowance}
+                      onChange={(e) => setLockupAllowance(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      placeholder="Enter lockup allowance"
+                      min="0.01"
+                      step="0.01"
+                      disabled={isProcessing}
+                    />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleApproveOperator}
+                      disabled={isProcessing}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {isProcessing ? (
+                        <>
+                          <Loader className="w-4 h-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : isUpdating ? (
+                        "Update Settings"
+                      ) : (
+                        "Approve Operator"
+                      )}
+                    </button>
+                    {isUpdating && (
+                      <button
+                        onClick={() => {
+                          setIsUpdatingAllowances(false);
+                          setRateAllowance(
+                            paymentStatus.operatorApproval?.rateAllowance || ""
+                          );
+                          setLockupAllowance(
+                            paymentStatus.operatorApproval?.lockupAllowance ||
+                              ""
+                          );
+                        }}
+                        className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"
+                        disabled={isProcessing}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Show current settings and update button when completed */}
-        {isCompleted && !isUpdatingAllowances && !isActive && (
-          <div className="mt-3 bg-white p-3 rounded border border-green-100">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-sm text-gray-600">Current Allowances</p>
-                <div className="mt-1 space-y-1">
-                  <p className="text-xs text-gray-500">
-                    Rate:{" "}
-                    <span className="font-medium text-gray-700">
-                      {paymentStatus.operatorApproval?.rateAllowance || "0"}{" "}
-                      USDFC/epoch
-                    </span>
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Lockup:{" "}
-                    <span className="font-medium text-gray-700">
-                      {paymentStatus.operatorApproval?.lockupAllowance || "0"}{" "}
-                      USDFC
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsUpdatingAllowances(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 20V10" />
-                  <path d="M18 14l-6-6-6 6" />
-                </svg>
-                Update Allowances
-              </button>
-            </div>
-          </div>
-        )}
-
-        {(isActive || isUpdatingAllowances) && (
-          <div className="mt-3 bg-white p-3 rounded border border-blue-100">
-            <div className="flex items-center mb-3">
-              <Info size={14} className="text-blue-500 mr-2" />
-              <span className="text-xs text-blue-700">
-                Set allowances for the PDP Service operator
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">
-                  Rate Allowance (USDFC/epoch){" "}
-                  <span className="text-red-500">*</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={rateAllowance}
-                    onChange={(e) => setRateAllowance(e.target.value)}
-                    className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Enter rate allowance"
-                    disabled={isProcessing}
-                    min="0.01"
-                    step="0.01"
-                    required
-                  />
-                  <span className="text-sm text-gray-500">USDFC</span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Maximum payment rate per epoch (block)
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">
-                  Lockup Allowance (USDFC){" "}
-                  <span className="text-red-500">*</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={lockupAllowance}
-                    onChange={(e) => setLockupAllowance(e.target.value)}
-                    className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    placeholder="Enter lockup allowance"
-                    disabled={isProcessing}
-                    min="0.01"
-                    step="0.01"
-                    required
-                  />
-                  <span className="text-sm text-gray-500">USDFC</span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Maximum amount that can be locked for future payments
-                </p>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={handleApproveOperator}
-                  disabled={!paymentStatus.hasMinimumBalance || isProcessing}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center"
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader size={14} className="animate-spin mr-1" />
-                      Processing...
-                    </>
-                  ) : (
-                    <span className="flex items-center">
-                      <ShieldCheck size={14} className="mr-1.5" />
-                      {paymentStatus.isOperatorApproved
-                        ? "Update Settings"
-                        : "Approve Operator"}
-                    </span>
-                  )}
-                </button>
-                {isUpdatingAllowances && (
-                  <button
-                    onClick={() => {
-                      setIsUpdatingAllowances(false);
-                      setRateAllowance(
-                        paymentStatus.operatorApproval?.rateAllowance || ""
-                      );
-                      setLockupAllowance(
-                        paymentStatus.operatorApproval?.lockupAllowance || ""
-                      );
-                    }}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded text-sm font-medium hover:bg-gray-50 disabled:bg-gray-100"
-                    disabled={isProcessing}
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -606,100 +602,101 @@ export const PaymentSetupTab = () => {
     const isProcessingCreation =
       paymentStatus.isCreatingProofSet && !isTrulyCompleted;
 
+    const handleCreateProofSet = async () => {
+      setIsProofSetClicked(true);
+      await initiateProofSetCreation();
+    };
+
     return (
       <div
-        className={`w-full p-4 rounded-lg transition-all ${
-          isActive || isProcessingCreation
-            ? "bg-blue-50 border border-blue-200"
-            : isTrulyCompleted
-            ? "bg-green-50 border border-green-200"
-            : "bg-gray-50 border border-gray-200 opacity-60"
+        className={`w-full p-6 rounded-2xl transition-all ${
+          isTrulyCompleted
+            ? "bg-green-50"
+            : isActive || isProcessingCreation
+            ? "bg-white border border-gray-200"
+            : "bg-gray-50"
         }`}
       >
-        <div className="flex items-center gap-3 mb-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              isProcessingCreation
-                ? "bg-blue-100 text-blue-600"
-                : isActive
-                ? "bg-blue-100 text-blue-600"
-                : isTrulyCompleted
-                ? "bg-green-100 text-green-600"
-                : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            {isTrulyCompleted ? (
-              <CheckCircle size={18} />
-            ) : isProcessingCreation ? (
-              <Loader size={18} className="animate-spin" />
-            ) : (
-              <span className="text-sm font-semibold">4</span>
-            )}
-          </div>
+        <div className="flex items-start gap-4">
+          <StepIcon
+            completed={isTrulyCompleted}
+            active={isActive || isProcessingCreation}
+            number={4}
+          />
           <div className="flex-1">
-            <p
-              className={`font-medium ${
-                isActive || isProcessingCreation
-                  ? "text-blue-700"
-                  : isTrulyCompleted
-                  ? "text-green-700"
-                  : "text-gray-600"
-              }`}
-            >
-              Create Proof Set
-            </p>
-            <p className="text-xs text-gray-500">
-              {isProcessingCreation ? (
-                <span className="flex items-center text-blue-600">
-                  <Loader size={12} className="animate-spin mr-1" />
-                  Creation in progress... (This may take several minutes)
+            <div className="flex items-center justify-between">
+              <div>
+                <h3
+                  className={`font-semibold text-lg ${
+                    isTrulyCompleted
+                      ? "text-green-700"
+                      : isActive || isProcessingCreation
+                      ? "text-gray-900"
+                      : "text-gray-600"
+                  }`}
+                >
+                  Create Proof Set
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {isTrulyCompleted
+                    ? "Completed"
+                    : isProcessingCreation || isProofSetClicked
+                    ? "Creation in progress..."
+                    : "Create your proof set on the network"}
+                </p>
+              </div>
+              {isTrulyCompleted && (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                  Completed
                 </span>
-              ) : isActive ? (
-                "Final step: Initiate proof set creation on the network"
-              ) : isTrulyCompleted ? (
-                "Completed"
-              ) : (
-                "Pending"
               )}
-            </p>
-          </div>
-        </div>
-
-        {isActive && !isProcessingCreation && (
-          <div className="mt-3 bg-white p-3 rounded border border-blue-100">
-            <div className="flex items-center mb-3">
-              <Info size={14} className="text-blue-500 mr-2" />
-              <span className="text-xs text-blue-700">
-                This action will register your unique proof set with the Hot
-                Vault service. It may take a few minutes.
-              </span>
             </div>
 
-            <button
-              onClick={initiateProofSetCreation}
-              disabled={isProcessingCreation || paymentStatus.isLoading}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center"
-            >
-              {isProcessingCreation ? (
-                <>
-                  <Loader size={14} className="animate-spin mr-1" />
-                  Processing...
-                </>
-              ) : (
-                <span className="flex items-center">
-                  <ShieldCheck size={14} className="mr-1.5" />
+            {isActive && !isProcessingCreation && !isProofSetClicked && (
+              <div className="mt-4 space-y-4">
+                <div className="bg-blue-50 rounded-lg p-4 flex items-start gap-3">
+                  <Info className="w-5 h-5 text-blue-500 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-900 font-medium">
+                      Create Your Proof Set
+                    </p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      This will register your unique proof set with the Hot
+                      Vault service. This process may take several minutes.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCreateProofSet}
+                  disabled={isProcessingCreation || isProofSetClicked}
+                  className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
                   Create Proof Set
-                </span>
-              )}
-            </button>
-            {paymentStatus.error &&
-              paymentStatus.error.includes("already exists") && (
-                <p className="mt-2 text-xs text-amber-600">
-                  Proof set already exists. Refreshing status...
-                </p>
-              )}
+                </button>
+              </div>
+            )}
+
+            {(isProcessingCreation || isProofSetClicked) && (
+              <div className="mt-4 bg-blue-50 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin">
+                    <Loader className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-blue-900">
+                      Creating Proof Set
+                    </p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Please wait while we set up your proof set. This typically
+                      takes 5-10 minutes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     );
   };
@@ -708,87 +705,49 @@ export const PaymentSetupTab = () => {
   const renderCompletionStep = () => {
     const isCompleted =
       paymentStatus.proofSetReady && currentStep === PaymentStep.COMPLETE;
-    const isCreating =
-      paymentStatus.isCreatingProofSet && currentStep === PaymentStep.COMPLETE;
 
     return (
       <div
-        className={`w-full p-4 rounded-lg transition-all ${
-          isCompleted
-            ? "bg-green-50 border border-green-200"
-            : isCreating
-            ? "bg-blue-50 border border-blue-200"
-            : "bg-gray-50 border border-gray-200 opacity-60"
+        className={`w-full p-6 rounded-2xl transition-all ${
+          isCompleted ? "bg-green-50" : "bg-gray-50"
         }`}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              isCompleted
-                ? "bg-green-100 text-green-600"
-                : isCreating
-                ? "bg-blue-100 text-blue-600"
-                : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            {isCompleted ? (
-              <CheckCircle size={18} />
-            ) : isCreating ? (
-              <Loader size={18} className="animate-spin" />
-            ) : (
-              <span className="text-sm font-semibold">5</span>
+        <div className="flex items-start gap-4">
+          <StepIcon completed={isCompleted} active={false} number={5} />
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3
+                  className={`font-semibold text-lg ${
+                    isCompleted ? "text-green-700" : "text-gray-600"
+                  }`}
+                >
+                  Setup Complete
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {isCompleted ? "All steps completed" : "Pending completion"}
+                </p>
+              </div>
+            </div>
+
+            {isCompleted && (
+              <div className="mt-4 bg-white rounded-lg p-4 border border-green-100">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="text-base font-medium text-green-900">
+                      Payment setup complete!
+                    </p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Your payment setup is complete. You can now use all
+                      features of the Hot Vault service.
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
-          <div>
-            <p
-              className={`font-medium ${
-                isCompleted
-                  ? "text-green-700"
-                  : isCreating
-                  ? "text-blue-700"
-                  : "text-gray-600"
-              }`}
-            >
-              Setup Complete
-            </p>
-            <p className="text-xs text-gray-500">
-              {isCompleted
-                ? "All steps completed"
-                : isCreating
-                ? "Creating proof set..."
-                : "Pending"}
-            </p>
-          </div>
         </div>
-
-        {isCompleted && (
-          <div className="mt-4 p-4 bg-green-50 rounded-lg text-green-700 flex items-start">
-            <CheckCircle size={20} className="mr-3 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-semibold">Payment setup complete!</p>
-              <p className="text-sm mt-1">
-                Your payment setup is complete. You can now use all features of
-                the Hot Vault service.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {isCreating && (
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg text-blue-700 flex items-start">
-            <Loader
-              size={20}
-              className="animate-spin mr-3 mt-0.5 flex-shrink-0"
-            />
-            <div>
-              <p className="font-semibold">Creating your proof set...</p>
-              <p className="text-sm mt-1">
-                This process typically takes 5-10 minutes. Please wait while we
-                set up your proof set on the blockchain.
-              </p>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -874,7 +833,7 @@ export const PaymentSetupTab = () => {
 
         {/* Right Column - Setup Steps */}
         <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <div className="p-5 border-b border-gray-100">
               <h3 className="text-lg font-medium text-gray-900">
                 Payment Setup Steps
@@ -893,7 +852,7 @@ export const PaymentSetupTab = () => {
 
               {!paymentStatus.hasMinimumBalance && (
                 <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                  <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
                   <div>
                     <p className="font-medium text-amber-800">
                       Insufficient USDFC Balance
@@ -909,7 +868,7 @@ export const PaymentSetupTab = () => {
 
               {paymentStatus.error && (
                 <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-100 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                  <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
                   <div>
                     <p className="font-medium text-red-800">Error</p>
                     <p className="text-sm text-red-700 mt-1">

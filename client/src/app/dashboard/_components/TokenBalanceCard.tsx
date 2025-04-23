@@ -140,77 +140,248 @@ export const TokenBalanceCard = () => {
 
   return (
     <div className="bg-white rounded-lg border border-gray-200">
-      {/* Header */}
-      <div className="flex items-center justify-between p-3">
-        <div className="flex items-center gap-2">
-          <Wallet className="w-5 h-5 text-blue-500" />
-          <h3 className="text-xl font-medium">USDFC Balance</h3>
+      {/* Header Section */}
+      <div className="p-6">
+        {/* Title */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="bg-blue-50 p-2.5 rounded-xl">
+            <Wallet className="w-6 h-6 text-blue-500" />
+          </div>
+          <h3 className="text-2xl font-semibold">USDFC Balance</h3>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => {
-              setShowWithdraw(true);
-              setShowSetAllowance(false);
-              setShowAddFunds(false);
-            }}
-            className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-600 transition-colors"
-          >
-            <ArrowDownLeft className="w-4 h-4" />
-            Withdraw
-          </button>
-          <button
-            onClick={() => {
-              setShowSetAllowance(true);
-              setShowAddFunds(false);
-              setShowWithdraw(false);
-            }}
-            className="flex items-center gap-1.5 text-sm text-purple-500 hover:text-purple-600 transition-colors"
-          >
-            <Shield className="w-4 h-4" />
-            Set Allowance
-          </button>
-          <button
-            onClick={() => {
-              setShowAddFunds(true);
-              setShowSetAllowance(false);
-              setShowWithdraw(false);
-            }}
-            className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Funds
-          </button>
+
+        {/* Action Buttons and Forms Section */}
+        <div className="space-y-4">
+          {/* Action Buttons */}
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                setShowWithdraw(true);
+                setShowSetAllowance(false);
+                setShowAddFunds(false);
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-[15px] font-medium text-red-600 hover:text-red-700 bg-red-50/50 hover:bg-red-50 rounded-lg transition-colors"
+            >
+              <ArrowDownLeft className="w-5 h-5" strokeWidth={2} />
+              Withdraw
+            </button>
+            <button
+              onClick={() => {
+                setShowSetAllowance(true);
+                setShowAddFunds(false);
+                setShowWithdraw(false);
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-[15px] font-medium text-purple-600 hover:text-purple-700 bg-purple-50/50 hover:bg-purple-50 rounded-lg transition-colors"
+            >
+              <Shield className="w-5 h-5" strokeWidth={2} />
+              Set Allowance
+            </button>
+            <button
+              onClick={() => {
+                setShowAddFunds(true);
+                setShowSetAllowance(false);
+                setShowWithdraw(false);
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-[15px] font-medium text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 rounded-lg transition-colors"
+            >
+              <Plus className="w-5 h-5" strokeWidth={2} />
+              Add Funds
+            </button>
+          </div>
+
+          {/* Forms */}
+          {showAddFunds && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100 animate-fadeIn">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-blue-900">Add Funds</h4>
+                <button
+                  onClick={() => setShowAddFunds(false)}
+                  className="text-blue-500 hover:text-blue-600 p-1 rounded-full hover:bg-blue-100/50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <input
+                  type="number"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="w-full rounded-lg border border-blue-200 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                  placeholder="Amount to deposit"
+                  min="0.01"
+                  step="0.01"
+                  disabled={isProcessing}
+                />
+                <button
+                  onClick={handleAddFunds}
+                  disabled={isProcessing || !depositAmount}
+                  className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Deposit"
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showSetAllowance && (
+            <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-100 animate-fadeIn">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-purple-900">
+                  Set Allowance
+                </h4>
+                <button
+                  onClick={() => setShowSetAllowance(false)}
+                  className="text-purple-500 hover:text-purple-600 p-1 rounded-full hover:bg-purple-100/50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <input
+                    type="number"
+                    value={allowanceAmount}
+                    onChange={(e) => setAllowanceAmount(e.target.value)}
+                    className="w-full rounded-lg border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-white"
+                    placeholder="Allowance amount"
+                    min={Constants.PROOF_SET_FEE}
+                    step="0.01"
+                    disabled={isProcessing}
+                  />
+                  <p className="mt-1.5 text-xs text-purple-600">
+                    Minimum: {Constants.PROOF_SET_FEE} USDFC
+                  </p>
+                </div>
+                <button
+                  onClick={handleSetAllowance}
+                  disabled={isProcessing || !allowanceAmount}
+                  className="w-full px-3 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:bg-purple-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Approve"
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showWithdraw && (
+            <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-100 animate-fadeIn">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-red-900">
+                  Withdraw Funds
+                </h4>
+                <button
+                  onClick={() => setShowWithdraw(false)}
+                  className="text-red-500 hover:text-red-600 p-1 rounded-full hover:bg-red-100/50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <input
+                    type="number"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    className="w-full rounded-lg border border-red-200 px-3 py-2 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500 bg-white"
+                    placeholder="Amount to withdraw"
+                    min="0.01"
+                    step="0.01"
+                    disabled={isProcessing}
+                  />
+                  <p className="mt-1.5 text-xs text-red-600">
+                    Available:{" "}
+                    {formatCurrency(
+                      (
+                        parseFloat(paymentStatus.accountFunds) -
+                        parseFloat(paymentStatus.lockedFunds.current)
+                      ).toString()
+                    )}{" "}
+                    USDFC
+                  </p>
+                </div>
+                <button
+                  onClick={handleWithdraw}
+                  disabled={isProcessing || !withdrawAmount}
+                  className="w-full px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Withdraw"
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Divider */}
+      <div className="h-px bg-gray-100" />
+
       {/* Balance Information */}
-      <div className="px-3 pb-3 space-y-2">
-        <div className="flex justify-between items-center">
-          <span className="text-gray-600">Available Balance</span>
-          <span className="text-lg font-medium">
+      <div className="px-6 py-6 space-y-4">
+        {/* Wallet Balance */}
+        <div className="p-4 bg-blue-50 rounded-xl">
+          <div className="flex items-center gap-2 mb-2">
+            <Wallet className="w-5 h-5 text-blue-500" />
+            <div className="text-[15px] font-medium text-blue-700">
+              Wallet Balance
+            </div>
+          </div>
+          <div className="text-2xl font-semibold text-blue-900">
             {formatCurrency(paymentStatus.usdcBalance)} USDFC
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-gray-600">Account Funds</span>
-          <span className="text-lg font-medium">
-            {formatCurrency(paymentStatus.accountFunds)} USDFC
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-gray-600">Locked Funds</span>
-          <div className="text-right">
-            <span className="text-lg font-medium">
-              {formatCurrency(paymentStatus.lockedFunds.current)} USDFC
-            </span>
+          </div>
+          <div className="text-[15px] text-blue-600 mt-1">
+            Available in your connected wallet
           </div>
         </div>
 
-        <div className="flex justify-between items-center">
-          <span className="text-gray-600">Available for Withdrawal</span>
-          <span className="text-lg font-medium">
+        {/* Contract Balances */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 bg-gray-50 rounded-xl">
+            <div className="text-[15px] text-gray-600 mb-1">Contract Funds</div>
+            <div className="text-2xl font-semibold">
+              {formatCurrency(paymentStatus.accountFunds)} USDFC
+            </div>
+            <div className="text-[15px] text-gray-500 mt-1">
+              Total funds in payment contract
+            </div>
+          </div>
+          <div className="p-4 bg-gray-50 rounded-xl">
+            <div className="text-[15px] text-gray-600 mb-1">Locked Funds</div>
+            <div className="text-2xl font-semibold">
+              {formatCurrency(paymentStatus.lockedFunds.current)} USDFC
+            </div>
+            <div className="text-[15px] text-gray-500 mt-1">
+              Currently locked in contract
+            </div>
+          </div>
+        </div>
+
+        {/* Available for Withdrawal */}
+        <div className="p-4 bg-green-50 rounded-xl">
+          <div className="text-[15px] text-gray-700 mb-1">
+            Available for Withdrawal
+          </div>
+          <div className="text-2xl font-semibold text-green-700">
             {formatCurrency(
               (
                 parseFloat(paymentStatus.accountFunds) -
@@ -218,148 +389,11 @@ export const TokenBalanceCard = () => {
               ).toString()
             )}{" "}
             USDFC
-          </span>
+          </div>
+          <div className="text-[15px] text-gray-600 mt-1">
+            Unlocked funds that can be withdrawn
+          </div>
         </div>
-
-        {/* Add Funds Form */}
-        {showAddFunds && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium">Add Funds</h4>
-              <button
-                onClick={() => setShowAddFunds(false)}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-2">
-              <input
-                type="number"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="Amount to deposit"
-                min="0.01"
-                step="0.01"
-                disabled={isProcessing}
-              />
-              <button
-                onClick={handleAddFunds}
-                disabled={isProcessing || !depositAmount}
-                className="w-full px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 flex items-center justify-center gap-2"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader className="w-4 h-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Deposit"
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Set Allowance Form */}
-        {showSetAllowance && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium">Set Allowance</h4>
-              <button
-                onClick={() => setShowSetAllowance(false)}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-2">
-              <div>
-                <input
-                  type="number"
-                  value={allowanceAmount}
-                  onChange={(e) => setAllowanceAmount(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                  placeholder="Allowance amount"
-                  min={Constants.PROOF_SET_FEE}
-                  step="0.01"
-                  disabled={isProcessing}
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Minimum: {Constants.PROOF_SET_FEE} USDFC
-                </p>
-              </div>
-              <button
-                onClick={handleSetAllowance}
-                disabled={isProcessing || !allowanceAmount}
-                className="w-full px-3 py-1.5 bg-purple-600 text-white rounded-md text-sm font-medium hover:bg-purple-700 disabled:bg-gray-400 flex items-center justify-center gap-2"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader className="w-4 h-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Approve"
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Withdraw Form */}
-        {showWithdraw && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium">Withdraw Funds</h4>
-              <button
-                onClick={() => setShowWithdraw(false)}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-2">
-              <div>
-                <input
-                  type="number"
-                  value={withdrawAmount}
-                  onChange={(e) => setWithdrawAmount(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500"
-                  placeholder="Amount to withdraw"
-                  min="0.01"
-                  step="0.01"
-                  disabled={isProcessing}
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Available:{" "}
-                  {formatCurrency(
-                    (
-                      parseFloat(paymentStatus.accountFunds) -
-                      parseFloat(paymentStatus.lockedFunds.current)
-                    ).toString()
-                  )}{" "}
-                  USDFC
-                </p>
-              </div>
-              <button
-                onClick={handleWithdraw}
-                disabled={isProcessing || !withdrawAmount}
-                className="w-full px-3 py-1.5 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 disabled:bg-gray-400 flex items-center justify-center gap-2"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader className="w-4 h-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Withdraw"
-                )}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

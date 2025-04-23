@@ -3,6 +3,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Container } from "@/theme/components";
 import { Button } from "@/components/ui/button";
 import { Typography } from "@/components/ui/typography";
+import Image from "next/image";
+import { Shield, Lock, Upload, Clock, Key, FileCheck } from "lucide-react";
 
 export default function Home() {
   const { isConnecting, error, connectWallet } = useAuth();
@@ -12,14 +14,25 @@ export default function Home() {
       <header className="w-full border-b border-[#E5E5E5] fixed top-0 bg-white/95 backdrop-blur-sm z-50">
         <Container className="max-w-7xl mx-auto px-6">
           <div className="flex justify-between items-center h-20">
-            <Typography
-              variant="h1"
-              color="black"
-              className="font-mono tracking-tight text-2xl relative group cursor-pointer"
-            >
-              Filecoin Web Services
-              <div className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-500 group-hover:w-full transition-all duration-300" />
-            </Typography>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 relative">
+                <Image
+                  src="/logo.png"
+                  alt="Hot Vault Logo"
+                  fill
+                  className="object-contain"
+                  priority
+                />
+              </div>
+              <Typography
+                variant="h1"
+                color="black"
+                className="font-mono tracking-tight text-2xl relative group cursor-pointer"
+              >
+                Hot Vault
+                <div className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-500 group-hover:w-full transition-all duration-300" />
+              </Typography>
+            </div>
             <div className="flex items-center gap-6">
               {error && (
                 <Typography
@@ -31,9 +44,10 @@ export default function Home() {
                 </Typography>
               )}
               <Button
-                size="sm"
+                size="lg"
                 onClick={connectWallet}
                 disabled={isConnecting}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all duration-300"
               >
                 {isConnecting ? (
                   <span className="flex items-center gap-2">
@@ -56,7 +70,7 @@ export default function Home() {
                     Connecting...
                   </span>
                 ) : (
-                  "Connect Wallet"
+                  "Launch App"
                 )}
               </Button>
             </div>
@@ -74,13 +88,19 @@ export default function Home() {
             <div className="grid md:grid-cols-12 gap-12 lg:gap-16 items-center">
               <div className="md:col-span-7 space-y-8 animate-fade-in-up">
                 <div className="space-y-6">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100">
+                    <Key className="w-4 h-4 text-blue-500" />
+                    <span className="text-sm text-blue-700">
+                      Proof of Data Possession (PDP)
+                    </span>
+                  </div>
                   <div className="space-y-2">
                     <Typography
                       variant="h2"
                       color="black"
                       className="text-5xl md:text-7xl font-mono tracking-tight leading-[1.1] bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600"
                     >
-                      Filecoin Web Services
+                      Verify Your Data on Filecoin
                     </Typography>
                   </div>
                   <Typography
@@ -88,143 +108,104 @@ export default function Home() {
                     color="black"
                     className="text-lg md:text-2xl leading-relaxed text-gray-600 max-w-3xl"
                   >
-                    Decentralized infrastructure for the next generation of web
-                    applications.
+                    Store and verify your data with cryptographic proofs. Our
+                    smart contracts ensure your data remains intact and
+                    accessible on the decentralized network.
                   </Typography>
+
+                  <div className="flex items-center gap-4 pt-6">
+                    <Button
+                      size="lg"
+                      onClick={connectWallet}
+                      className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all duration-300"
+                    >
+                      Get Started
+                    </Button>
+                    <a
+                      href="https://calibration.pdp-explorer.eng.filoz.org"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 transition-colors"
+                    >
+                      <FileCheck className="w-5 h-5" />
+                      <span className="font-medium">View Proof Explorer</span>
+                    </a>
+                  </div>
                 </div>
               </div>
+
               <div className="hidden md:block md:col-span-5 relative animate-fade-in">
-                <div className="absolute -inset-4 bg-gradient-to-tr from-blue-500/20 to-purple-500/20 rounded-lg blur-2xl animate-pulse" />
-                <div className="relative bg-white/50 backdrop-blur-sm rounded-lg p-8 border border-[#E5E5E5] shadow-xl hover:shadow-2xl transition-all duration-500">
-                  <div className="grid grid-cols-4 gap-4 aspect-square">
-                    {Array(16)
-                      .fill(0)
-                      .map((_, i) => (
+                <div className="absolute -inset-4 bg-gradient-to-tr from-blue-500/10 to-purple-500/10 rounded-2xl blur-3xl animate-pulse" />
+                <div className="relative bg-white/[0.7] backdrop-blur-xl rounded-2xl p-8 border border-white/20 shadow-[0_0_1px_1px_rgba(0,0,0,0.02)] hover:shadow-lg transition-all duration-500">
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between p-4 bg-blue-50/50 backdrop-blur-sm rounded-xl border border-blue-100/50">
+                      <div className="flex items-center gap-3">
+                        <Lock className="w-5 h-5 text-blue-600" />
+                        <span className="font-medium text-blue-900">
+                          Smart Contract
+                        </span>
+                      </div>
+                      <span className="text-sm text-blue-600 bg-blue-100/50 px-2.5 py-0.5 rounded-full">
+                        Active
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {[
+                        {
+                          icon: Upload,
+                          title: "File Upload",
+                          description: "Generate unique proof set",
+                        },
+                        {
+                          icon: Shield,
+                          title: "Data Verification",
+                          description: "Cryptographic integrity checks",
+                        },
+                        {
+                          icon: Clock,
+                          title: "Automated System",
+                          description: "Continuous proof validation",
+                        },
+                      ].map((feature, i) => (
                         <div
                           key={i}
-                          className={`aspect-square rounded-lg bg-gradient-to-br ${
-                            i % 3 === 0
-                              ? "from-blue-500/10 to-blue-600/10"
-                              : i % 3 === 1
-                              ? "from-purple-500/10 to-purple-600/10"
-                              : "from-gray-500/10 to-gray-600/10"
-                          } hover:scale-110 hover:rotate-3 transition-all duration-300 ease-out cursor-pointer`}
-                        />
+                          className="p-4 bg-gray-50/50 backdrop-blur-sm rounded-xl border border-gray-100/50 hover:bg-gray-50/70 transition-colors duration-200"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100/50 rounded-lg">
+                              <feature.icon className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-medium text-gray-900">
+                                {feature.title}
+                              </h4>
+                              <p className="text-xs text-gray-600">
+                                {feature.description}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
                       ))}
+                    </div>
+
+                    <div className="p-4 bg-gradient-to-r from-blue-50/50 to-purple-50/50 backdrop-blur-sm rounded-xl border border-blue-100/50">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-gray-700">
+                          Network
+                        </span>
+                        <span className="font-mono text-blue-600">
+                          Filecoin Calibration
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </Container>
-        </section>
-
-        <section className="w-full py-32 bg-gradient-to-b from-white to-[#F9F9F9] relative overflow-hidden">
-          <div className="absolute inset-0 bg-[linear-gradient(45deg,#f3f4f6_25%,transparent_25%,transparent_50%,#f3f4f6_50%,#f3f4f6_75%,transparent_75%,transparent)] bg-[length:64px_64px] opacity-[0.05]" />
-
-          <Container className="relative max-w-7xl mx-auto px-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-16 md:gap-24">
-              {[
-                {
-                  title: "Decentralized",
-                  description:
-                    "Built on Filecoin's distributed network for maximum resilience and censorship resistance.",
-                },
-                {
-                  title: "Scalable",
-                  description:
-                    "Infrastructure that grows with your needs, from prototype to global deployment.",
-                },
-                {
-                  title: "Sustainable",
-                  description:
-                    "Energy-efficient operations with transparent carbon footprint metrics.",
-                },
-              ].map((feature, index) => (
-                <div
-                  key={index}
-                  className="space-y-6 group hover:translate-y-[-4px] transition-all duration-300"
-                >
-                  <div className="space-y-4">
-                    <Typography
-                      variant="h3"
-                      color="black"
-                      className="font-mono text-2xl group-hover:text-blue-600 transition-colors"
-                    >
-                      {feature.title}
-                    </Typography>
-                    <div className="h-1 w-16 bg-blue-500 group-hover:w-24 transition-all duration-300" />
-                  </div>
-                  <Typography
-                    variant="body"
-                    color="black"
-                    className="text-lg leading-relaxed text-gray-600"
-                  >
-                    {feature.description}
-                  </Typography>
-                </div>
-              ))}
             </div>
           </Container>
         </section>
       </main>
-
-      <footer className="w-full border-t border-[#E5E5E5] bg-white relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(#3B82F6_0.5px,transparent_0.5px)] [background-size:24px_24px] opacity-[0.03]" />
-
-        <Container className="relative max-w-7xl mx-auto px-6 py-20">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-12 md:gap-24">
-            {[
-              {
-                title: "Product",
-                links: ["Features", "Pricing", "Case Studies"],
-              },
-              {
-                title: "Resources",
-                links: ["Documentation", "API", "Community"],
-              },
-              {
-                title: "Company",
-                links: ["About", "Blog", "Careers"],
-              },
-              {
-                title: "Legal",
-                links: ["Privacy", "Terms", "Security"],
-              },
-            ].map((section, index) => (
-              <div key={index} className="space-y-6">
-                <Typography
-                  variant="h4"
-                  color="black"
-                  className="font-mono text-sm uppercase tracking-wider"
-                >
-                  {section.title}
-                </Typography>
-                <ul className="space-y-4">
-                  {section.links.map((link, linkIndex) => (
-                    <li key={linkIndex}>
-                      <Typography
-                        variant="small"
-                        color="black"
-                        className="hover:text-blue-500 transition-colors cursor-pointer hover:translate-x-1 inline-block transform duration-200"
-                      >
-                        {link}
-                      </Typography>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-          <Typography
-            variant="small"
-            color="black"
-            className="mt-20 pt-8 border-t border-[#E5E5E5] font-mono text-sm text-gray-500"
-          >
-            © {new Date().getFullYear()} Filecoin Web Services. All rights
-            reserved.
-          </Typography>
-        </Container>
-      </footer>
     </div>
   );
 }
