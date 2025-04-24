@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Plus, Loader, Shield, ChevronDown, Wallet } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
+import { BALANCE_UPDATED_EVENT } from "@/contexts/PaymentContext";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
 
@@ -54,12 +55,26 @@ export const PaymentBalanceHeader = () => {
       refreshPaymentSetupStatus();
     };
 
+    const handleBalanceUpdate = (event: CustomEvent) => {
+      console.log("[PaymentBalanceHeader] Balance updated:", event.detail);
+      // The balance is already updated in the context, just trigger a re-render
+      setShowDetails(false); // Close the dropdown if open
+    };
+
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadComplete);
     window.addEventListener(ROOT_REMOVED_EVENT, handleRootRemoved);
+    window.addEventListener(
+      BALANCE_UPDATED_EVENT,
+      handleBalanceUpdate as EventListener
+    );
 
     return () => {
       window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadComplete);
       window.removeEventListener(ROOT_REMOVED_EVENT, handleRootRemoved);
+      window.removeEventListener(
+        BALANCE_UPDATED_EVENT,
+        handleBalanceUpdate as EventListener
+      );
     };
   }, [refreshPaymentSetupStatus]);
 

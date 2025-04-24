@@ -14,6 +14,7 @@ import * as Constants from "@/lib/constants";
 import { toast } from "react-hot-toast";
 import { TransactionHistory } from "./TransactionHistory";
 import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
+import { BALANCE_UPDATED_EVENT } from "@/contexts/PaymentContext";
 
 enum PaymentStep {
   APPROVE_TOKEN = 0,
@@ -95,6 +96,26 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
   const [lockupAllowance, setLockupAllowance] = useState("");
   const [isUpdatingAllowances, setIsUpdatingAllowances] = useState(false);
   const [isProofSetClicked, setIsProofSetClicked] = useState(false);
+
+  useEffect(() => {
+    const handleBalanceUpdate = (event: CustomEvent) => {
+      console.log("[PaymentSetupTab] Balance updated:", event.detail);
+      // Force a re-render of the component
+      setIsProcessing(false);
+    };
+
+    window.addEventListener(
+      BALANCE_UPDATED_EVENT,
+      handleBalanceUpdate as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        BALANCE_UPDATED_EVENT,
+        handleBalanceUpdate as EventListener
+      );
+    };
+  }, []);
 
   useEffect(() => {
     if (paymentStatus.isOperatorApproved && !isUpdatingAllowances) {

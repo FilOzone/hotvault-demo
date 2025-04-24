@@ -19,6 +19,8 @@ import {
 } from "@/lib/contracts";
 import * as Constants from "@/lib/constants";
 
+export const BALANCE_UPDATED_EVENT = "BALANCE_UPDATED";
+
 export interface TransactionRecord {
   id: string;
   type: "token_approval" | "deposit" | "operator_approval" | "withdraw";
@@ -455,6 +457,22 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
+  const updateBalanceAndNotify = (newBalance: string) => {
+    setPaymentStatus((prev) => ({
+      ...prev,
+      accountFunds: newBalance,
+      isLoading: false,
+      error: null,
+    }));
+
+    // Dispatch event to notify all components
+    window.dispatchEvent(
+      new CustomEvent(BALANCE_UPDATED_EVENT, {
+        detail: { newBalance },
+      })
+    );
+  };
+
   const depositFunds = async (amount: string): Promise<boolean> => {
     if (!account) return false;
 
@@ -515,6 +533,13 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         status: "success",
       });
 
+      // Update balance immediately
+      const newBalance = (
+        parseFloat(paymentStatus.accountFunds) + parseFloat(amount)
+      ).toString();
+      updateBalanceAndNotify(newBalance);
+
+      // Refresh in background
       await refreshPaymentSetupStatus();
 
       return true;
@@ -571,7 +596,14 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         status: "success",
       });
 
-      await refreshPaymentSetupStatus();
+      // Update balance immediately
+      const newBalance = (
+        parseFloat(paymentStatus.accountFunds) - parseFloat(amount)
+      ).toString();
+      updateBalanceAndNotify(newBalance);
+
+      // Refresh in background
+      await Promise.all([refreshBalance(), refreshPaymentSetupStatus()]);
 
       return true;
     } catch (error) {
