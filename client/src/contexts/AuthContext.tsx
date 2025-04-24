@@ -28,6 +28,7 @@ export type AuthContextType = {
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
   updateUserProofSetId: (id: string) => void;
+  handleAccountSwitch: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -388,7 +389,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    // Check if MetaMask is the provider
     const isMetaMask = window.ethereum.isMetaMask;
     if (!isMetaMask) {
       setError("Please use MetaMask as your wallet provider.");
@@ -397,10 +397,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    // Check if multiple wallets are installed
     const providers = window.ethereum.providers;
     if (providers && providers.length > 1) {
-      // Find MetaMask provider
       const metaMaskProvider = providers.find(
         (p: EthereumProvider) => p.isMetaMask
       );
@@ -410,7 +408,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsConnectionLocked(false);
         return;
       }
-      // Set MetaMask as the provider
       window.ethereum = metaMaskProvider;
     }
 
@@ -485,7 +482,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.removeItem(JWT_STORAGE_KEY);
     } finally {
       setIsConnecting(false);
-      // Add a small delay before unlocking to prevent rapid re-clicks
       setTimeout(() => {
         setIsConnectionLocked(false);
       }, 1000);
@@ -511,6 +507,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     router.push("/");
   };
 
+  const handleAccountSwitch = async () => {
+    if (!window.ethereum) {
+      toast.error(
+        "MetaMask not found! Please install MetaMask to use this app."
+      );
+      return;
+    }
+
+    try {
+      await window.ethereum.request({
+        method: "wallet_requestPermissions",
+        params: [{ eth_accounts: {} }],
+      });
+
+      console.log("🔄 Account switch requested");
+    } catch (error) {
+      console.error("Error switching account:", error);
+      toast.error("Failed to switch account. Please try again.");
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -525,6 +542,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         connectWallet,
         disconnectWallet,
         updateUserProofSetId: setUserProofSetId,
+        handleAccountSwitch,
       }}
     >
       {children}
