@@ -8,12 +8,17 @@ import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
 
-// Helper function to format contract values with full precision
+// Helper function to format contract values with readable precision
 const formatContractValue = (value: string): string => {
   const numValue = Number(value) / 1e18;
 
-  // Show the exact value as a string with all decimal places
-  return numValue.toString();
+  // For effectively zero values (very small numbers), display as 0
+  if (Math.abs(numValue) < 1e-10) {
+    return "0";
+  }
+
+  // For very small non-zero values, use formatCurrencyPrecise which handles this better
+  return formatCurrencyPrecise(numValue);
 };
 
 const toContractValue = (value: string): string => {
