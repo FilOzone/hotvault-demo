@@ -8,7 +8,13 @@ import type { ReactElement } from "react";
 import { useDropzone } from "react-dropzone";
 import { API_BASE_URL } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
-import { AlertTriangle, Download, Trash2, ExternalLink } from "lucide-react";
+import {
+  AlertTriangle,
+  Download,
+  Trash2,
+  ExternalLink,
+  Eye,
+} from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
 import {
@@ -1071,6 +1077,7 @@ export const FilesTab = ({
                     onClick={() => openProofDetails(piece)}
                     className="h-8 flex items-center transition-all duration-200 hover:text-blue-600"
                   >
+                    <Eye className="h-4 w-4 mr-1" />
                     <span>Details</span>
                   </Button>
                 </motion.div>
