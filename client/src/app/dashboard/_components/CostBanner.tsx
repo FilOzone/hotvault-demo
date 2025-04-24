@@ -13,6 +13,8 @@ import {
 import { formatFileSize } from "@/lib/utils";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { usePayment } from "@/contexts/PaymentContext";
+import * as Constants from "@/lib/constants";
 
 interface FileInfo {
   id: number;
@@ -32,25 +34,41 @@ export const CostBanner: React.FC<CostBannerProps> = ({
   onSelectFile,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const {
+    paymentStatus,
+    approveToken,
+    depositFunds,
+    approveServiceOperator,
+    refreshPaymentSetupStatus,
+    initiateProofSetCreation,
+  } = usePayment();
 
-  const costPerGBPerMonth = 2;
-  const lockPeriodDays = 10;
+  // Use the same constants as defined in the smart contract
+  const costPerGBPerMonth = Constants.STORAGE_RATE_PER_GB || 2;
+  const lockPeriodDays = Constants.LOCK_PERIOD_DAYS || 10;
   const daysInMonth = 30;
 
+  // Convert bytes to GB for calculations
+  const bytesToGB = (bytes: number) => bytes / (1024 * 1024 * 1024);
+
+  // Calculate costs using the same method as the smart contract
   const calculateMonthlyCost = (sizeGB: number) => {
-    return sizeGB * costPerGBPerMonth;
+    if (!sizeGB) return "0";
+    // Convert to the same precision as used in the smart contract
+    return (sizeGB * costPerGBPerMonth).toFixed(5);
   };
 
   const calculateLockedAmount = (sizeGB: number) => {
-    const monthlyCost = calculateMonthlyCost(sizeGB);
-    return (monthlyCost * lockPeriodDays) / daysInMonth;
+    const monthlyCost = parseFloat(calculateMonthlyCost(sizeGB));
+    // Use the same calculation method as in the smart contract
+    return ((monthlyCost * lockPeriodDays) / daysInMonth).toFixed(5);
   };
 
   const monthlyCost = calculateMonthlyCost(fileSizeGB);
   const lockedAmount = calculateLockedAmount(fileSizeGB);
 
   const existingFilesTotalSizeGB = existingFiles.reduce((acc, file) => {
-    return acc + file.size / (1024 * 1024 * 1024);
+    return acc + bytesToGB(file.size);
   }, 0);
 
   const existingFilesTotalMonthlyCost = calculateMonthlyCost(
@@ -61,11 +79,13 @@ export const CostBanner: React.FC<CostBannerProps> = ({
   );
 
   const totalSizeGB = existingFilesTotalSizeGB + fileSizeGB;
-  const totalMonthlyCost = existingFilesTotalMonthlyCost + monthlyCost;
-  const totalLockedAmount = existingFilesTotalLocked + lockedAmount;
+  const totalMonthlyCost = (
+    parseFloat(existingFilesTotalMonthlyCost) + parseFloat(monthlyCost)
+  ).toFixed(5);
+
 
   return (
-    <Card className="mb-4 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 border-blue-200">
+    <Card className="mb-6 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 border-blue-200">
       <div
         className="p-4 cursor-pointer flex items-center justify-between"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -79,7 +99,7 @@ export const CostBanner: React.FC<CostBannerProps> = ({
             {!isExpanded && totalSizeGB > 0 && (
               <Typography variant="small" className="text-blue-700">
                 Total: {formatFileSize(totalSizeGB * 1024 * 1024 * 1024)} •{" "}
-                {totalMonthlyCost.toFixed(2)} USDFC/month
+                {totalMonthlyCost} USDFC/month
               </Typography>
             )}
           </div>
@@ -99,62 +119,39 @@ export const CostBanner: React.FC<CostBannerProps> = ({
 
       {isExpanded && (
         <div className="px-6 pb-6 space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="p-4 bg-white/50 border-blue-100">
               <div className="flex items-start gap-3">
                 <DollarSign className="w-5 h-5 text-green-600 mt-1" />
-                <div>
+                <div className="flex-1">
                   <h3 className="font-medium text-gray-900 mb-2">Base Rates</h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Storage Rate:</span>
                       <span className="font-medium text-gray-900">
-                        {costPerGBPerMonth} USDFC/GB/month
+                        {costPerGBPerMonth} USDFC / GiB / month
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Lock Period:</span>
+                      <span className="text-gray-600">Lockup Period:</span>
                       <span className="font-medium text-gray-900">
                         {lockPeriodDays} days
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Payment Model:</span>
-                      <span className="font-medium text-gray-900">
-                        Monthly + Lock
+                      <span className="text-gray-600">
+                        Current FWS Balance:
                       </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="p-4 bg-white/50 border-blue-100">
-              <div className="flex items-start gap-3">
-                <HardDrive className="w-5 h-5 text-blue-600 mt-1" />
-                <div className="w-full">
-                  <h3 className="font-medium text-gray-900 mb-2">
-                    Current Storage ({existingFiles.length} files)
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Total Size:</span>
                       <span className="font-medium text-gray-900">
-                        {formatFileSize(
-                          existingFilesTotalSizeGB * 1024 * 1024 * 1024
-                        )}
+                        {paymentStatus.accountFunds} USDFC
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Monthly Cost:</span>
-                      <span className="font-medium text-gray-900">
-                        {existingFilesTotalMonthlyCost.toFixed(2)} USDFC
+                      <span className="text-gray-600">
+                        Current Locked Funds:
                       </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Locked Amount:</span>
                       <span className="font-medium text-gray-900">
-                        {existingFilesTotalLocked.toFixed(2)} USDFC
+                        {paymentStatus.lockedFunds.current} USDFC
                       </span>
                     </div>
                   </div>
@@ -189,13 +186,13 @@ export const CostBanner: React.FC<CostBannerProps> = ({
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Monthly Cost:</span>
                         <span className="font-medium text-gray-900">
-                          {monthlyCost.toFixed(2)} USDFC
+                          {monthlyCost} USDFC
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Required Lock:</span>
                         <span className="font-medium text-gray-900">
-                          {lockedAmount.toFixed(2)} USDFC
+                          {lockedAmount} USDFC
                         </span>
                       </div>
                     </div>
@@ -223,7 +220,7 @@ export const CostBanner: React.FC<CostBannerProps> = ({
           </div>
 
           {totalSizeGB > 0 && (
-            <div className="border-t border-blue-200/50 pt-4 mt-4">
+            <div className="mt-6">
               <Card className="p-4 bg-gradient-to-r from-blue-100/50 to-indigo-100/50 border-blue-200">
                 <div className="flex items-start gap-3">
                   <Lock className="w-5 h-5 text-indigo-600 mt-1" />
@@ -231,23 +228,40 @@ export const CostBanner: React.FC<CostBannerProps> = ({
                     <h3 className="font-medium text-gray-900 mb-3">
                       Total Storage Summary
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-                      <div className="space-y-1">
-                        <div className="text-gray-600">Total Size</div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="p-3 bg-white/80 rounded-lg">
+                        <div className="text-sm text-gray-600 mb-1">
+                          Total Size
+                        </div>
                         <div className="font-semibold text-gray-900">
                           {formatFileSize(totalSizeGB * 1024 * 1024 * 1024)}
                         </div>
                       </div>
-                      <div className="space-y-1">
-                        <div className="text-gray-600">Monthly Cost</div>
+                      <div className="p-3 bg-white/80 rounded-lg">
+                        <div className="text-sm text-gray-600 mb-1">
+                          Monthly Cost
+                        </div>
                         <div className="font-semibold text-gray-900">
-                          {totalMonthlyCost.toFixed(2)} USDFC
+                          {totalMonthlyCost} USDFC
                         </div>
                       </div>
-                      <div className="space-y-1">
-                        <div className="text-gray-600">Total Locked Amount</div>
-                        <div className="font-semibold text-blue-900 text-base">
-                          {totalLockedAmount.toFixed(2)} USDFC
+                      <div className="p-3 bg-white/80 rounded-lg">
+                        <div className="text-sm text-gray-600 mb-1">
+                          Total Locked
+                        </div>
+                        <div className="font-semibold text-blue-900">
+                          {parseFloat(
+                            paymentStatus.lockedFunds.current
+                          ).toFixed(5)}{" "}
+                          USDFC
+                        </div>
+                      </div>
+                      <div className="p-3 bg-white/80 rounded-lg">
+                        <div className="text-sm text-gray-600 mb-1">
+                          Total Files
+                        </div>
+                        <div className="font-semibold text-blue-900">
+                          {existingFiles.length}
                         </div>
                       </div>
                     </div>
@@ -268,7 +282,7 @@ export const CostBanner: React.FC<CostBannerProps> = ({
                 Each GB costs {costPerGBPerMonth} USDFC per month.
               </p>
               <p>
-                <span className="font-medium text-gray-700">Lock Amount:</span>{" "}
+                <span className="font-medium text-gray-700">Lockup Amount:</span>{" "}
                 {lockPeriodDays} days worth of storage costs are locked (
                 {((lockPeriodDays / daysInMonth) * 100).toFixed(0)}% of monthly
                 cost).
