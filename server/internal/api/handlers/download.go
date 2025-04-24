@@ -47,30 +47,11 @@ func DownloadFile(c *gin.Context) {
 		return
 	}
 
-	useGateway := c.Query("gateway") == "true"
-
-	if useGateway {
-		ipfsCid := cid
-		if parts := strings.Split(cid, ":"); len(parts) > 0 {
-			ipfsCid = parts[0]
-		}
-
-		gatewayURL := fmt.Sprintf("https://ipfs.io/ipfs/%s", ipfsCid)
-		log.WithField("url", gatewayURL).Info("Redirecting to IPFS gateway")
-
-		c.Redirect(http.StatusTemporaryRedirect, gatewayURL)
-		return
-	}
-
 	pdptoolPath := cfg.PdptoolPath
 	if pdptoolPath == "" {
 		log.Error("PDPTool path not configured in environment/config")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Server configuration error: PDPTool path missing",
-			"options": []string{
-				"Use '?gateway=true' parameter to download directly from IPFS gateway",
-				"Contact administrator to configure PDPTool path",
-			},
 		})
 		return
 	}
@@ -79,10 +60,6 @@ func DownloadFile(c *gin.Context) {
 		log.WithField("path", pdptoolPath).Error("pdptool not found at configured path")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "pdptool executable not found at configured path",
-			"options": []string{
-				"Use '?gateway=true' parameter to download directly from IPFS gateway",
-				"Contact administrator to verify PDPTool installation",
-			},
 		})
 		return
 	}
@@ -142,11 +119,6 @@ func DownloadFile(c *gin.Context) {
 			"error":   errorMsg,
 			"details": err.Error(),
 			"stderr":  errOutput.String(),
-			"options": []string{
-				"Try using '?gateway=true' parameter to download directly from IPFS gateway",
-				"Check if the service URL is accessible",
-				"Verify the CID format is correct",
-			},
 		})
 		return
 	}

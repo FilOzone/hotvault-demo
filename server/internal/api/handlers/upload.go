@@ -457,15 +457,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
 	})
 
-	// Apply rate limiting delay just before upload-file command
-	waitWithJitter := func(baseDelay time.Duration) {
-		jitter := time.Duration(rand.Int63n(int64(baseDelay) / 2))
-		delay := baseDelay + jitter
-		log.WithField("delay", delay.String()).Info("Rate limit delay before pdptool upload-file call")
-		time.Sleep(delay)
-	}
-
-	waitWithJitter(baseDelay)
+	time.Sleep(5 * time.Second)
 
 	var uploadOutput bytes.Buffer
 	var uploadError bytes.Buffer
@@ -640,13 +632,16 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		proofSet.ProofSetID,
 	}
 
-	verifyMaxRetries := 5
-	verifyBackoff := 15 * time.Second
-	verifyMaxBackoff := 60 * time.Second
+	verifyMaxRetries := 100
+	verifyBackoff := 5 * time.Second
+	verifyMaxBackoff := 5 * time.Second
 	verifySuccess := false
 
 	for verifyAttempt := 1; verifyAttempt <= verifyMaxRetries; verifyAttempt++ {
-		waitWithJitter(baseDelay)
+		if verifyAttempt > 1 {
+			log.Info("Applying fixed 5-second delay before verification attempt")
+			time.Sleep(5 * time.Second)
+		}
 
 		log.WithField("attempt", verifyAttempt).
 			WithField("maxRetries", verifyMaxRetries).
@@ -760,14 +755,15 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		log.WithField("error", errStat.Error()).Error("Error checking for pdpservice.json")
 	}
 
-	maxRetries := 10
-	initialBackoff := 20 * time.Second
-	maxBackoff := 180 * time.Second
-	backoff := initialBackoff
+	maxRetries := 100
+	backoff := 5 * time.Second
+	maxBackoff := 5 * time.Second
 	success := false
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		waitWithJitter(baseDelay * 2)
+		if attempt > 1 {
+			time.Sleep(backoff)
+		}
 
 		log.WithField("command", pdptoolPath).
 			WithField("args", strings.Join(addRootsArgs, " ")).
@@ -933,17 +929,19 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	})
 
 	var extractedIntegerRootID string
-	initialPollInterval := 15 * time.Second
-	maxPollInterval := 45 * time.Second
-	pollInterval := initialPollInterval
-	maxPollAttempts := 60
+	pollInterval := 5 * time.Second
+	maxPollInterval := 5 * time.Second
+	maxPollAttempts := 100
 	pollAttempt := 0
 	foundRootInPoll := false
 	consecutiveErrors := 0
 	maxConsecutiveErrors := 10
 
 	for pollAttempt < maxPollAttempts {
-		waitWithJitter(baseDelay)
+		if pollAttempt > 0 {
+			log.Info("Applying fixed 5-second delay before poll attempt")
+			time.Sleep(5 * time.Second)
+		}
 
 		pollAttempt++
 
@@ -1070,7 +1068,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 		if sawAnyRootID {
 			log.Info("Proof set has roots, but none matching our CID yet. Reducing poll interval.")
-			pollInterval = initialPollInterval
+			pollInterval = 5 * time.Second
 		}
 
 		log.Debug(fmt.Sprintf("Root CID %s not found in get-proof-set output on attempt %d. Waiting %v...", baseCID, pollAttempt, pollInterval))

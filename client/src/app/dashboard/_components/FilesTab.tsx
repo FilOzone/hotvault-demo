@@ -55,10 +55,6 @@ interface FilesTabProps {
   onTabChange?: (tab: string) => void;
 }
 
-interface DownloadError extends Error {
-  options?: string[];
-}
-
 const fadeInUp = {
   hidden: { opacity: 0, y: 10 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.2 } },
@@ -476,45 +472,22 @@ export const FilesTab = ({
 
     const encodedCid = encodeURIComponent(piece.cid);
 
-    downloadWithMethod(piece, encodedCid, false)
-      .catch((error) => {
-        console.error(
-          "[FilesTab.tsx:handleDownload] Error with direct download:",
-          error
-        );
-
-        if (
-          error.message &&
-          (error.message.includes("pdptool not found") ||
-            error.message.includes("Failed to download file"))
-        ) {
-          toast.info("Direct download failed. Trying IPFS gateway...");
-          return downloadWithMethod(piece, encodedCid, true);
-        }
-        throw error;
-      })
-      .catch((error) => {
-        console.error(
-          "[FilesTab.tsx:handleDownload] Error with gateway download:",
-          error
-        );
-        handleDownloadError(piece, error);
-      });
+    downloadWithMethod(piece, encodedCid).catch((error) => {
+      console.error(
+        "[FilesTab.tsx:handleDownload] Error with download:",
+        error
+      );
+      handleDownloadError(piece, error);
+    });
   };
 
-  const downloadWithMethod = (
-    piece: Piece,
-    encodedCid: string,
-    useGateway: boolean
-  ) => {
+  const downloadWithMethod = (piece: Piece, encodedCid: string) => {
     const token = localStorage.getItem("jwt_token");
     if (!token) {
       return Promise.reject(new Error("Authentication required"));
     }
 
-    const url = useGateway
-      ? `${API_BASE_URL}/api/v1/download/${encodedCid}?gateway=true`
-      : `${API_BASE_URL}/api/v1/download/${encodedCid}`;
+    const url = `${API_BASE_URL}/api/v1/download/${encodedCid}`;
 
     return fetch(url, {
       headers: {
@@ -524,7 +497,6 @@ export const FilesTab = ({
       .then(async (response) => {
         if (!response.ok) {
           let errorMessage = `Download failed: ${response.statusText}`;
-          let errorOptions: string[] = [];
 
           const contentType = response.headers.get("content-type");
           if (contentType && contentType.includes("application/json")) {
@@ -532,52 +504,20 @@ export const FilesTab = ({
               const errorData = await response.json();
               if (errorData.error) {
                 errorMessage = errorData.error;
-                if (errorData.options) {
-                  errorOptions = errorData.options;
-                }
-                console.error(
-                  "[FilesTab.tsx:downloadWithMethod] Error details:",
-                  errorData
-                );
               }
+              console.error(
+                "[FilesTab.tsx:downloadWithMethod] Error details:",
+                errorData
+              );
             } catch (e) {
               console.error(
                 "[FilesTab.tsx:downloadWithMethod] Failed to parse error as JSON:",
                 e
               );
             }
-          } else {
-            try {
-              const errorText = await response.text();
-              if (errorText) {
-                errorMessage += ` - ${errorText}`;
-              }
-            } catch (textError) {
-              console.error(
-                "[FilesTab.tsx:downloadWithMethod] Failed to parse error:",
-                textError
-              );
-            }
           }
 
-          const error = new Error(errorMessage) as DownloadError;
-          error.options = errorOptions;
-          throw error;
-        }
-
-        if (response.redirected) {
-          window.open(response.url, "_blank");
-
-          setDownloadsInProgress((prev) => {
-            const newState = { ...prev };
-            delete newState[piece.cid];
-            return newState;
-          });
-
-          toast.success(
-            `${piece.filename} opened in new tab from IPFS gateway`
-          );
-          return null;
+          throw new Error(errorMessage);
         }
 
         return response.blob();
@@ -609,48 +549,8 @@ export const FilesTab = ({
       });
   };
 
-  const handleDownloadError = (piece: Piece, error: DownloadError) => {
-    const options = error.options || [];
-    const cid = piece.cid.split(":")[0];
-
-    if (options.length > 0) {
-      toast.error(
-        <div className="flex flex-col gap-2">
-          <div>Download failed: {error.message}</div>
-          <div className="mt-2">
-            <p className="text-sm font-semibold mb-1">Options:</p>
-            <div className="flex flex-col gap-1">
-              {options.map((option: string, index: number) => (
-                <div key={index} className="text-sm">
-                  {option}
-                </div>
-              ))}
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex items-center gap-2 mt-1"
-            onClick={() => {
-              const gatewayUrl = `https://ipfs.io/ipfs/${cid}`;
-              window.open(gatewayUrl, "_blank");
-
-              setDownloadsInProgress((prev) => {
-                const newState = { ...prev };
-                delete newState[piece.cid];
-                return newState;
-              });
-            }}
-          >
-            <ExternalLink className="h-4 w-4" />
-            Open in IPFS Gateway
-          </Button>
-        </div>,
-        { duration: 10000 }
-      );
-    } else {
-      toast.error(error.message || "Download failed");
-    }
+  const handleDownloadError = (piece: Piece, error: Error) => {
+    toast.error(error.message || "Download failed");
 
     setDownloadsInProgress((prev) => {
       const newState = { ...prev };
