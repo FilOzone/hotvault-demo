@@ -11,7 +11,7 @@ import { Typography } from "@/components/ui/typography";
 import { API_BASE_URL } from "@/lib/constants";
 import { toast } from "sonner";
 import { useUploadStore } from "@/store/upload-store";
-import { Loader, AlertTriangle } from "lucide-react";
+import { Loader, AlertTriangle, ExternalLink } from "lucide-react";
 import { CostBanner } from "./CostBanner";
 import { formatFileSize } from "@/lib/utils";
 import ChunkedUploader from "@/components/ChunkedUploader";
@@ -27,7 +27,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [fileSizeGB, setFileSizeGB] = useState<number>(0);
   const router = useRouter();
-  const { proofSetReady, isLoading: isAuthLoading } = useAuth();
+  const { proofSetReady, isLoading: isAuthLoading, userProofSetId } = useAuth();
   const { uploadProgress, setUploadProgress } = useUploadStore();
   const [useChunkedUpload, setUseChunkedUpload] = useState<boolean>(false);
 
@@ -437,9 +437,36 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
   return (
     <div className="w-full space-y-4">
       <CostBanner fileSizeGB={fileSizeGB} />
-      <Typography variant="h3" className="text-xl font-semibold mb-4">
-        Upload New Image
-      </Typography>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+        <Typography variant="h3" className="text-xl font-semibold">
+          Upload New Image
+        </Typography>
+        {proofSetReady && (
+          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <a
+              href={`http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              View Your Proof Set
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </motion.div>
+        )}
+      </div>
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">

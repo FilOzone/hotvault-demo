@@ -1,178 +1,81 @@
-# FWS Demo Application
+# Hot Vault
 
-A full-stack decentralized application (DApp) demonstrating Filecoin Web Services (FWS) integration for data storage and verification. This application showcases how to use FWS's Proof of Data Possession (PDP) tool for secure data management.
+## Prerequisites
 
-## Key Features
+- Docker must be pre-configured and running
+- Go installed
+- Node.js and npm installed
 
-### Data Management & Verification
-- **File Upload System**
-  - Support for large file uploads with progress tracking
-  - Automatic file chunking for efficient storage
-  - File metadata management and tracking
-  - Support for multiple file formats
+**Important:** The server and client applications must be run simultaneously in separate terminal instances.
 
-- **PDP Integration**
-  - Generate proof sets for uploaded files
-  - Verify data possession using PDP tool
-  - Track proof generation and verification status
-  - Manage proof expiration and renewal
+## Setup Steps
 
-- **Storage Management**
-  - Track storage usage and limits
-  - Monitor file status and health
-  - Manage storage costs and billing
-  - Handle file retrieval and downloads
+1. **Server Setup**
 
-### Smart Contract Integration
-- **Payment Management**
-  - Support for WFIL and USDC tokens
-  - Automated billing and payments
-  - Transaction history tracking
-  - Balance management
+   ```bash
+   cd server
+   go mod tidy
+   ```
 
-- **Record Keeping**
-  - On-chain proof registration
-  - Storage deal tracking
-  - Payment verification
-  - Event logging and monitoring
+   Create .env file with these settings:
 
-## Project Structure
+   ```
+   PORT=8080
+   ENV=development
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_USER=postgres
+   DB_PASSWORD=postgres
+   DB_NAME=fws_db
+   DB_SSL_MODE=disable
+   JWT_SECRET=fws_secret_key_change_in_production
+   JWT_EXPIRATION=24h
+   PDPTOOL_PATH=/path/to/pdptool
+   SERVICE_NAME=pdp-service-name
+   SERVICE_URL=https://yablu.net
+   RECORD_KEEPER=0xdbE4bEF3F313dAC36257b0621e4a3BC8Dc9679a1
+   ```
 
-```
-.
-├── server/                 # Go backend server
-│   ├── cmd/               # Application entrypoints
-│   ├── config/            # Configuration files
-│   ├── internal/          # Core implementation
-│   │   ├── pdp/          # PDP tool integration
-│   │   ├── storage/      # Storage management
-│   │   └── blockchain/   # Smart contract interaction
-│   └── pkg/              # Shared packages
-└── client/               # Next.js frontend
-    ├── src/              # Source code
-    │   ├── components/   # React components
-    │   ├── pages/        # Next.js pages
-    │   └── hooks/        # Custom React hooks
-    └── public/           # Static assets
-```
+   Start PostgreSQL:
 
-## Technical Implementation
+   ```bash
+   make postgres-start
+   ```
 
-### Server (Backend)
+   Start the server:
 
-#### PDP Tool Integration
-```bash
-# Example PDP proof generation
-./pdptool create-proof-set \
-  --service-url https://yablu.net \
-  --service-name pdp-service \
-  --recordkeeper 0x6170dE2b09b404776197485F3dc6c968Ef948505
-```
+   ```bash
+   make run
+   ```
 
-Key components:
-- File preprocessing for PDP
-- Proof set generation and management
-- Verification request handling
-- Proof status tracking
+2. **Client Setup**
 
-#### Storage Management
-- Chunked file upload handling
-- Storage space allocation
-- File retrieval system
-- Garbage collection
+   ```bash
+   cd client
+   npm install --legacy-peer-deps
+   ```
 
-#### Smart Contract Integration
-- Record keeper contract interaction
-- Payment processing
-- Deal management
-- Event monitoring
+   Create .env file with these settings:
 
-### Client (Frontend)
+   ```
+   NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+   NEXT_PUBLIC_USDFC_TOKEN_ADDRESS=0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0
+   NEXT_PUBLIC_PAYMENT_PROXY_ADDRESS=0x0E690D3e60B0576D01352AB03b258115eb84A047
+   NEXT_PUBLIC_PDP_SERVICE_ADDRESS=0xdbE4bEF3F313dAC36257b0621e4a3BC8Dc9679a1
+   ```
 
-Built with Next.js 15.3 and modern React practices, featuring:
+   Start the frontend:
 
-#### User Interface
-- Modern, responsive design using Tailwind CSS
-- Dark/light theme support
-- Interactive file upload with drag-and-drop
-- Real-time progress tracking
-- Transaction status notifications
+   ```bash
+   npm run dev
+   ```
 
-#### Blockchain Integration
-- MetaMask wallet connection
-- Transaction management
-- Balance tracking
-- Network switching support
+   **Note:** Both the server and client should be running simultaneously in separate terminal instances.
 
-#### File Management
-- Multi-file upload support
-- Upload progress visualization
-- File status tracking
-- Proof set management interface
+3. **Access the Application**
 
-## Setup Instructions
+   - Open your browser to http://localhost:3000
 
-### Server Setup
-
-1. Configure environment:
-```bash
-cd server
-cp .env.example .env
-# Configure:
-# - Database credentials
-# - PDP tool path and settings
-# - Blockchain RPC endpoints
-```
-
-2. Start the server:
-```bash
-make postgres-start
-go run cmd/api/main.go
-```
-
-### Client Setup
-
-1. Configure environment:
-```bash
-cd client
-cp .env.example .env
-# Configure:
-# - Network settings
-# - Contract addresses
-# - Token configurations
-```
-
-2. Install dependencies and start:
-```bash
-yarn install
-yarn dev
-```
-
-## API Documentation
-
-### Storage Endpoints
-- `POST /api/v1/storage/upload` - Initiate file upload
-- `POST /api/v1/storage/generate-proof` - Generate PDP proof
-- `GET /api/v1/storage/verify-proof` - Verify PDP proof
-- `GET /api/v1/storage/status/:fileId` - Check file status
-
-### Blockchain Endpoints
-- `POST /api/v1/blockchain/register-proof` - Register proof on-chain
-- `GET /api/v1/blockchain/deal/:dealId` - Get deal information
-
-Full API documentation available at `/swagger/index.html` when running the server.
-
-## Development Workflow
-
-1. **File Upload Process**
-   - Client chunks and uploads file
-   - Server processes and stores file
-   - PDP proof generation initiated
-   - Proof registered on-chain
-
-2. **Verification Process**
-   - Client requests verification
-   - Server retrieves proof set
-   - PDP tool verifies data
-   - Results recorded on-chain
-
+4. **Wallet Requirements**
+   - Ensure your connected wallet has USDFC tokens for transactions
+   - USDFC contract address: `0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0`

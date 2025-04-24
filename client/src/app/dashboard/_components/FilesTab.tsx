@@ -72,7 +72,7 @@ const tableRowVariants = {
   }),
 };
 
-type ProofSetStatus = "none" | "creating" | "ready";
+type ProofSetStatus = "none" | "creating" | "ready" | "generating";
 
 export const FilesTab = ({
   isLoading: initialLoading,
@@ -88,7 +88,7 @@ export const FilesTab = ({
   }>({});
   const [fileSizeGB, setFileSizeGB] = useState<number>(0);
 
-  const { disconnectWallet } = useAuth();
+  const { disconnectWallet, userProofSetId, updateUserProofSetId } = useAuth();
 
   const [isProofDialogOpen, setIsProofDialogOpen] = useState(false);
   const [selectedProof, setSelectedProof] = useState<{
@@ -98,8 +98,6 @@ export const FilesTab = ({
     cid: string;
     rootId?: string;
   } | null>(null);
-
-  const [userProofSetId, setUserProofSetId] = useState<string | null>(null);
 
   const [proofSetStatus, setProofSetStatus] = useState<ProofSetStatus>(
     userProofSetId ? "ready" : "none"
@@ -156,9 +154,39 @@ export const FilesTab = ({
       if (data.proofSetReady) {
         console.log("[FilesTab] Setting proof set status to ready");
         setProofSetStatus("ready");
-        if (data.proofSetId) {
-          console.log("[FilesTab] Setting userProofSetId:", data.proofSetId);
-          setUserProofSetId(data.proofSetId);
+
+        // Make a separate call to get the proof set ID
+        try {
+          const proofSetResponse = await fetch(
+            `${API_BASE_URL}/api/v1/proofset/id`,
+            {
+              method: "GET",
+              credentials: "include",
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+              },
+            }
+          );
+
+          if (proofSetResponse.ok) {
+            const proofSetData = await proofSetResponse.json();
+            console.log("[FilesTab] Proof set data:", proofSetData);
+            if (proofSetData.proofSetId) {
+              console.log(
+                "[FilesTab] Found proofSetId:",
+                proofSetData.proofSetId
+              );
+              updateUserProofSetId(proofSetData.proofSetId);
+            }
+          } else {
+            console.warn(
+              "[FilesTab] Failed to fetch proof set ID:",
+              proofSetResponse.statusText
+            );
+          }
+        } catch (error) {
+          console.error("[FilesTab] Error fetching proof set ID:", error);
         }
       } else if (data.proofSetInitiated) {
         console.log("[FilesTab] Setting proof set status to creating");
@@ -193,7 +221,13 @@ export const FilesTab = ({
         error
       );
     }
-  }, [userProofSetId, setProofSetStatus, setAuthError, setPieces]);
+  }, [
+    userProofSetId,
+    setProofSetStatus,
+    setAuthError,
+    setPieces,
+    updateUserProofSetId,
+  ]);
 
   useEffect(() => {
     if (userProofSetId) {
@@ -327,19 +361,16 @@ export const FilesTab = ({
     const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
 
     if (derivedProofSetId !== userProofSetId) {
-      setUserProofSetId(derivedProofSetId);
       if (derivedProofSetId) {
         console.log(
-          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
+          `[FilesTab.tsx] Found piece with different Proof Set ID: ${derivedProofSetId} (Piece ID: ${firstPieceWithProof?.id})`
         );
       } else {
-        console.log(
-          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
-        );
+        console.log("[FilesTab.tsx] No pieces with Proof Set ID found.");
       }
     } else {
       console.log(
-        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
+        `[FilesTab.tsx] Proof Set ID check: Current ID (${userProofSetId}) matches pieces. Found piece ID: ${firstPieceWithProof?.id}`
       );
     }
   }, [pieces, userProofSetId]);
@@ -1193,6 +1224,32 @@ export const FilesTab = ({
       {renderProofSetStatusBanner()}
 
       {proofSetStatus === "ready" && (
+        <div className="mb-6 flex justify-end">
+          <a
+            href={`http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            View Your Proof Set
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      )}
+
+      {proofSetStatus === "ready" && (
         <CostBanner
           fileSizeGB={fileSizeGB}
           existingFiles={pieces.map((piece) => ({
@@ -1222,34 +1279,6 @@ export const FilesTab = ({
             </Typography>
           </div>
           <div className="flex items-center gap-4">
-            {userProofSetId && (
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <a
-                  href={` http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-4 w-4"
-                  >
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                  </svg>
-                  View Your Proof Set
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </motion.div>
-            )}
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}

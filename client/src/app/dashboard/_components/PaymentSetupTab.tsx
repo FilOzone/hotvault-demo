@@ -2,7 +2,14 @@ import { useState, useEffect } from "react";
 import { usePayment } from "@/contexts/PaymentContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { TokenBalanceCard } from "./TokenBalanceCard";
-import { CheckCircle, Loader, Info, AlertTriangle, Files } from "lucide-react";
+import {
+  CheckCircle,
+  Loader,
+  Info,
+  AlertTriangle,
+  Files,
+  ExternalLink,
+} from "lucide-react";
 import * as Constants from "@/lib/constants";
 import { toast } from "react-hot-toast";
 import { TransactionHistory } from "./TransactionHistory";
@@ -75,7 +82,7 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     refreshPaymentSetupStatus,
     initiateProofSetCreation,
   } = usePayment();
-  const { account } = useAuth();
+  const { account, userProofSetId } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState<PaymentStep>(
     PaymentStep.APPROVE_TOKEN
@@ -779,7 +786,24 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                     </p>
                     <p className="text-sm text-blue-700 mt-1">
                       Please wait while we set up your Hot Vault space. This
-                      typically takes 5-10 minutes. takes 5-10 minutes.
+                      typically takes a few minutes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isTrulyCompleted && (
+              <div className="mt-4 bg-white rounded-lg p-4 border border-green-100">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-base font-medium text-green-900">
+                      Hot Vault Space Created Successfully!
+                    </p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Your Hot Vault space is ready. You can now proceed to
+                      upload files.
                     </p>
                   </div>
                 </div>
@@ -829,18 +853,46 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                     </p>
                     <p className="text-sm text-green-700 mt-1">
                       Your payment setup is complete. You can now use all
-                      features of the Hot Vault service. Please go the files tab
-                      to upload your files.
+                      features of the Hot Vault service. Please go to the files
+                      tab to upload your files.
                     </p>
-                    <button
-                      onClick={() =>
-                        setActiveTab && setActiveTab(DASHBOARD_SECTIONS.FILES)
-                      }
-                      className="mt-4 w-full md:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Files className="w-4 h-4" />
-                      Go to Files Tab
-                    </button>
+                    <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                      <button
+                        onClick={() =>
+                          setActiveTab && setActiveTab(DASHBOARD_SECTIONS.FILES)
+                        }
+                        className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 gap-2 bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        <Files className="w-4 h-4" />
+                        Go to Files Tab
+                      </button>
+                      <button
+                        onClick={() =>
+                          window.open(
+                            `http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`,
+                            "_blank"
+                          )
+                        }
+                        className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 gap-2 text-blue-600 hover:text-blue-700"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="mr-1"
+                        >
+                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        </svg>
+                        View Your Proof Set
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -854,9 +906,32 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
   return (
     <div className="animate-fadeIn">
       <div className="px-6 py-4">
-        <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-          Payment Setup
-        </h1>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h1 className="text-xl font-semibold text-gray-900">Payment Setup</h1>
+          {paymentStatus.proofSetReady && userProofSetId && (
+            <a
+              href={`http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              View Your Proof Set
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
       </div>
 
       <div className="px-6 grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -8,6 +8,8 @@ export interface EthereumProvider {
     eventName: "accountsChanged" | "disconnect",
     handler: (accounts: string[]) => void
   ) => void;
+  isMetaMask?: boolean;
+  providers?: EthereumProvider[];
 }
 
 declare global {

@@ -15,16 +15,19 @@ declare global {
   }
 }
 
-export interface AuthContextType {
+export type AuthContextType = {
   account: string | null;
+  isConnected: boolean;
   isConnecting: boolean;
   isLoading: boolean;
   error: string;
   proofSetReady: boolean;
-  handleAccountSwitch: () => Promise<void>;
-  disconnectWallet: () => void;
+  proofSetId: string | null;
+  userProofSetId: string | null;
   connectWallet: () => Promise<void>;
-}
+  disconnectWallet: () => void;
+  updateUserProofSetId: (id: string) => void;
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -39,6 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [proofSetReady, setProofSetReady] = useState<boolean>(false);
+  const [userProofSetId, setUserProofSetId] = useState<string | null>(null);
   const router = useRouter();
 
   const [isConnectionLocked, setIsConnectionLocked] = useState(false);
@@ -120,6 +124,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (statusResponse.ok) {
           const data = await statusResponse.json();
           setProofSetReady(data.proofSetReady);
+          if (data.proofSetId) {
+            console.log("🔒 Setting proof set ID:", data.proofSetId);
+            setUserProofSetId(data.proofSetId);
+          }
           console.log(
             "🔒 Updated proofSetReady status after auth:",
             data.proofSetReady
@@ -259,11 +267,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setAccount(data.address);
         localStorage.setItem(STORAGE_KEY, "true");
         setProofSetReady(data.proofSetReady);
+        if (data.proofSetId) {
+          console.log("✅ Setting proof set ID:", data.proofSetId);
+          setUserProofSetId(data.proofSetId);
+        }
         console.log(
           "✅ Authenticated via cookie session for address:",
           data.address,
           "Proof Set Ready:",
-          data.proofSetReady
+          data.proofSetReady,
+          "Proof Set ID:",
+          data.proofSetId
         );
         setIsLoading(false);
         return true;
@@ -372,8 +386,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
+    // Check if MetaMask is the provider
+    const isMetaMask = window.ethereum.isMetaMask;
+    if (!isMetaMask) {
+      setError("Please use MetaMask as your wallet provider.");
+      setIsConnecting(false);
+      setIsConnectionLocked(false);
+      return;
+    }
+
+    // Check if multiple wallets are installed
+    const providers = window.ethereum.providers;
+    if (providers && providers.length > 1) {
+      // Find MetaMask provider
+      const metaMaskProvider = providers.find(
+        (p: EthereumProvider) => p.isMetaMask
+      );
+      if (!metaMaskProvider) {
+        setError("Please use MetaMask as your wallet provider.");
+        setIsConnecting(false);
+        setIsConnectionLocked(false);
+        return;
+      }
+      // Set MetaMask as the provider
+      window.ethereum = metaMaskProvider;
+    }
+
     try {
-      console.log("🦊 Requesting accounts...");
+      console.log("🦊 Requesting MetaMask accounts...");
       const accounts = (await window.ethereum.request({
         method: "eth_requestAccounts",
       })) as string[];
@@ -428,47 +468,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const disconnectWallet = () => {
-    handleDisconnect();
-  };
-
-  const handleAccountSwitch = async () => {
-    if (isConnectionLocked) {
-      return;
-    }
-
-    setIsConnectionLocked(true);
-    try {
-      if (!window.ethereum) {
-        throw new Error("MetaMask not available");
-      }
-
-      await window.ethereum.request({
-        method: "wallet_requestPermissions",
-        params: [{ eth_accounts: {} }],
-      });
-
-      await connectWallet();
-    } catch (error) {
-      console.error("Failed to switch account:", error);
-      setError("Failed to switch account. Please try again.");
-    } finally {
-      setTimeout(() => {
-        setIsConnectionLocked(false);
-      }, 1000);
-    }
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(JWT_STORAGE_KEY);
+    setAccount("");
+    router.push("/");
   };
 
   return (
     <AuthContext.Provider
       value={{
-        account,
+        account: account || null,
+        isConnected: !!account,
         isConnecting,
         isLoading,
         error,
         proofSetReady,
-        handleAccountSwitch,
-        disconnectWallet,
+        proofSetId: userProofSetId,
+        userProofSetId,
         connectWallet,
+        disconnectWallet,
+        updateUserProofSetId: setUserProofSetId,
       }}
     >
       {children}

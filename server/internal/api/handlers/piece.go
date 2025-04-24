@@ -328,3 +328,39 @@ func GetPieceProofs(c *gin.Context) {
 		"message": "Please use the /api/v1/pieces endpoint instead.",
 	})
 }
+
+// @Summary Get User's Proof Set ID
+// @Description Get the proof set ID for the authenticated user
+// @Tags proofset
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/v1/proofset/id [get]
+func GetUserProofSetID(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "User ID not found in token",
+		})
+		return
+	}
+
+	var proofSet models.ProofSet
+	if err := db.Where("user_id = ?", userID).First(&proofSet).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Proof set not found for user",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch proof set",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"proofSetId": proofSet.ProofSetID,
+	})
+}

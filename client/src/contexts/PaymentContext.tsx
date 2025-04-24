@@ -29,30 +29,24 @@ export interface TransactionRecord {
   error?: string;
 }
 
-interface PaymentStatus {
-  usdcBalance: string;
-  hasMinimumBalance: boolean;
-  isLoading: boolean;
-  error: string | null;
+export type PaymentStatus = {
   isTokenApproved: boolean;
   isDeposited: boolean;
   isOperatorApproved: boolean;
-  accountFunds: string;
-  lockedFunds: {
-    current: string;
-    rate: string;
-    lastSettledAt: string;
-  };
-  proofSetReady: boolean;
   isCreatingProofSet: boolean;
+  proofSetReady: boolean;
+  proofSetId: string | null;
+  hasMinimumBalance: boolean;
+  usdcBalance: string;
+  accountFunds: string;
+  error: string | null;
+  isLoading: boolean;
   lastApprovalTimestamp: number;
   operatorApproval: {
     rateAllowance: string;
     lockupAllowance: string;
-    rateUsage: string;
-    lockupUsage: string;
   } | null;
-}
+};
 
 interface PaymentContextType {
   paymentStatus: PaymentStatus;
@@ -75,29 +69,28 @@ const PaymentContext = createContext<PaymentContextType | undefined>(undefined);
 const generateId = () =>
   `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+const initialState: PaymentStatus = {
+  isTokenApproved: false,
+  isDeposited: false,
+  isOperatorApproved: false,
+  isCreatingProofSet: false,
+  proofSetReady: false,
+  proofSetId: null,
+  hasMinimumBalance: false,
+  usdcBalance: "0",
+  accountFunds: "0",
+  error: null,
+  isLoading: false,
+  lastApprovalTimestamp: 0,
+  operatorApproval: null,
+};
+
 export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
   const { account } = useAuth();
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>({
-    usdcBalance: "0",
-    hasMinimumBalance: false,
-    isLoading: false,
-    error: null,
-    isTokenApproved: false,
-    isDeposited: false,
-    isOperatorApproved: false,
-    accountFunds: "0",
-    lockedFunds: {
-      current: "0",
-      rate: "0",
-      lastSettledAt: "0",
-    },
-    proofSetReady: false,
-    isCreatingProofSet: false,
-    lastApprovalTimestamp: 0,
-    operatorApproval: null,
-  });
+  const [paymentStatus, setPaymentStatus] =
+    useState<PaymentStatus>(initialState);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
     null
@@ -237,6 +230,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
       let fetchedProofSetReady = false;
       let fetchedProofSetInitiated = false;
+      let fetchedProofSetId = null;
       try {
         const statusResponse = await fetch(
           `${Constants.API_BASE_URL}/api/v1/auth/status`,
@@ -249,6 +243,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           const statusData = await statusResponse.json();
           fetchedProofSetReady = statusData.proofSetReady;
           fetchedProofSetInitiated = statusData.proofSetInitiated;
+          fetchedProofSetId = statusData.proofSetId;
 
           if (
             fetchedProofSetInitiated &&
@@ -295,6 +290,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
             lastSettledAt: accountStatus.lockupLastSettledAt,
           },
           proofSetReady: fetchedProofSetReady,
+          proofSetId: fetchedProofSetId,
           isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
           isLoading: false,
           hasMinimumBalance: prev.hasMinimumBalance,
@@ -324,6 +320,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
             lastSettledAt: "0",
           },
           proofSetReady: fetchedProofSetReady,
+          proofSetId: fetchedProofSetId,
           isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
         }));
       }
@@ -383,6 +380,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         error: "Failed to check payment setup status",
         isLoading: false,
         proofSetReady: false,
+        proofSetId: null,
         isCreatingProofSet: false,
         operatorApproval: null,
       }));
