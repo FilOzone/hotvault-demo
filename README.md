@@ -6,12 +6,11 @@ Before setting up Hot Vault, ensure you have the following installed and configu
 
 ### Required Software
 
-- Docker Desktop (latest version)
+- Docker Desktop
 - Go 1.21 or later
 - Node.js 18.x or later
 - npm 9.x or later
 - MetaMask browser extension
-- PostgreSQL 15.x or later (if not using Docker)
 - PDP Tool (must be installed and configured)
 
 ### Required Tokens
