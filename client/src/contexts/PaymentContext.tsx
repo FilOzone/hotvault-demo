@@ -408,10 +408,10 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         setPaymentStatus((prev) => ({
           ...prev,
           operatorApproval: {
-            rateAllowance: ethers.formatUnits(approval.rateAllowance, 6),
-            lockupAllowance: ethers.formatUnits(approval.lockupAllowance, 6),
-            rateUsage: ethers.formatUnits(approval.rateUsage, 6),
-            lockupUsage: ethers.formatUnits(approval.lockupUsage, 6),
+            rateAllowance: ethers.formatUnits(approval.rateAllowance, 18),
+            lockupAllowance: ethers.formatUnits(approval.lockupAllowance, 18),
+            rateUsage: ethers.formatUnits(approval.rateUsage, 18),
+            lockupUsage: ethers.formatUnits(approval.lockupUsage, 18),
           },
         }));
       } catch (error) {

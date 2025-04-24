@@ -56,6 +56,22 @@ const formatLargeNumber = (num: string) => {
   return `${trimmed.slice(0, 8)}...${trimmed.slice(-4)}`;
 };
 
+// Helper functions to convert between human-readable and contract decimal values
+const toDisplayValue = (value: string): string => {
+  if (!value) return "";
+  // Convert from 18 decimals (contract value) to human-readable
+  const numValue = parseFloat(value) / 1e18;
+
+  // Format with up to 4 decimal places, removing trailing zeros
+  return numValue.toFixed(4).replace(/\.?0+$/, "");
+};
+
+const toContractValue = (value: string): string => {
+  if (!value) return "";
+  // Convert from human-readable to 18 decimals (contract value)
+  return (parseFloat(value) * 1e18).toString();
+};
+
 export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
   const {
     paymentStatus,
@@ -83,8 +99,12 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
   // Load current allowances when operator is approved
   useEffect(() => {
     if (paymentStatus.isOperatorApproved && !isUpdatingAllowances) {
-      setRateAllowance(paymentStatus.operatorApproval?.rateAllowance || "");
-      setLockupAllowance(paymentStatus.operatorApproval?.lockupAllowance || "");
+      setRateAllowance(
+        toDisplayValue(paymentStatus.operatorApproval?.rateAllowance || "")
+      );
+      setLockupAllowance(
+        toDisplayValue(paymentStatus.operatorApproval?.lockupAllowance || "")
+      );
     }
   }, [
     paymentStatus.isOperatorApproved,
@@ -177,8 +197,8 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     setIsProcessing(true);
     try {
       const result = await approveServiceOperator(
-        rateAllowance,
-        lockupAllowance
+        toContractValue(rateAllowance),
+        toContractValue(lockupAllowance)
       );
       if (result) {
         toast.success(
@@ -443,32 +463,38 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                 <div className="space-y-4">
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">
-                        Rate Allowance
-                      </span>
-                      <span className="text-xs text-gray-500">USDFC/epoch</span>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <div className="font-mono text-sm break-all">
-                        {formatLargeNumber(
-                          paymentStatus.operatorApproval?.rateAllowance || "0"
-                        )}
+                      <div className="text-sm font-medium text-gray-700">
+                        <span>Rate Allowance</span>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <div className="font-mono text-sm break-all">
+                          {formatLargeNumber(
+                            toDisplayValue(
+                              paymentStatus.operatorApproval?.rateAllowance ||
+                                "0"
+                            )
+                          )}{" "}
+                          USDFC/epoch
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">
-                        Lockup Allowance
-                      </span>
-                      <span className="text-xs text-gray-500">USDFC</span>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <div className="font-mono text-sm break-all">
-                        {formatLargeNumber(
-                          paymentStatus.operatorApproval?.lockupAllowance || "0"
-                        )}
+                      <div className="text-sm font-medium text-gray-700">
+                        <span>Lockup Allowance</span>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <div className="font-mono text-sm break-all">
+                          {formatLargeNumber(
+                            toDisplayValue(
+                              paymentStatus.operatorApproval?.lockupAllowance ||
+                                "0"
+                            )
+                          )}{" "}
+                          USDFC
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -862,7 +888,7 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                     <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
                     <div>
                       <p className="font-medium text-amber-800">
-                        Insufficient Contract Balance
+                        Insufficient Balance
                       </p>
                       <p className="text-sm text-amber-700 mt-1">
                         You need at least {Constants.MINIMUM_USDFC_BALANCE}{" "}

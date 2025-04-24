@@ -99,11 +99,30 @@ export function getExplorerUrl(txHash: string): string {
 }
 
 /**
- * Formats a currency amount with 2 decimal places
+ * Formats a currency amount with configurable decimal places
  * @param amount - Amount as a string or number
- * @returns Formatted string with 2 decimal places
+ * @param decimals - Number of decimal places (default: 2)
+ * @param trimZeros - Whether to trim trailing zeros (default: true)
+ * @returns Formatted string
  */
-export const formatCurrency = (amount: string | number): string => {
+export const formatCurrency = (
+  amount: string | number,
+  decimals: number = 2,
+  trimZeros: boolean = true
+): string => {
   const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
-  return numAmount.toFixed(2);
+
+  // For very large or very small numbers, use scientific notation
+  if (
+    Math.abs(numAmount) >= 1e15 ||
+    (Math.abs(numAmount) > 0 && Math.abs(numAmount) < 0.001)
+  ) {
+    return numAmount.toExponential(4);
+  }
+
+  // Format with the specified number of decimal places
+  const formatted = numAmount.toFixed(decimals);
+
+  // Optionally trim trailing zeros after the decimal point
+  return trimZeros ? formatted.replace(/\.?0+$/, "") : formatted;
 };

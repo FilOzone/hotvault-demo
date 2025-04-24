@@ -8,6 +8,25 @@ import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
 
+// Helper functions to convert between human-readable and contract decimal values
+// This converts 18 decimal contract values to human-readable format
+const formatTokenAmount = (value: string): string => {
+  if (!value || value === "0") return "0";
+
+  // Convert from 18 decimals to human-readable
+  const numValue = Number(value) / 1e18;
+  if (numValue === 0) return "0";
+
+  // Format the number, limiting to max 2 decimal places and removing trailing zeros
+  return numValue.toFixed(2).replace(/\.?0+$/, "");
+};
+
+const toContractValue = (value: string): string => {
+  if (!value) return "0";
+  // Convert from human-readable to 18 decimals (contract value)
+  return (parseFloat(value) * 1e18).toString();
+};
+
 // Add a custom event name for root removal
 export const ROOT_REMOVED_EVENT = "ROOT_REMOVED";
 
@@ -100,7 +119,7 @@ export const PaymentBalanceHeader = () => {
 
     setIsProcessing(true);
     try {
-      const result = await approveToken(allowanceAmount);
+      const result = await approveToken(toContractValue(allowanceAmount));
       if (result) {
         toast.success(`Successfully set allowance to ${allowanceAmount} USDFC`);
         setAllowanceAmount("");
@@ -156,7 +175,7 @@ export const PaymentBalanceHeader = () => {
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Contract Balance:</span>
+                  <span className="text-gray-600">FWS Balance:</span>
                   <span className="font-medium">
                     {formatCurrency(paymentStatus.accountFunds)} USDFC
                   </span>
@@ -194,9 +213,11 @@ export const PaymentBalanceHeader = () => {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Rate Usage:</span>
                     <span className="font-mono text-xs">
-                      {formatCurrency(paymentStatus.operatorApproval.rateUsage)}
+                      {formatTokenAmount(
+                        paymentStatus.operatorApproval.rateUsage
+                      )}
                       /
-                      {formatCurrency(
+                      {formatTokenAmount(
                         paymentStatus.operatorApproval.rateAllowance
                       )}{" "}
                       USDFC
@@ -205,11 +226,11 @@ export const PaymentBalanceHeader = () => {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Lockup Usage:</span>
                     <span className="font-mono text-xs">
-                      {formatCurrency(
+                      {formatTokenAmount(
                         paymentStatus.operatorApproval.lockupUsage
                       )}
                       /
-                      {formatCurrency(
+                      {formatTokenAmount(
                         paymentStatus.operatorApproval.lockupAllowance
                       )}{" "}
                       USDFC
