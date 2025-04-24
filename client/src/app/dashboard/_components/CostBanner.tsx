@@ -135,7 +135,7 @@ export const CostBanner: React.FC<CostBannerProps> = ({
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Lockup Period:</span>
                       <span className="font-medium text-gray-900">
-                        {lockPeriodDays} days
+                        {lockPeriodDays} days 
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
