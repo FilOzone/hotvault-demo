@@ -8,21 +8,9 @@ import type { ReactElement } from "react";
 import { useDropzone } from "react-dropzone";
 import { API_BASE_URL } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
-import {
-  AlertTriangle,
-  Download,
-  Trash2,
-  ExternalLink,
-  MoreHorizontal,
-} from "lucide-react";
-import Image from "next/image";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { AlertTriangle, Download, Trash2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import Image from "next/image";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +25,8 @@ import { useUploadStore } from "@/store/upload-store";
 import { UploadProgress } from "@/components/ui/upload-progress";
 import { useAuth } from "@/contexts/AuthContext";
 import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
+import { ROOT_REMOVED_EVENT } from "./PaymentBalanceHeader";
+import { CostBanner } from "./CostBanner";
 
 interface Piece {
   id: number;
@@ -56,6 +46,7 @@ interface Piece {
 
 interface FilesTabProps {
   isLoading: boolean;
+  onTabChange?: (tab: string) => void;
 }
 
 interface DownloadError extends Error {
@@ -81,8 +72,11 @@ const tableRowVariants = {
   }),
 };
 
+type ProofSetStatus = "none" | "creating" | "ready";
+
 export const FilesTab = ({
   isLoading: initialLoading,
+  onTabChange,
 }: FilesTabProps): ReactElement => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -92,10 +86,10 @@ export const FilesTab = ({
   const [downloadsInProgress, setDownloadsInProgress] = useState<{
     [cid: string]: boolean;
   }>({});
+  const [fileSizeGB, setFileSizeGB] = useState<number>(0);
 
   const { disconnectWallet } = useAuth();
 
-  // Add new state for proof dialog
   const [isProofDialogOpen, setIsProofDialogOpen] = useState(false);
   const [selectedProof, setSelectedProof] = useState<{
     pieceId: number;
@@ -105,13 +99,118 @@ export const FilesTab = ({
     rootId?: string;
   } | null>(null);
 
-  // Add state for the user's proof set ID
   const [userProofSetId, setUserProofSetId] = useState<string | null>(null);
 
-  // Add state for tracking proof set creation status
-  const [proofSetStatus, setProofSetStatus] = useState<
-    "idle" | "pending" | "ready"
-  >("idle");
+  const [proofSetStatus, setProofSetStatus] = useState<ProofSetStatus>(
+    userProofSetId ? "ready" : "none"
+  );
+
+  const fetchProofs = useCallback(async () => {
+    try {
+      if (userProofSetId) {
+        console.log(
+          "[FilesTab] Using existing userProofSetId:",
+          userProofSetId
+        );
+        setProofSetStatus("ready");
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/status`, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.status === 401) {
+        console.log(
+          "[FilesTab] Auth status response 401:",
+          await response.json()
+        );
+        setAuthError("Your session has expired. Please login again.");
+        return;
+      }
+
+      if (!response.ok) {
+        const data = await response.json();
+        console.log("[FilesTab] Auth status response not OK:", data);
+        if (data.error?.includes("Proof set not found")) {
+          setProofSetStatus("none");
+        } else {
+          console.warn(
+            `[FilesTab.tsx:fetchProofs] Failed to fetch proofs: ${response.statusText}`
+          );
+          // Keep the current status instead of assuming "creating"
+          return;
+        }
+        return;
+      }
+
+      const data = await response.json();
+      console.log("[FilesTab] Auth status response:", data);
+
+      // Check the auth status response for proof set state
+      if (data.proofSetReady) {
+        console.log("[FilesTab] Setting proof set status to ready");
+        setProofSetStatus("ready");
+        if (data.proofSetId) {
+          console.log("[FilesTab] Setting userProofSetId:", data.proofSetId);
+          setUserProofSetId(data.proofSetId);
+        }
+      } else if (data.proofSetInitiated) {
+        console.log("[FilesTab] Setting proof set status to creating");
+        setProofSetStatus("creating");
+      } else {
+        console.log("[FilesTab] Setting proof set status to none");
+        setProofSetStatus("none");
+      }
+
+      // Update pieces with proof data if available
+      if (data.pieces) {
+        console.log("[FilesTab] Updating pieces with proof data:", data.pieces);
+        setPieces((prevPieces) =>
+          prevPieces.map((piece) => {
+            const pieceWithProof = data.pieces.find(
+              (p: Piece) => p.id === piece.id
+            );
+            if (pieceWithProof?.proofSetDbId) {
+              return {
+                ...piece,
+                proofSetDbId: pieceWithProof.proofSetDbId,
+                rootId: pieceWithProof.rootId,
+              };
+            }
+            return piece;
+          })
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "[FilesTab.tsx:fetchProofs] Error checking proof status:",
+        error
+      );
+    }
+  }, [userProofSetId, setProofSetStatus, setAuthError, setPieces]);
+
+  useEffect(() => {
+    if (userProofSetId) {
+      setProofSetStatus("ready");
+    }
+  }, [userProofSetId]);
+
+  useEffect(() => {
+    if (proofSetStatus === "creating" && pieces.length > 0 && !userProofSetId) {
+      const proofCheckInterval = setInterval(() => {
+        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
+        fetchProofs();
+      }, 15000);
+
+      return () => clearInterval(proofCheckInterval);
+    }
+  }, [proofSetStatus, pieces.length, userProofSetId, fetchProofs]);
 
   const fetchPieces = useCallback(async () => {
     try {
@@ -151,7 +250,6 @@ export const FilesTab = ({
     }
   }, []);
 
-  // Use the global upload hook and store
   const {
     uploadFile,
     handleCancelUpload: cancelUpload,
@@ -159,23 +257,6 @@ export const FilesTab = ({
   } = useUpload(fetchPieces);
   const uploadProgress = useUploadStore((state) => state.uploadProgress);
 
-  // Add new state for root removal dialog
-  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
-  const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
-
-  // Add a useEffect to periodically check for proof sets if they're pending
-  useEffect(() => {
-    // Don't poll if we already have a proof set ID
-    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
-      const proofCheckInterval = setInterval(() => {
-        console.log("[FilesTab.tsx] Checking if proof sets are ready...");
-        fetchProofs();
-      }, 15000); // Check every 15 seconds
-
-      return () => clearInterval(proofCheckInterval);
-    }
-  }, [proofSetStatus, pieces.length, userProofSetId]);
-
   useEffect(() => {
     let isMounted = true;
 
@@ -183,7 +264,6 @@ export const FilesTab = ({
       try {
         if (isMounted) {
           const data = await fetchPieces();
-          // Only proceed if we're still mounted and have data
           if (isMounted && data) {
             await fetchProofs();
           }
@@ -199,185 +279,53 @@ export const FilesTab = ({
 
     loadData();
 
-    // Cleanup function to prevent state updates after unmount
-    return () => {
-      isMounted = false;
-    };
-  }, [authError, fetchPieces]);
-
-  // Add useEffect to find the user's proof set ID when pieces are loaded
-  useEffect(() => {
-    // Find the first piece with a valid proofSetDbId (the service ID string)
-    const firstPieceWithProof = pieces.find(
-      (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
-    );
-    const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
-
-    // Only update state if the derived ID is different from the current state
-    if (derivedProofSetId !== userProofSetId) {
-      setUserProofSetId(derivedProofSetId);
-      if (derivedProofSetId) {
-        console.log(
-          `[FilesTab.tsx] User Proof Set ID updated to: ${derivedProofSetId} (derived from Piece ID: ${firstPieceWithProof?.id})`
-        );
-      } else {
-        console.log(
-          "[FilesTab.tsx] No pieces with Proof Set ID found. Clearing userProofSetId."
-        );
-      }
-    } else {
-      // Log even if the ID hasn't changed, for debugging
+    const handleUploadCompleted = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
       console.log(
-        `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
-      );
-    }
-  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
-
-  // Add new function to fetch proofs
-  const fetchProofs = useCallback(async () => {
-    try {
-      // If we already have a userProofSetId, no need to keep checking
-      if (userProofSetId) {
-        setProofSetStatus("ready");
-        return;
-      }
-
-      const token = localStorage.getItem("jwt_token");
-      if (!token) {
-        setAuthError("Authentication required. Please login again.");
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/pieces/proof-sets`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      // If we get a 500 error, it likely means proof sets are still being created
-      if (response.status === 500) {
-        console.log(
-          "[FilesTab.tsx:fetchProofs] Proof sets are being created..."
-        );
-        setProofSetStatus("pending");
-        return;
-      }
-
-      if (response.status === 401) {
-        setAuthError("Your session has expired. Please login again.");
-        return;
-      }
-
-      if (!response.ok) {
-        console.warn(
-          `[FilesTab.tsx:fetchProofs] Failed to fetch proofs: ${response.statusText}`
-        );
-        setProofSetStatus("pending");
-        return;
-      }
-
-      const data = await response.json();
-
-      // Validate data structure before using it
-      if (!data || (data.pieces && !Array.isArray(data.pieces))) {
-        console.warn(
-          "[FilesTab.tsx:fetchProofs] Unexpected data format:",
-          data
-        );
-        return;
-      }
-
-      // Update the pieces with proof data
-      setPieces((prevPieces) =>
-        prevPieces.map((piece) => {
-          // Find the matching piece with proof data
-          const piecesArray = Array.isArray(data.pieces)
-            ? data.pieces
-            : Array.isArray(data)
-            ? data
-            : [];
-          const pieceWithProof = piecesArray.find(
-            (p: Piece) => p.id === piece.id
-          );
-          if (pieceWithProof && pieceWithProof.proofSetDbId) {
-            // Update with proof data
-            return {
-              ...piece,
-              proofSetDbId: pieceWithProof.proofSetDbId,
-              rootId: pieceWithProof.rootId,
-            };
-          }
-          return piece;
-        })
+        "[FilesTab] Detected upload completion, refreshing file list",
+        detail
       );
 
-      setProofSetStatus("ready");
-      console.log("[FilesTab.tsx:fetchProofs] ✅ Proofs loaded:", data);
-    } catch (error) {
-      // Don't show error toast to the user
-      console.warn(
-        "[FilesTab.tsx:fetchProofs] ℹ️ Error fetching proofs (might be pending creation):",
-        error
-      );
-      setProofSetStatus("pending");
-    }
-  }, [userProofSetId, setProofSetStatus, setAuthError, setPieces]);
+      setIsLoading(true);
 
-  useEffect(() => {
-    let isMounted = true;
+      const refreshNow = () => {
+        fetchPieces()
+          .then(() => {
+            console.log(
+              "[FilesTab] File list refreshed successfully after upload"
+            );
+            setIsLoading(false);
+          })
+          .catch((error: Error) => {
+            console.error(
+              "[FilesTab] Error refreshing file list after upload:",
+              error
+            );
+            setIsLoading(false);
+          });
+      };
 
-    const loadData = async () => {
-      try {
-        if (isMounted) {
-          const data = await fetchPieces();
-          // Only proceed if we're still mounted and have data
-          if (isMounted && data) {
-            await fetchProofs();
-          }
-        }
-      } catch (error: unknown) {
-        if (isMounted && !authError) {
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
-          toast.error(`Error loading files: ${errorMessage}`);
-        }
-      }
+      refreshNow();
+
+      setTimeout(refreshNow, 500);
+
+      setTimeout(refreshNow, 2000);
     };
 
-    loadData();
-
-    // Add event listener for upload completion to refresh the file list
-    const handleUploadCompleted = () => {
-      console.log(
-        "[FilesTab] Detected upload completion, refreshing file list"
-      );
-      fetchPieces().catch((err) => {
-        console.error(
-          "[FilesTab] Error refreshing file list after upload",
-          err
-        );
-      });
-    };
-
-    // Listen for the custom upload completed event
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
 
-    // Cleanup function to prevent state updates after unmount
     return () => {
       isMounted = false;
       window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
     };
   }, [authError, fetchPieces, fetchProofs]);
 
-  // Add useEffect to find the user's proof set ID when pieces are loaded
   useEffect(() => {
-    // Find the first piece with a valid proofSetDbId (the service ID string)
     const firstPieceWithProof = pieces.find(
       (p) => p.proofSetDbId !== null && p.proofSetDbId !== undefined
     );
     const derivedProofSetId = firstPieceWithProof?.serviceProofSetId || null;
 
-    // Only update state if the derived ID is different from the current state
     if (derivedProofSetId !== userProofSetId) {
       setUserProofSetId(derivedProofSetId);
       if (derivedProofSetId) {
@@ -390,66 +338,77 @@ export const FilesTab = ({
         );
       }
     } else {
-      // Log even if the ID hasn't changed, for debugging
       console.log(
         `[FilesTab.tsx] Proof Set ID derivation checked. Current ID (${userProofSetId}) remains unchanged. Found piece ID: ${firstPieceWithProof?.id}`
       );
     }
-  }, [pieces, userProofSetId]); // Add userProofSetId to dependency array
+  }, [pieces, userProofSetId]);
 
-  // Add this useEffect to check token on component mount and set up periodic token check
+  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
+  const [pieceToRemove, setPieceToRemove] = useState<Piece | null>(null);
+
   useEffect(() => {
     const checkToken = () => {
       const token = localStorage.getItem("jwt_token");
       if (!token) {
         setAuthError("Authentication required. Please login again.");
       } else {
-        // Only clear auth error if it was previously set
         if (authError) setAuthError(null);
       }
     };
 
-    // Check on mount
     checkToken();
 
-    // Check token periodically
-    const tokenInterval = setInterval(checkToken, 60000); // Check every minute
+    const tokenInterval = setInterval(checkToken, 60000);
 
     return () => {
       clearInterval(tokenInterval);
     };
   }, [authError]);
 
-  // Modify the onDrop function to handle all file types, not just images
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      setSelectedImage(file);
+    if (acceptedFiles.length === 0) return;
 
-      // Only create a preview URL for image files
-      const isImage = file.type.startsWith("image/");
+    const file = acceptedFiles[0];
 
-      if (isImage) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setPreviewUrl(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-      } else {
-        // For non-image files, we won't set a preview URL
-        setPreviewUrl(null);
-      }
+    // Check file size (99MB limit)
+    // const maxFileSize = 99 * 1024 * 1024; // 99MB in bytes
+    // if (file.size > maxFileSize) {
+    //   toast.error(
+    //     `File is too large. Maximum size is 99MB. Current size: ${formatFileSize(
+    //       file.size
+    //     )}`
+    //   );
+    //   return;
+    // }
+
+    setSelectedImage(file);
+
+    const sizeInGB = file.size / (1024 * 1024 * 1024);
+    setFileSizeGB(Number(sizeInGB.toFixed(6)));
+
+    if (file.type.startsWith("image/")) {
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewUrl(objectUrl);
+    } else {
+      setPreviewUrl(null);
     }
   }, []);
 
-  // Add a helper to determine if uploads should be disabled
-  const isUploadDisabled =
-    proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId;
+  const isUploadDisabled = useCallback(() => {
+    if (proofSetStatus === "none" && pieces.length === 0) {
+      return true;
+    }
+    if (proofSetStatus === "creating") {
+      return true;
+    }
+    return false;
+  }, [proofSetStatus, pieces.length]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     maxFiles: 1,
-    disabled: isUploadDisabled, // Disable dropzone when proof set is being created
+    disabled: isUploadDisabled(),
   });
 
   const handleSubmitImage = async () => {
@@ -457,17 +416,13 @@ export const FilesTab = ({
 
     try {
       await uploadFile(selectedImage);
-      // On successful upload initiation, clear the selected image
       setSelectedImage(null);
       setPreviewUrl(null);
-      // The files list will be refreshed automatically via the onSuccess callback
     } catch (error) {
-      // Error handling is done in the hook
       console.error("[FilesTab] Upload failed:", error);
     }
   };
 
-  // Add download function
   const handleDownload = (piece: Piece) => {
     const token = localStorage.getItem("jwt_token");
     if (!token) {
@@ -475,7 +430,6 @@ export const FilesTab = ({
       return;
     }
 
-    // Set this piece as downloading
     setDownloadsInProgress((prev) => ({
       ...prev,
       [piece.cid]: true,
@@ -483,24 +437,24 @@ export const FilesTab = ({
 
     toast.info(`Preparing ${piece.filename} for download...`);
 
-    // First try normal download
-    downloadWithMethod(piece, false)
+    const encodedCid = encodeURIComponent(piece.cid);
+
+    downloadWithMethod(piece, encodedCid, false)
       .catch((error) => {
         console.error(
           "[FilesTab.tsx:handleDownload] Error with direct download:",
           error
         );
 
-        // If direct download fails, try gateway download
         if (
           error.message &&
           (error.message.includes("pdptool not found") ||
             error.message.includes("Failed to download file"))
         ) {
           toast.info("Direct download failed. Trying IPFS gateway...");
-          return downloadWithMethod(piece, true);
+          return downloadWithMethod(piece, encodedCid, true);
         }
-        throw error; // Re-throw if it's not a pdptool error
+        throw error;
       })
       .catch((error) => {
         console.error(
@@ -511,17 +465,19 @@ export const FilesTab = ({
       });
   };
 
-  // Helper function to download with either direct or gateway method
-  const downloadWithMethod = (piece: Piece, useGateway: boolean) => {
+  const downloadWithMethod = (
+    piece: Piece,
+    encodedCid: string,
+    useGateway: boolean
+  ) => {
     const token = localStorage.getItem("jwt_token");
     if (!token) {
       return Promise.reject(new Error("Authentication required"));
     }
 
-    // Build URL with gateway parameter if needed
     const url = useGateway
-      ? `${API_BASE_URL}/api/v1/download/${piece.cid}?gateway=true`
-      : `${API_BASE_URL}/api/v1/download/${piece.cid}`;
+      ? `${API_BASE_URL}/api/v1/download/${encodedCid}?gateway=true`
+      : `${API_BASE_URL}/api/v1/download/${encodedCid}`;
 
     return fetch(url, {
       headers: {
@@ -530,27 +486,30 @@ export const FilesTab = ({
     })
       .then(async (response) => {
         if (!response.ok) {
-          // Try to get detailed error message from response
           let errorMessage = `Download failed: ${response.statusText}`;
           let errorOptions: string[] = [];
 
-          try {
-            const errorData = await response.json();
-            if (errorData.error) {
-              errorMessage = errorData.error;
-              if (errorData.options) {
-                errorOptions = errorData.options;
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              const errorData = await response.json();
+              if (errorData.error) {
+                errorMessage = errorData.error;
+                if (errorData.options) {
+                  errorOptions = errorData.options;
+                }
+                console.error(
+                  "[FilesTab.tsx:downloadWithMethod] Error details:",
+                  errorData
+                );
               }
+            } catch (e) {
               console.error(
-                "[FilesTab.tsx:downloadWithMethod] Error details:",
-                errorData
+                "[FilesTab.tsx:downloadWithMethod] Failed to parse error as JSON:",
+                e
               );
             }
-          } catch (e) {
-            console.error(
-              "[FilesTab.tsx:downloadWithMethod] Failed to parse error as JSON:",
-              e
-            );
+          } else {
             try {
               const errorText = await response.text();
               if (errorText) {
@@ -569,11 +528,9 @@ export const FilesTab = ({
           throw error;
         }
 
-        // If it's a redirect (gateway method), follow the redirect
         if (response.redirected) {
           window.open(response.url, "_blank");
 
-          // Remove from downloads in progress
           setDownloadsInProgress((prev) => {
             const newState = { ...prev };
             delete newState[piece.cid];
@@ -583,15 +540,14 @@ export const FilesTab = ({
           toast.success(
             `${piece.filename} opened in new tab from IPFS gateway`
           );
-          return null; // Indicate that we handled it via redirect
+          return null;
         }
 
         return response.blob();
       })
       .then((blob) => {
-        if (!blob) return; // Already handled by redirect case
+        if (!blob) return;
 
-        // Create a blob URL for the downloaded file
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
@@ -599,7 +555,6 @@ export const FilesTab = ({
         document.body.appendChild(link);
         link.click();
 
-        // Clean up
         setTimeout(() => {
           document.body.removeChild(link);
           window.URL.revokeObjectURL(url);
@@ -607,7 +562,6 @@ export const FilesTab = ({
 
         toast.success(`${piece.filename} downloaded successfully`);
 
-        // Remove from downloads in progress
         setDownloadsInProgress((prev) => {
           const newState = { ...prev };
           delete newState[piece.cid];
@@ -616,12 +570,11 @@ export const FilesTab = ({
       });
   };
 
-  // Helper to handle download errors with options
   const handleDownloadError = (piece: Piece, error: DownloadError) => {
     const options = error.options || [];
+    const cid = piece.cid.split(":")[0];
 
     if (options.length > 0) {
-      // Show error with options
       toast.error(
         <div className="flex flex-col gap-2">
           <div>Download failed: {error.message}</div>
@@ -640,12 +593,9 @@ export const FilesTab = ({
             variant="outline"
             className="flex items-center gap-2 mt-1"
             onClick={() => {
-              // Try to download directly from IPFS gateway
-              const cid = piece.cid.split(":")[0]; // Get the first part of the CID
               const gatewayUrl = `https://ipfs.io/ipfs/${cid}`;
               window.open(gatewayUrl, "_blank");
 
-              // Remove from downloads in progress
               setDownloadsInProgress((prev) => {
                 const newState = { ...prev };
                 delete newState[piece.cid];
@@ -660,11 +610,9 @@ export const FilesTab = ({
         { duration: 10000 }
       );
     } else {
-      // Show simple error
       toast.error(error.message || "Download failed");
     }
 
-    // Remove from downloads in progress
     setDownloadsInProgress((prev) => {
       const newState = { ...prev };
       delete newState[piece.cid];
@@ -672,13 +620,11 @@ export const FilesTab = ({
     });
   };
 
-  // Add remove root function
   const handleRemoveRoot = (piece: Piece) => {
     setPieceToRemove(piece);
     setIsRemoveDialogOpen(true);
   };
 
-  // Submit remove root request
   const submitRemoveRoot = async () => {
     if (!pieceToRemove) return;
 
@@ -714,6 +660,9 @@ export const FilesTab = ({
         prevPieces.filter((p) => p.id !== pieceToRemove.id)
       );
 
+      // Dispatch the ROOT_REMOVED_EVENT to trigger balance refresh
+      window.dispatchEvent(new Event(ROOT_REMOVED_EVENT));
+
       // Close dialog
       setIsRemoveDialogOpen(false);
       setPieceToRemove(null);
@@ -723,9 +672,7 @@ export const FilesTab = ({
     }
   };
 
-  // Add a function to open the proof details dialog
   const openProofDetails = (piece: Piece) => {
-    // Use serviceProofSetId here
     if (piece.serviceProofSetId === undefined) {
       console.warn(
         "Attempted to open proof details for piece without serviceProofSetId:",
@@ -745,11 +692,9 @@ export const FilesTab = ({
     setIsProofDialogOpen(true);
   };
 
-  // Add a helper function to determine file icon based on extension
   const getFileIcon = (filename: string) => {
     const extension = filename.split(".").pop()?.toLowerCase() || "";
 
-    // Images
     if (
       ["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"].includes(extension)
     ) {
@@ -771,7 +716,6 @@ export const FilesTab = ({
       );
     }
 
-    // Documents
     if (["pdf", "doc", "docx", "txt", "rtf", "odt"].includes(extension)) {
       return (
         <svg
@@ -790,7 +734,6 @@ export const FilesTab = ({
       );
     }
 
-    // Spreadsheets
     if (["xls", "xlsx", "csv", "ods"].includes(extension)) {
       return (
         <svg
@@ -809,7 +752,6 @@ export const FilesTab = ({
       );
     }
 
-    // Archives
     if (["zip", "rar", "tar", "gz", "7z"].includes(extension)) {
       return (
         <svg
@@ -829,7 +771,6 @@ export const FilesTab = ({
       );
     }
 
-    // Code files
     if (
       [
         "js",
@@ -863,7 +804,6 @@ export const FilesTab = ({
       );
     }
 
-    // Video files
     if (
       ["mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"].includes(extension)
     ) {
@@ -885,7 +825,6 @@ export const FilesTab = ({
       );
     }
 
-    // Audio files
     if (["mp3", "wav", "ogg", "flac", "aac", "m4a"].includes(extension)) {
       return (
         <svg
@@ -905,7 +844,6 @@ export const FilesTab = ({
       );
     }
 
-    // Default (fallback)
     return (
       <svg
         className="h-6 w-6 text-gray-400"
@@ -923,11 +861,9 @@ export const FilesTab = ({
     );
   };
 
-  // Modify the renderPieceRow function to include animations
   const renderPieceRow = (piece: Piece, index: number) => {
     const isPendingRemoval = piece.pendingRemoval;
     const isDownloading = downloadsInProgress[piece.cid];
-    // Use serviceProofSetId to check if proof is available
     const hasProof =
       piece.serviceProofSetId !== undefined && piece.serviceProofSetId !== null;
     const rowClasses = isPendingRemoval
@@ -1058,16 +994,6 @@ export const FilesTab = ({
                 {/* Display serviceProofSetId */}
                 Set #{piece.serviceProofSetId}
               </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="px-2 py-1 text-xs"
-                  onClick={() => openProofDetails(piece)}
-                >
-                  Details
-                </Button>
-              </div>
             </div>
           ) : (
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
@@ -1090,67 +1016,50 @@ export const FilesTab = ({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleDownload(piece)}
+                  onClick={() => {
+                    handleDownload(piece);
+                  }}
                   disabled={isDownloading}
                   className="h-8 flex items-center transition-all duration-200 hover:text-blue-600"
                 >
-                  <Download className="h-4 w-4" />
+                  <Download className="h-4 w-4 mr-1" />
+                  <span>Download</span>
                 </Button>
               </motion.div>
-              <DropdownMenu>
+
+              {hasProof && (
                 <motion.div
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className="h-8 w-8 p-0 transition-all duration-200"
-                    >
-                      <span className="sr-only">Open menu</span>
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openProofDetails(piece)}
+                    className="h-8 flex items-center transition-all duration-200 hover:text-blue-600"
+                  >
+                    <span>Details</span>
+                  </Button>
                 </motion.div>
-                <DropdownMenuContent
-                  align="end"
-                  sideOffset={5}
-                  className="animate-in fade-in-50 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+              )}
+
+              {!isPendingRemoval && (
+                <motion.div
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
                 >
-                  {/* Use hasProof (which checks serviceProofSetId) */}
-                  {hasProof && (
-                    <DropdownMenuItem
-                      onClick={() => openProofDetails(piece)}
-                      className="cursor-pointer"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-4 w-4 mr-2"
-                      >
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                      </svg>
-                      View Proof
-                    </DropdownMenuItem>
-                  )}
-                  {!isPendingRemoval && (
-                    <DropdownMenuItem
-                      onClick={() => handleRemoveRoot(piece)}
-                      className="cursor-pointer text-red-600"
-                      // Disable if it's already marked (though it should be removed from UI now)
-                      disabled={piece.pendingRemoval}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Remove Root
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveRoot(piece)}
+                    disabled={piece.pendingRemoval}
+                    className="h-8 flex items-center transition-all duration-200 hover:text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    <span>Remove</span>
+                  </Button>
+                </motion.div>
+              )}
             </div>
           )}
         </td>
@@ -1158,10 +1067,46 @@ export const FilesTab = ({
     );
   };
 
-  // In the render method or somewhere appropriate in the component
   const renderProofSetStatusBanner = () => {
-    // Don't show the banner if we already have a proof set ID, even if status is pending
-    if (proofSetStatus === "pending" && pieces.length > 0 && !userProofSetId) {
+    console.log(
+      "[FilesTab] Rendering banner - status:",
+      proofSetStatus,
+      "pieces:",
+      pieces.length
+    );
+
+    if (proofSetStatus === "none" && pieces.length === 0) {
+      console.log("[FilesTab] Showing 'Proof Set Required' banner");
+      return (
+        <motion.div
+          className="mb-6 p-4 bg-blue-100 border border-blue-100 rounded-lg text-blue-700 flex items-center gap-3"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex-1">
+            <p className="font-medium mb-1">Proof Set Required</p>
+            <p className="text-sm">
+              You need to create a proof set in the Payment Setup tab before you
+              can upload files. This is a one-time setup to onboard you to Hot
+              Vault.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => {
+                onTabChange?.("payment");
+              }}
+            >
+              Go to Payment Setup
+            </Button>
+          </div>
+        </motion.div>
+      );
+    }
+
+    if (proofSetStatus === "creating") {
+      console.log("[FilesTab] Showing 'Proof Set Creating' banner");
       return (
         <motion.div
           className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-3"
@@ -1174,16 +1119,29 @@ export const FilesTab = ({
           <div className="flex-1">
             <p className="font-medium mb-1">Proof Set Creation in Progress</p>
             <p className="text-sm">
-              Your proof set is being created on the blockchain. This process
-              typically takes 5-10 minutes to complete. During this time, you
-              can upload files but proof verification will not be available
-              until the proof set creation is finalized.
+              Your proof set is being created on FWS. This process typically
+              takes 5-10 minutes to complete. During this time, uploads are
+              disabled until the proof set creation is finalized.
             </p>
           </div>
         </motion.div>
       );
     }
+
+    console.log("[FilesTab] No banner shown");
     return null;
+  };
+
+  const getDropzoneMessage = () => {
+    if (proofSetStatus === "none" && pieces.length === 0) {
+      return "Create a proof set in Payment Setup before uploading";
+    }
+    if (proofSetStatus === "creating") {
+      return "Uploads disabled while proof set is being created";
+    }
+    return isDragActive
+      ? "Drop to upload"
+      : "Drag and drop any file here, or click to select";
   };
 
   return (
@@ -1195,7 +1153,6 @@ export const FilesTab = ({
       transition={{ duration: 0.3 }}
       className="p-6"
     >
-      {/* Auth Error Banner */}
       <AnimatePresence>
         {authError && (
           <motion.div
@@ -1235,7 +1192,17 @@ export const FilesTab = ({
 
       {renderProofSetStatusBanner()}
 
-      {/* Upload Section */}
+      {proofSetStatus === "ready" && (
+        <CostBanner
+          fileSizeGB={fileSizeGB}
+          existingFiles={pieces.map((piece) => ({
+            id: piece.id,
+            filename: piece.filename,
+            size: piece.size,
+          }))}
+        />
+      )}
+
       <motion.div
         className="mb-8 bg-white rounded-xl shadow-sm p-6 overflow-hidden"
         variants={fadeInUp}
@@ -1255,14 +1222,13 @@ export const FilesTab = ({
             </Typography>
           </div>
           <div className="flex items-center gap-4">
-            {/* Conditionally render the user-specific proof set link */}
             {userProofSetId && (
               <motion.div
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
                 <a
-                  href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${userProofSetId}`}
+                  href={` http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
@@ -1287,15 +1253,10 @@ export const FilesTab = ({
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
-                disabled={
-                  !selectedImage ||
-                  (proofSetStatus === "pending" &&
-                    pieces.length > 0 &&
-                    !userProofSetId)
-                }
+                disabled={isUploadDisabled()}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isUploadDisabled
+                {isUploadDisabled()
                   ? "Upload Disabled (Proof Set Creating)"
                   : selectedImage
                   ? "Upload Selected File"
@@ -1305,11 +1266,10 @@ export const FilesTab = ({
           </div>
         </div>
 
-        {/* Improved Dropzone with enhanced animations */}
         <div
           {...getRootProps()}
           className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer mb-6 ${
-            isUploadDisabled
+            isUploadDisabled()
               ? "border-gray-300 bg-gray-100 cursor-not-allowed"
               : isDragActive
               ? "border-blue-500 bg-blue-50 scale-[1.01]"
@@ -1320,7 +1280,7 @@ export const FilesTab = ({
         >
           <input {...getInputProps()} />
           <AnimatePresence mode="wait">
-            {isUploadDisabled ? (
+            {isUploadDisabled() ? (
               <motion.div
                 key="disabled"
                 initial={{ opacity: 0 }}
@@ -1369,7 +1329,6 @@ export const FilesTab = ({
                 </div>
                 <div className="relative max-w-md overflow-hidden">
                   {previewUrl ? (
-                    // If we have a preview URL, it's an image
                     <Image
                       src={previewUrl}
                       alt="Preview"
@@ -1379,7 +1338,6 @@ export const FilesTab = ({
                       sizes="100vw"
                     />
                   ) : (
-                    // Enhanced non-image file preview with specific styles per file type
                     <div className="w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
                       <div className="flex flex-col items-center justify-center p-6">
                         {(() => {
@@ -1391,7 +1349,6 @@ export const FilesTab = ({
                             .pop()
                             ?.toUpperCase();
 
-                          // Different styling based on file type
                           switch (fileType) {
                             case "document":
                               return (
@@ -1521,6 +1478,7 @@ export const FilesTab = ({
                       e.stopPropagation();
                       setSelectedImage(null);
                       setPreviewUrl(null);
+                      setFileSizeGB(0);
                     }}
                     className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none shadow-sm"
                     aria-label="Remove file"
@@ -1589,12 +1547,14 @@ export const FilesTab = ({
                 <Typography
                   variant="body"
                   className={`${
-                    isDragActive ? "text-blue-600 font-medium" : "text-gray-700"
+                    isUploadDisabled()
+                      ? "text-gray-500"
+                      : isDragActive
+                      ? "text-blue-600 font-medium"
+                      : "text-gray-700"
                   } transition-colors duration-300 mb-1`}
                 >
-                  {isDragActive
-                    ? "Drop to upload"
-                    : "Drag and drop any file here, or click to select"}
+                  {getDropzoneMessage()}
                 </Typography>
                 <Typography variant="small" className="text-gray-400">
                   Accepts any file type
@@ -1610,7 +1570,6 @@ export const FilesTab = ({
         />
       </motion.div>
 
-      {/* Files List */}
       <motion.div
         className="bg-white rounded-xl shadow-sm overflow-hidden"
         variants={scaleIn}
@@ -1709,7 +1668,6 @@ export const FilesTab = ({
         </div>
       </motion.div>
 
-      {/* Remove Root Dialog */}
       <Dialog open={isRemoveDialogOpen} onOpenChange={setIsRemoveDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1809,7 +1767,6 @@ export const FilesTab = ({
         </DialogContent>
       </Dialog>
 
-      {/* Proof Details Dialog */}
       <Dialog open={isProofDialogOpen} onOpenChange={setIsProofDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -1849,7 +1806,6 @@ export const FilesTab = ({
                     Proof Set ID
                   </h3>
                   <p className="text-sm font-medium font-mono flex items-center gap-1">
-                    {/* Use serviceProofSetId here for display */}
                     {selectedProof.serviceProofSetId}
                     <button
                       onClick={() => {
@@ -1886,7 +1842,6 @@ export const FilesTab = ({
                   </p>
                 </div>
 
-                {/* Add Root ID information */}
                 {selectedProof.rootId && (
                   <div className="col-span-1 md:col-span-2 p-3 bg-purple-50 rounded-lg border border-purple-100">
                     <h3 className="text-sm font-medium text-gray-700 mb-1 flex items-center">
@@ -2013,7 +1968,7 @@ export const FilesTab = ({
                     className="gap-2 justify-start bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
                     onClick={() =>
                       window.open(
-                        `https://calibration.pdp-explorer.eng.filoz.org/proofsets/${selectedProof?.serviceProofSetId}`,
+                        ` http://explore-pdp.xyz:5173/proofsets/${selectedProof?.serviceProofSetId}`,
                         "_blank"
                       )
                     }
@@ -2030,7 +1985,6 @@ export const FilesTab = ({
                     >
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                     </svg>
-                    {/* Display serviceProofSetId */}
                     View Proof Set #{selectedProof?.serviceProofSetId}
                   </Button>
                 </div>

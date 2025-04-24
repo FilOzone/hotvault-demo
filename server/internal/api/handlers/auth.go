@@ -15,36 +15,27 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/fws/backend/config"
-	"github.com/fws/backend/internal/models"
-	"github.com/fws/backend/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/hotvault/backend/config"
+	"github.com/hotvault/backend/internal/models"
+	"github.com/hotvault/backend/internal/services"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
 var authLog = logrus.New()
 
-// ErrorResponse represents an error response
 type ErrorResponse struct {
 	Error string `json:"error" example:"Invalid request"`
 }
 
-// @title FWS Backend API
-// @version 1.0
-// @description API Server for FWS Backend Application
-// @host localhost:8080
-// @BasePath /api/v1
-
-// AuthHandler handles authentication related requests
 type AuthHandler struct {
 	db         *gorm.DB
 	cfg        *config.Config
 	ethService *services.EthereumService
 }
 
-// NewAuthHandler creates a new auth handler
 func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
 	ethService := services.NewEthereumService(cfg.Ethereum)
 	return &AuthHandler{
@@ -69,9 +60,25 @@ type NonceResponse struct {
 // StatusResponse represents the response for checking authentication status
 // @Description Response containing authentication status
 type StatusResponse struct {
-	Authenticated bool   `json:"authenticated"`
-	Address       string `json:"address,omitempty"`
-	ProofSetReady bool   `json:"proofSetReady"`
+	Authenticated     bool   `json:"authenticated" example:"true"`
+	Address           string `json:"address,omitempty" example:"0x742d35Cc6634C0532925a3b844Bc454e4438f44e"`
+	ProofSetReady     bool   `json:"proofSetReady" example:"true"`
+	ProofSetInitiated bool   `json:"proofSetInitiated" example:"true"`
+}
+
+// VerifyRequest represents the request for verifying a signature
+// @Description Request body for verifying a signature
+type VerifyRequest struct {
+	Address   string `json:"address" binding:"required,hexadecimal" example:"0x742d35Cc6634C0532925a3b844Bc454e4438f44e"`
+	Signature string `json:"signature" binding:"required,hexadecimal" example:"0x1234567890abcdef"`
+	Message   string `json:"message,omitempty" example:"Sign this message to login to Hot Vault (No funds will be transferred in this step): 7a39f642c2608fd2"`
+}
+
+// VerifyResponse represents the response for a verification request
+// @Description Response containing the JWT token and expiration
+type VerifyResponse struct {
+	Token   string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	Expires int64  `json:"expires" example:"1679529600"`
 }
 
 // GenerateNonce godoc
@@ -121,21 +128,6 @@ func (h *AuthHandler) GenerateNonce(c *gin.Context) {
 	})
 }
 
-// VerifyRequest represents the request for verifying a signature
-// @Description Request body for verifying a signature
-type VerifyRequest struct {
-	Address   string `json:"address" binding:"required,hexadecimal" example:"0x742d35Cc6634C0532925a3b844Bc454e4438f44e"`
-	Signature string `json:"signature" binding:"required,hexadecimal" example:"0x..."`
-	Message   string `json:"message,omitempty" example:"Sign this message to authenticate with FWS: abcd1234..."`
-}
-
-// VerifyResponse represents the response for a verification request
-// @Description Response containing the JWT token and expiration
-type VerifyResponse struct {
-	Token   string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
-	Expires int64  `json:"expires" example:"1679529600"`
-}
-
 // VerifySignature godoc
 // @Summary Verify Signature
 // @Description Verifies the signature and issues a JWT token
@@ -155,7 +147,6 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		return
 	}
 
-	// Get the user from the database
 	var user models.User
 	if err := h.db.Where("wallet_address = ?", req.Address).First(&user).Error; err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid wallet address"})
@@ -169,7 +160,7 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 	var err error
 
 	if req.Message != "" {
-		expectedPrefix := fmt.Sprintf("Sign this message to authenticate with FWS: %s", user.Nonce)
+		expectedPrefix := fmt.Sprintf("Sign this message to login to Hot Vault (No funds will be transferred in this step): %s", user.Nonce)
 		if req.Message == expectedPrefix {
 			valid, err = h.ethService.VerifySignature(req.Address, req.Message, req.Signature)
 		} else {
@@ -179,7 +170,7 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 			return
 		}
 	} else {
-		message := fmt.Sprintf("Sign this message to authenticate with FWS: %s", user.Nonce)
+		message := fmt.Sprintf("Sign this message to login to Hot Vault (No funds will be transferred in this step): %s", user.Nonce)
 		valid, err = h.ethService.VerifySignature(req.Address, message, req.Signature)
 	}
 
@@ -195,7 +186,6 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		return
 	}
 
-	// Generate a new nonce for the next authentication
 	nonceBytes := make([]byte, 32)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to generate nonce"})
@@ -203,16 +193,11 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 	}
 	newNonce := hex.EncodeToString(nonceBytes)
 
-	// Update the user's nonce
 	if err := h.db.Model(&user).Update("nonce", newNonce).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update nonce"})
 		return
 	}
 
-	// Check if the user has a proof set, create one in background if not
-	go h.ensureProofSetExists(&user)
-
-	// Generate a JWT token IMMEDIATELY
 	expirationTime := time.Now().Add(h.cfg.JWT.Expiration)
 	claims := &models.JWTClaims{
 		UserID:        user.ID,
@@ -230,7 +215,6 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		return
 	}
 
-	// Set the JWT as an HTTP-only cookie
 	domain := "" // Default domain is the current domain
 	isProduction := h.cfg.Server.Env == "production"
 	if isProduction {
@@ -239,32 +223,70 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		c.SetCookie("jwt_token", tokenString, int(h.cfg.JWT.Expiration.Seconds()), "/", domain, false, true)
 	}
 
-	// Return token in body
 	c.JSON(http.StatusOK, VerifyResponse{
 		Token:   tokenString,
 		Expires: expirationTime.Unix(),
 	})
 }
 
-// New helper function to check and potentially create proof set in background
-func (h *AuthHandler) ensureProofSetExists(user *models.User) {
-	var proofSetCount int64
-	if err := h.db.Model(&models.ProofSet{}).Where("user_id = ?", user.ID).Count(&proofSetCount).Error; err != nil {
-		authLog.WithField("userID", user.ID).Errorf("[Goroutine Check] Error counting proof sets: %v", err)
+// CreateProofSet godoc
+// @Summary Create Proof Set
+// @Description Manually initiates the creation of a proof set for the authenticated user if one doesn't exist.
+// @Tags Proof Set
+// @Security ApiKeyAuth
+// @Produce json
+// @Success 200 {object} map[string]interface{} "message:Proof set creation initiated successfully"
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /proof-set/create [post]
+func (h *AuthHandler) CreateProofSet(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized: User ID not found in token"})
 		return
 	}
 
-	if proofSetCount == 0 {
-		authLog.WithField("userID", user.ID).Info("[Goroutine Check] No proof set found, initiating creation.")
-		if createErr := h.createProofSetForUser(user); createErr != nil {
-			authLog.WithField("userID", user.ID).Errorf("[Goroutine Create] Background proof set creation failed: %v", createErr)
-		}
-	} else {
-		authLog.WithField("userID", user.ID).Debug("[Goroutine Check] Proof set already exists.")
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "User not found"})
+		return
 	}
+
+	var existingProofSet models.ProofSet
+	err := h.db.Where("user_id = ?", user.ID).First(&existingProofSet).Error
+	if err == nil {
+		if existingProofSet.ProofSetID != "" {
+			authLog.WithField("userID", user.ID).Warn("CreateProofSet called but ProofSetID already exists.")
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Proof set already exists and is complete for this user"})
+			return
+		}
+		if existingProofSet.TransactionHash != "" {
+			authLog.WithField("userID", user.ID).Warn("CreateProofSet called but TransactionHash exists (creation likely in progress).")
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Proof set creation is already in progress for this user. Check status."})
+			return
+		}
+		authLog.WithField("userID", user.ID).Info("Found existing proof set record with empty fields, proceeding with creation attempt.")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		authLog.WithField("userID", user.ID).Errorf("Error checking for existing proof set: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to check for existing proof sets"})
+		return
+	} else {
+		authLog.WithField("userID", user.ID).Info("No existing proof set record found.")
+	}
+
+	go func(u *models.User) {
+		authLog.WithField("userID", u.ID).Info("Starting background proof set creation...")
+		if err := h.createProofSetForUser(u); err != nil {
+			authLog.WithField("userID", u.ID).Errorf("Background proof set creation failed: %v", err)
+		} else {
+			authLog.WithField("userID", u.ID).Info("Background proof set creation completed successfully.")
+		}
+	}(&user)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Proof set creation initiated successfully. Monitor /auth/status for readiness."})
 }
 
-// createProofSetForUser remains mostly the same - designed to be called by ensureProofSetExists
 func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	pdptoolPath := h.cfg.PdptoolPath
 	if pdptoolPath == "" {
@@ -282,7 +304,7 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 
 	authLog.Infof("[Goroutine Create] Creating proof set for user %d (Address: %s)...", user.ID, user.WalletAddress)
 
-	metadata := fmt.Sprintf("fws-user-%d", user.ID)
+	metadata := fmt.Sprintf("hotvault-user-%d", user.ID)
 	payerAddress := user.WalletAddress
 
 	extraDataHex, err := encodeExtraData(metadata, payerAddress)
@@ -326,7 +348,21 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 
 	if len(txHashMatches) > 1 {
 		txHash = txHashMatches[1]
-		authLog.WithField("txHash", txHash).Infof("[Goroutine Create] Extracted transaction hash for user %d, polling...", user.ID)
+		authLog.WithField("txHash", txHash).Infof("[Goroutine Create] Extracted transaction hash for user %d. Updating database and starting polling...", user.ID)
+
+		proofSetToUpdate := models.ProofSet{
+			UserID:          user.ID,
+			TransactionHash: txHash,
+			ServiceName:     serviceName,
+			ServiceURL:      serviceURL,
+		}
+		result := h.db.Where(models.ProofSet{UserID: user.ID}).Assign(proofSetToUpdate).FirstOrCreate(&models.ProofSet{})
+		if result.Error != nil {
+			errMsg := fmt.Sprintf("[Goroutine Create] Failed to save/update proof set with txHash for user %d: %v", user.ID, result.Error)
+			authLog.Error(errMsg)
+			return errors.New(errMsg)
+		}
+
 	} else {
 		authLog.Warn("[Goroutine Create] Could not extract transaction hash using Location regex for user ", user.ID, ". Check pdptool output format.")
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to extract transaction hash needed for polling for user %d. Output: %s", user.ID, outputStr)
@@ -340,25 +376,24 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 		return pollErr
 	}
 
-	newProofSet := models.ProofSet{
-		UserID:          user.ID,
-		ProofSetID:      extractedID,
-		TransactionHash: txHash,
-		ServiceName:     serviceName,
-		ServiceURL:      serviceURL,
+	finalUpdate := models.ProofSet{
+		ProofSetID: extractedID,
 	}
-
-	if result := h.db.Create(&newProofSet); result.Error != nil {
-		errMsg := fmt.Sprintf("[Goroutine Create] Failed to save new proof set info for user %d: %v", user.ID, result.Error)
+	result := h.db.Model(&models.ProofSet{}).Where("user_id = ?", user.ID).Updates(finalUpdate)
+	if result.Error != nil {
+		errMsg := fmt.Sprintf("[Goroutine Create] Failed to update proof set with ProofSetID for user %d: %v", user.ID, result.Error)
 		authLog.Error(errMsg)
 		return errors.New(errMsg)
 	}
-
-	authLog.WithField("proofSetDBID", newProofSet.ID).WithField("proofSetPdpID", newProofSet.ProofSetID).Infof("[Goroutine Create] Successfully created and saved proof set for user %d", user.ID)
+	if result.RowsAffected == 0 {
+		errMsg := fmt.Sprintf("[Goroutine Create] Failed to find proof set record for user %d to update with ProofSetID", user.ID)
+		authLog.Error(errMsg)
+		return errors.New(errMsg)
+	}
+	authLog.WithField("proofSetPdpID", extractedID).Infof("[Goroutine Create] Successfully updated proof set with ID for user %d", user.ID)
 	return nil
 }
 
-// pollForProofSetID polls the status using the transaction hash and extracts the ProofSet ID string
 func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, txHash string, user *models.User) (string, error) {
 	proofSetIDRegex := regexp.MustCompile(`ProofSet ID:[ \t]*(\d+)`)
 	creationStatusRegex := regexp.MustCompile(`Proofset Created:[ \t]*(true|false)`)
@@ -468,7 +503,11 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 func (h *AuthHandler) CheckAuthStatus(c *gin.Context) {
 	tokenString, err := c.Cookie("jwt_token")
 	if err != nil {
-		c.JSON(http.StatusOK, StatusResponse{Authenticated: false, ProofSetReady: false})
+		c.JSON(http.StatusOK, StatusResponse{
+			Authenticated:     false,
+			ProofSetReady:     false,
+			ProofSetInitiated: false,
+		})
 		return
 	}
 
@@ -478,31 +517,44 @@ func (h *AuthHandler) CheckAuthStatus(c *gin.Context) {
 
 	if err != nil || !token.Valid {
 		c.SetCookie("jwt_token", "", -1, "/", "", false, true)
-		c.JSON(http.StatusOK, StatusResponse{Authenticated: false, ProofSetReady: false})
+		c.JSON(http.StatusOK, StatusResponse{
+			Authenticated:     false,
+			ProofSetReady:     false,
+			ProofSetInitiated: false,
+		})
 		return
 	}
 
 	claims, ok := token.Claims.(*models.JWTClaims)
 	if !ok {
 		c.SetCookie("jwt_token", "", -1, "/", "", false, true)
-		c.JSON(http.StatusOK, StatusResponse{Authenticated: false, ProofSetReady: false})
+		c.JSON(http.StatusOK, StatusResponse{
+			Authenticated:     false,
+			ProofSetReady:     false,
+			ProofSetInitiated: false,
+		})
 		return
 	}
 
 	var proofSet models.ProofSet
 	isReady := false
+	isInitiated := false
 	if err := h.db.Where("user_id = ?", claims.UserID).First(&proofSet).Error; err == nil {
 		if proofSet.ProofSetID != "" {
 			isReady = true
+		}
+		if proofSet.TransactionHash != "" {
+			isInitiated = true
 		}
 	} else if err != gorm.ErrRecordNotFound {
 		authLog.WithField("userID", claims.UserID).Errorf("Error checking proof set readiness in /auth/status: %v", err)
 	}
 
 	c.JSON(http.StatusOK, StatusResponse{
-		Authenticated: true,
-		Address:       claims.WalletAddress,
-		ProofSetReady: isReady,
+		Authenticated:     true,
+		Address:           claims.WalletAddress,
+		ProofSetReady:     isReady,
+		ProofSetInitiated: isInitiated,
 	})
 }
 
@@ -522,28 +574,41 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	})
 }
 
-// encodeExtraData encodes the metadata and payer address according to the expected ABI.
 func encodeExtraData(metadata string, payerAddress string) (string, error) {
-	StringTy, err := abi.NewType("string", "", nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create string type: %w", err)
-	}
-	AddressTy, err := abi.NewType("address", "", nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create address type: %w", err)
-	}
-
-	arguments := abi.Arguments{
-		{Type: StringTy, Name: "metadata"},
-		{Type: AddressTy, Name: "payer"},
-	}
-
 	if !common.IsHexAddress(payerAddress) {
 		return "", fmt.Errorf("invalid payer address format: %s", payerAddress)
 	}
-	payer := common.HexToAddress(payerAddress)
 
-	packedBytes, err := arguments.Pack(metadata, payer)
+	structTy, err := abi.NewType("tuple", "", []abi.ArgumentMarshaling{
+		{
+			Name: "metadata",
+			Type: "string",
+		},
+		{
+			Name: "payer",
+			Type: "address",
+		},
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to create struct type: %w", err)
+	}
+
+	arguments := abi.Arguments{
+		{
+			Type: structTy,
+		},
+	}
+
+	structData := struct {
+		Metadata string
+		Payer    common.Address
+	}{
+		Metadata: metadata,
+		Payer:    common.HexToAddress(payerAddress),
+	}
+
+	packedBytes, err := arguments.Pack(structData)
 	if err != nil {
 		return "", fmt.Errorf("failed to pack ABI arguments: %w", err)
 	}

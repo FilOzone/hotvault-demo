@@ -61,7 +61,7 @@ const getDetailedMessage = (status: string, message?: string): string => {
     message.includes("Adding root to proof set") &&
     !message.includes("attempt")
   ) {
-    return "Registering file on the blockchain network...";
+    return "Storing file on the Filecoin network...";
   }
 
   // If message has "proof set creation is still pending"
@@ -69,7 +69,7 @@ const getDetailedMessage = (status: string, message?: string): string => {
     message.includes("proof set creation is still pending") ||
     message.includes("proof set is being initialized")
   ) {
-    return "Waiting for blockchain confirmation of your proof set...";
+    return "Waiting for confirmation of your proof set...";
   }
 
   return message;
@@ -240,27 +240,62 @@ export const GlobalUploadProgress = () => {
       return;
     }
 
+    // Immediately clear progress if progress is 100%
+    if (uploadProgress.progress === 100 || uploadProgress.progress === 100.0) {
+      console.log(
+        "[GlobalUploadProgress] Progress reached 100%, forcing immediate dismissal"
+      );
+      // Dispatch the completion event immediately
+      try {
+        window.dispatchEvent(
+          new CustomEvent(UPLOAD_COMPLETED_EVENT, {
+            detail: {
+              cid: uploadProgress.cid,
+              filename: uploadProgress.filename,
+              serviceProofSetId: uploadProgress.serviceProofSetId,
+            },
+          })
+        );
+      } catch (err) {
+        console.error("[GlobalUploadProgress] Error dispatching event:", err);
+      }
+
+      // Force clear immediately - no delay
+      clearUploadProgress();
+      setHasStalled(false);
+      return;
+    }
+
     // If upload is complete/successful, dispatch event to refresh file list
     if (
       uploadProgress.status === "complete" ||
       uploadProgress.status === "success"
     ) {
-      // Dispatch a custom event that can be listened to by the file list component
-      window.dispatchEvent(
-        new CustomEvent(UPLOAD_COMPLETED_EVENT, {
-          detail: {
-            cid: uploadProgress.cid,
-            filename: uploadProgress.filename,
-            serviceProofSetId: uploadProgress.serviceProofSetId,
-          },
-        })
+      console.log(
+        "[GlobalUploadProgress] Upload complete, dispatching event immediately"
       );
 
-      // Set timer to clear the progress notification
+      // Dispatch the event IMMEDIATELY to refresh the file list
+      try {
+        window.dispatchEvent(
+          new CustomEvent(UPLOAD_COMPLETED_EVENT, {
+            detail: {
+              cid: uploadProgress.cid,
+              filename: uploadProgress.filename,
+              serviceProofSetId: uploadProgress.serviceProofSetId,
+            },
+          })
+        );
+      } catch (err) {
+        console.error("[GlobalUploadProgress] Error dispatching event:", err);
+      }
+
+      // Set timer to clear the progress notification - use a SHORTER timeout
       const timer = setTimeout(() => {
+        console.log("[GlobalUploadProgress] Clearing upload progress");
         clearUploadProgress();
         setHasStalled(false);
-      }, 5000); // Dismiss after 5 seconds
+      }, 500); // Reduced from 1500 to 500 (0.5 seconds) - much faster dismissal
 
       return () => clearTimeout(timer);
     }
@@ -268,6 +303,7 @@ export const GlobalUploadProgress = () => {
     // Handle error state
     if (uploadProgress.status === "error") {
       const timer = setTimeout(() => {
+        console.log("[GlobalUploadProgress] Clearing error state");
         clearUploadProgress();
         setHasStalled(false);
       }, 5000); // Dismiss after 5 seconds
@@ -435,7 +471,25 @@ export const GlobalUploadProgress = () => {
                   No updates received for a while.
                 </div>
               )}
-              {/* Show manual retry button if the process has stalled */}
+              {/* Easter egg for when files are being uploaded */}
+              {(uploadProgress.status === "uploading" ||
+                uploadProgress.status === "processing") &&
+                !uploadProgress.isStalled && (
+                  <div className="text-gray-500 text-xs mt-1 italic">
+                    <a
+                      href="https://www.youtube.com/watch?v=OsU0CGZoV8E"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center text-blue-500 hover:text-blue-700 transition-colors"
+                    >
+                      <span>
+                        Watch this important Video while we get your data on
+                        Filecoin
+                      </span>
+                      <ExternalLink className="h-3 w-3 ml-1" />
+                    </a>
+                  </div>
+                )}
               {canManuallyRetry && (
                 <div className="mt-2">
                   <Button
@@ -463,7 +517,7 @@ export const GlobalUploadProgress = () => {
                 <div className="text-xs mt-2 flex items-center">
                   <span className="mr-2">Proof Set ID:</span>
                   <a
-                    href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
+                    href={` http://explore-pdp.xyz:5173/proofsets/${uploadProgress.serviceProofSetId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:text-blue-800 underline flex items-center"
@@ -517,7 +571,7 @@ export const GlobalUploadProgress = () => {
               <div className="flex flex-col gap-2">
                 {uploadProgress.serviceProofSetId && (
                   <a
-                    href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
+                    href={` http://explore-pdp.xyz:5173/proofsets/${uploadProgress.serviceProofSetId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm flex items-center justify-between bg-green-100 text-green-800 p-2 rounded hover:bg-green-200 transition-colors"

@@ -46,11 +46,32 @@ export const useUploadStore = create<UploadStore>()(
             : progress;
         console.log("[UploadStore] Setting progress:", newProgress);
 
-        // Check if the upload is stalled
+        if (
+          newProgress &&
+          (newProgress.status === "complete" ||
+            newProgress.status === "success") &&
+          newProgress.progress === 100
+        ) {
+          console.log(
+            "[UploadStore] Complete status with 100% detected, forcing cleanup soon"
+          );
+
+          set({ uploadProgress: newProgress });
+          setTimeout(() => {
+            console.log(
+              "[UploadStore] Force clearing progress after complete status"
+            );
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("upload-storage");
+            }
+            set({ uploadProgress: null });
+          }, 250);
+          return;
+        }
+
         if (newProgress.lastUpdated) {
           const timeSinceLastUpdate = Date.now() - newProgress.lastUpdated;
           if (timeSinceLastUpdate > 10000) {
-            // 10 seconds
             newProgress.isStalled = true;
           }
         }
@@ -59,12 +80,40 @@ export const useUploadStore = create<UploadStore>()(
       },
       clearUploadProgress: () => {
         console.log("[UploadStore] Clearing progress");
+        if (typeof window !== "undefined") {
+          const storageKey = "upload-storage";
+          try {
+            const storageData = localStorage.getItem(storageKey);
+            if (storageData) {
+              console.log("[UploadStore] Found data in localStorage, removing");
+              localStorage.removeItem(storageKey);
+            }
+          } catch (e) {
+            console.error("[UploadStore] Error clearing localStorage:", e);
+          }
+        }
         set({ uploadProgress: null });
       },
     }),
     {
       name: "upload-storage",
       partialize: (state) => ({ uploadProgress: state.uploadProgress }),
+      merge: (persistedState, currentState) => {
+        const uploadProgressCleared =
+          currentState.uploadProgress === null &&
+          JSON.stringify(persistedState) !== "{}";
+
+        if (uploadProgressCleared) {
+          console.log(
+            "[UploadStore] Upload progress was cleared in memory, not restoring from storage"
+          );
+          return currentState;
+        }
+        return {
+          ...currentState,
+          ...(persistedState as Partial<UploadStore>),
+        };
+      },
     }
   )
 );

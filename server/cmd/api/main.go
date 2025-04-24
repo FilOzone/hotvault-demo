@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/fws/backend/config"
-	"github.com/fws/backend/internal/api/routes"
-	"github.com/fws/backend/internal/database"
-	"github.com/fws/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/hotvault/backend/config"
+	"github.com/hotvault/backend/internal/api/routes"
+	"github.com/hotvault/backend/internal/database"
+	"github.com/hotvault/backend/pkg/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -23,10 +23,8 @@ func main() {
 	log.Info("Loading configuration...")
 	cfg := config.LoadConfig()
 
-	// Apply logging configuration
 	loggingConfig := logger.GetLoggingConfig()
 
-	// Configure Gin mode based on logging settings
 	if loggingConfig.DisableGINLogging || loggingConfig.ProductionMode {
 		gin.SetMode(gin.ReleaseMode)
 	} else if ginMode := os.Getenv("GIN_MODE"); ginMode != "" {

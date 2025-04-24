@@ -453,6 +453,50 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/proof-set/create": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Manually initiates the creation of a proof set for the authenticated user if one doesn't exist.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Proof Set"
+                ],
+                "summary": "Create Proof Set",
+                "responses": {
+                    "200": {
+                        "description": "message:Proof set creation initiated successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -770,13 +814,20 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "address": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
                 },
                 "authenticated": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "example": true
+                },
+                "proofSetInitiated": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "proofSetReady": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -826,11 +877,11 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string",
-                    "example": "Sign this message to authenticate with FWS: abcd1234..."
+                    "example": "Sign this message to login to Hot Vault (No funds will be transferred in this step): 7a39f642c2608fd2"
                 },
                 "signature": {
                     "type": "string",
-                    "example": "0x..."
+                    "example": "0x1234567890abcdef"
                 }
             }
         },
@@ -853,12 +904,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "",
-	Host:             "",
-	BasePath:         "",
+	Version:          "1.0",
+	Host:             "localhost:8080",
+	BasePath:         "/api/v1",
 	Schemes:          []string{},
-	Title:            "",
-	Description:      "",
+	Title:            "Hot Vault Backend API",
+	Description:      "API Server for Hot Vault Backend Application",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

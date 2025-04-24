@@ -41,13 +41,13 @@ swagger: swagger-install clean
 
 # Start PostgreSQL in Docker
 postgres-start:
-	docker run --name fws-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=fws_db -p 5432:5432 -d postgres:14
+	docker run --name hotvault-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=fws_db -p 5432:5432 -d postgres:14
 	@echo "PostgreSQL started on port 5432"
 	@echo "User: postgres, Password: postgres, Database: fws_db"
 
 # Stop and remove PostgreSQL Docker container
 postgres-stop:
-	docker stop fws-postgres && docker rm fws-postgres || true
+	docker stop hotvault-postgres && docker rm hotvault-postgres || true
 	@echo "PostgreSQL container stopped and removed"
 
 # Create database migration

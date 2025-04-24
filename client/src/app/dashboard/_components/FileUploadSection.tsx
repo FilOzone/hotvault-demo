@@ -1,15 +1,20 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Typography } from "@/components/ui/typography";
 import { API_BASE_URL } from "@/lib/constants";
 import { toast } from "sonner";
-import { FileIcon } from "./FileIcon";
 import { useUploadStore } from "@/store/upload-store";
+import { Loader, AlertTriangle } from "lucide-react";
+import { CostBanner } from "./CostBanner";
+import { formatFileSize } from "@/lib/utils";
+import ChunkedUploader from "@/components/ChunkedUploader";
 
 interface FileUploadProps {
   onUploadSuccess: () => void;
@@ -20,95 +25,16 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 }) => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fileSizeGB, setFileSizeGB] = useState<number>(0);
+  const router = useRouter();
+  const { proofSetReady, isLoading: isAuthLoading } = useAuth();
   const { uploadProgress, setUploadProgress } = useUploadStore();
+  const [useChunkedUpload, setUseChunkedUpload] = useState<boolean>(false);
 
-  // Refs for upload state management
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const uploadStartTimeRef = useRef<number | null>(null);
-
-  const getFilePreviewType = (
-    filename: string
-  ):
-    | "image"
-    | "document"
-    | "spreadsheet"
-    | "code"
-    | "archive"
-    | "video"
-    | "audio"
-    | "generic" => {
-    const extension = filename.split(".").pop()?.toLowerCase() || "";
-
-    // Image files
-    if (
-      ["jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico"].includes(
-        extension
-      )
-    ) {
-      return "image";
-    }
-
-    // Document files
-    if (["pdf", "doc", "docx", "txt", "rtf", "odt", "md"].includes(extension)) {
-      return "document";
-    }
-
-    // Spreadsheet files
-    if (["xls", "xlsx", "csv", "ods", "numbers"].includes(extension)) {
-      return "spreadsheet";
-    }
-
-    // Code files
-    if (
-      [
-        "js",
-        "ts",
-        "jsx",
-        "tsx",
-        "html",
-        "css",
-        "scss",
-        "json",
-        "xml",
-        "yaml",
-        "yml",
-        "py",
-        "rb",
-        "java",
-        "c",
-        "cpp",
-        "go",
-        "rs",
-        "php",
-      ].includes(extension)
-    ) {
-      return "code";
-    }
-
-    // Archive files
-    if (
-      ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso"].includes(extension)
-    ) {
-      return "archive";
-    }
-
-    // Video files
-    if (
-      ["mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"].includes(extension)
-    ) {
-      return "video";
-    }
-
-    // Audio files
-    if (["mp3", "wav", "ogg", "flac", "aac", "m4a"].includes(extension)) {
-      return "audio";
-    }
-
-    // Default (fallback)
-    return "generic";
-  };
 
   const handleSubmitImage = async () => {
     if (!selectedImage) return;
@@ -119,11 +45,9 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       return;
     }
 
-    // Create a new AbortController for this upload
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
 
-    // Set the start time for this upload
     uploadStartTimeRef.current = Date.now();
 
     const formData = new FormData();
@@ -138,88 +62,130 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         filename: selectedImage.name,
       });
 
-      // Start the stall detection timer
       uploadTimeoutRef.current = setTimeout(() => {
         setUploadProgress((prev) => ({
           ...(prev || { status: "uploading", filename: selectedImage.name }),
           isStalled: true,
         }));
-      }, 10000); // 10 seconds timeout
+      }, 30000);
 
       console.log(
         `[FileUploadSection] 🚀 Uploading ${selectedImage.name} to ${API_BASE_URL}/api/v1/upload`
       );
 
-      const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        signal,
+      const xhr = new XMLHttpRequest();
+
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.open("POST", `${API_BASE_URL}/api/v1/upload`, true);
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round(
+              (event.loaded / event.total) * 100
+            );
+            setUploadProgress((prev) => ({
+              ...(prev || {
+                status: "uploading",
+                filename: selectedImage.name,
+              }),
+              progress: percentComplete,
+              lastUpdated: Date.now(),
+              isStalled: false,
+            }));
+
+            if (uploadTimeoutRef.current) {
+              clearTimeout(uploadTimeoutRef.current);
+            }
+            uploadTimeoutRef.current = setTimeout(() => {
+              setUploadProgress((prev) => ({
+                ...(prev || {
+                  status: "uploading",
+                  filename: selectedImage.name,
+                }),
+                isStalled: true,
+              }));
+            }, 30000);
+          }
+        };
+
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText) as {
+                status: string;
+                progress: number;
+                message?: string;
+                cid?: string;
+                jobId?: string;
+                proofSetId?: string;
+              };
+              resolve(data);
+            } catch {
+              reject(new Error("Invalid JSON response"));
+            }
+          } else {
+            let errorMessage = "Upload failed";
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              errorMessage =
+                errorData.message || errorData.error || errorMessage;
+            } catch {
+              errorMessage = xhr.responseText || errorMessage;
+            }
+            reject(new Error(errorMessage));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.ontimeout = () => reject(new Error("Upload request timed out"));
+
+        xhr.onabort = () => {
+          console.log("[FileUploadSection] Upload aborted");
+          reject(new Error("AbortError"));
+        };
+
+        xhr.timeout = 3600000;
+
+        xhr.send(formData);
+
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            xhr.abort();
+          });
+        }
       });
 
-      // Clear the stall detection timer
+      const data = (await uploadPromise) as {
+        status: string;
+        progress: number;
+        message?: string;
+        cid?: string;
+        jobId?: string;
+        proofSetId?: string;
+      };
+
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
         uploadTimeoutRef.current = null;
       }
-
-      console.log(
-        `[FileUploadSection] 📬 Upload response status: ${response.status}`
-      );
-      if (!response.ok) {
-        let errorData = {
-          message: `Upload failed with status ${response.status}`,
-        };
-        try {
-          errorData = await response.json();
-          console.error(
-            "[FileUploadSection] ❌ Upload failed response body:",
-            errorData
-          );
-        } catch (jsonError) {
-          console.error(
-            "[FileUploadSection] ❌ Failed to parse upload error response as JSON:",
-            jsonError
-          );
-          const textResponse = await response.text();
-          console.error(
-            "[FileUploadSection] ❌ Upload failed response text:",
-            textResponse
-          );
-          errorData.message = textResponse || errorData.message;
-        }
-        throw new Error(errorData.message || "Upload failed");
-      }
-
-      const data = await response.json();
-      console.log(
-        "[FileUploadSection] ✅ Upload successful response body:",
-        data
-      );
 
       setUploadProgress({
         status: "success",
         cid: data.cid,
         message: "File uploaded successfully!",
         lastUpdated: Date.now(),
-        jobId: data.jobId, // Store job ID for polling
+        jobId: data.jobId,
       });
 
-      // Start polling for proof status if we have a job ID
       if (data.jobId) {
         setUploadProgress((prev) => ({
           ...(prev || { filename: selectedImage.name }),
           status: "processing",
         }));
 
-        // Poll for proof generation status
         const pollStatus = async () => {
           try {
-            console.log(
-              `[FileUploadSection] ⏳ Polling status for job ${data.jobId}...`
-            );
             const statusResponse = await fetch(
               `${API_BASE_URL}/api/v1/upload/status/${data.jobId}`,
               {
@@ -229,21 +195,13 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
               }
             );
 
-            console.log(
-              `[FileUploadSection] 📬 Poll response status: ${statusResponse.status}`
-            );
             if (!statusResponse.ok) {
               throw new Error("Failed to check proof status");
             }
 
             const statusData = await statusResponse.json();
-            console.log(
-              "[FileUploadSection] 📊 Polling status update:",
-              statusData
-            );
 
             if (statusData.status === "complete") {
-              console.log("[FileUploadSection] ✅ Proof generation complete!");
               setUploadProgress((prev) => ({
                 ...(prev || { filename: selectedImage.name }),
                 status: "complete",
@@ -251,16 +209,13 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 serviceProofSetId: statusData.serviceProofSetId,
               }));
 
-              // Clear the polling interval
               if (pollIntervalRef.current) {
                 clearInterval(pollIntervalRef.current);
                 pollIntervalRef.current = null;
               }
 
-              // Fetch updated pieces data
               onUploadSuccess();
 
-              // Reset the upload state after a delay
               setTimeout(() => {
                 setUploadProgress({
                   status: "complete",
@@ -280,7 +235,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 error: statusData.error || "Proof generation failed",
               }));
 
-              // Clear the polling interval
               if (pollIntervalRef.current) {
                 clearInterval(pollIntervalRef.current);
                 pollIntervalRef.current = null;
@@ -305,14 +259,11 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
           }
         };
 
-        // Poll immediately and then set interval
         pollStatus();
         pollIntervalRef.current = setInterval(pollStatus, 3000);
       } else {
-        // If no job ID, just consider it done and refresh the pieces
         onUploadSuccess();
 
-        // Reset the upload state after a delay
         setTimeout(() => {
           setUploadProgress({
             status: "complete",
@@ -323,7 +274,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         }, 5000);
       }
     } catch (error) {
-      // Clear the stall detection timer
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
         uploadTimeoutRef.current = null;
@@ -331,7 +281,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 
       console.error("[FileUploadSection] 💥 Upload caught error:", error);
       if (error instanceof Error) {
-        // Only show error if not aborted
         if (error.name !== "AbortError") {
           setUploadProgress({
             status: "error",
@@ -390,7 +339,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       }
     };
 
-    // Calculate progress width
     let progressWidth = "0%";
     if (uploadProgress.status === "uploading") {
       progressWidth = `${uploadProgress.progress || 0}%`;
@@ -441,294 +389,284 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
     if (acceptedFiles.length === 0) return;
 
     const file = acceptedFiles[0];
-    setSelectedImage(file);
-
-    // Create preview URL for images
-    if (file.type.startsWith("image/")) {
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
-    } else {
-      setPreviewUrl(null);
+    if (!file.type.startsWith("image/")) {
+      toast.error("Only image files are allowed (jpg, png, gif, etc.)");
+      return;
     }
+
+    // const maxFileSize = 100 * 1024 * 1024;
+    // if (file.size > maxFileSize) {
+    //   toast.error(
+    //     `File is too large. Maximum size is 100MB. Current size: ${formatFileSize(
+    //       file.size
+    //     )}`
+    //   );
+    //   return;
+    // }
+
+    setSelectedImage(file);
+    setFileSizeGB(file.size / (1024 * 1024 * 1024));
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
   }, []);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    maxFiles: 1,
-  });
+  const { getRootProps, getInputProps, isDragActive, fileRejections } =
+    useDropzone({
+      onDrop,
+      maxFiles: 1,
+      accept: {
+        "image/*": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"],
+      },
+    });
+
+  if (isAuthLoading) {
+    return (
+      <div className="space-y-4 mb-8 p-6 bg-white rounded-xl shadow-sm border flex items-center justify-center min-h-[200px]">
+        <Loader className="animate-spin text-gray-400" size={24} />
+        <Typography variant="muted" className="ml-2">
+          Loading user status...
+        </Typography>
+      </div>
+    );
+  }
+
+  function isUploadDisabled() {
+    return !proofSetReady;
+  }
 
   return (
-    <div className="space-y-4 mb-8">
+    <div className="w-full space-y-4">
+      <CostBanner fileSizeGB={fileSizeGB} />
       <Typography variant="h3" className="text-xl font-semibold mb-4">
-        Upload New File
+        Upload New Image
       </Typography>
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div className="flex-1">
             <Typography variant="h4" className="text-lg font-medium mb-1">
-              Add a file to storage
+              {proofSetReady ? "Add an image to storage" : "Proof Set Required"}
             </Typography>
             <Typography variant="muted" className="text-gray-500 text-sm">
-              Upload any file to store it securely on the network with automated
-              proof generation.
+              {proofSetReady
+                ? "Upload any image file (JPG, PNG, GIF, etc.) to store it securely with automated proof generation."
+                : "Please complete the payment setup to activate your proof set before uploading images."}
             </Typography>
           </div>
           <div className="flex space-x-2">
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
-                disabled={!selectedImage}
+                disabled={!selectedImage || !proofSetReady || useChunkedUpload}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {selectedImage ? "Upload Selected File" : "Upload File"}
+                {selectedImage ? "Upload Selected Image" : "Upload Image"}
               </Button>
             </motion.div>
           </div>
         </div>
 
-        {/* Improved Dropzone with enhanced animations */}
-        <div
-          {...getRootProps()}
-          className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer mb-6 ${
-            isDragActive
-              ? "border-blue-500 bg-blue-50 scale-[1.01]"
-              : selectedImage
-              ? "border-green-500 bg-green-50"
-              : "border-gray-200 hover:border-blue-300 hover:bg-gray-50"
-          }`}
-        >
-          <input {...getInputProps()} />
-          <AnimatePresence mode="wait">
-            {selectedImage ? (
-              <motion.div
-                key="preview"
-                className="relative mx-auto flex flex-col items-center"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2 }}
-              >
-                <div className="mb-2 text-base font-medium text-gray-700">
-                  Preview
-                </div>
-                <div className="relative max-w-md overflow-hidden">
-                  {previewUrl ? (
-                    // If we have a preview URL, it's an image
+        {/* Upload mode toggle */}
+        <div className="mt-4 mb-2 flex items-center justify-end">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-500">Standard Upload</span>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={useChunkedUpload}
+                onChange={() => setUseChunkedUpload(!useChunkedUpload)}
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+            <span className="text-sm text-gray-500">Large File Upload</span>
+          </div>
+        </div>
+
+        {useChunkedUpload ? (
+          <div className="mt-6">
+            <ChunkedUploader
+              onUploadSuccess={() => {
+                onUploadSuccess();
+              }}
+              accept="image/*"
+              maxFileSize={10 * 1024 * 1024 * 1024}
+              chunkSize={5 * 1024 * 1024}
+            />
+          </div>
+        ) : (
+          <div
+            {...getRootProps()}
+            className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 mt-6 ${
+              proofSetReady
+                ? "cursor-pointer"
+                : "cursor-not-allowed bg-gray-50 opacity-70"
+            } ${
+              isDragActive
+                ? "border-blue-500 bg-blue-50 scale-[1.01]"
+                : selectedImage
+                ? "border-green-500 bg-green-50"
+                : "border-gray-200 hover:border-blue-300 hover:bg-gray-50"
+            }`}
+            onClick={(e) => !proofSetReady && e.stopPropagation()}
+          >
+            <input {...getInputProps()} disabled={!proofSetReady} />
+            <AnimatePresence mode="wait">
+              {!proofSetReady ? (
+                <motion.div
+                  key="proof-set-required"
+                  className="flex flex-col items-center justify-center text-gray-500"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <AlertTriangle size={40} className="mb-3 text-orange-400" />
+                  <Typography
+                    variant="h4"
+                    className="font-medium text-orange-600 mb-1"
+                  >
+                    Proof Set Required
+                  </Typography>
+                  <Typography variant="muted" className="text-sm">
+                    Go to the{" "}
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        router.push("/dashboard?tab=payment");
+                      }}
+                      className="text-blue-500 hover:underline font-medium"
+                    >
+                      Payment Setup
+                    </a>{" "}
+                    tab to complete the required steps.
+                  </Typography>
+                </motion.div>
+              ) : selectedImage ? (
+                <motion.div
+                  key="preview"
+                  className="relative mx-auto flex flex-col items-center"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="mb-2 text-base font-medium text-gray-700">
+                    Image Preview
+                  </div>
+                  <div className="relative max-w-md overflow-hidden">
                     <Image
-                      src={previewUrl}
+                      src={previewUrl!}
                       alt="Preview"
                       className="block max-h-48 w-auto h-auto rounded-md shadow-sm object-contain bg-white"
                       width={0}
                       height={0}
                       sizes="100vw"
                     />
-                  ) : (
-                    // Enhanced non-image file preview with specific styles per file type
-                    <div className="w-72 h-48 rounded-md shadow-sm bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
-                      <div className="flex flex-col items-center justify-center p-6">
-                        {(() => {
-                          const fileType = getFilePreviewType(
-                            selectedImage.name
-                          );
-                          const extension = selectedImage.name
-                            .split(".")
-                            .pop()
-                            ?.toUpperCase();
-
-                          // Different styling based on file type
-                          switch (fileType) {
-                            case "document":
-                              return (
-                                <>
-                                  <div className="bg-red-50 p-5 rounded-lg mb-3 border border-red-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-red-500 rounded-full">
-                                      {extension} DOCUMENT
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "spreadsheet":
-                              return (
-                                <>
-                                  <div className="bg-green-50 p-5 rounded-lg mb-3 border border-green-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-green-500 rounded-full">
-                                      {extension} SPREADSHEET
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "code":
-                              return (
-                                <>
-                                  <div className="bg-purple-50 p-5 rounded-lg mb-3 border border-purple-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-purple-500 rounded-full">
-                                      {extension} CODE
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "archive":
-                              return (
-                                <>
-                                  <div className="bg-amber-50 p-5 rounded-lg mb-3 border border-amber-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-amber-500 rounded-full">
-                                      {extension} ARCHIVE
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "video":
-                              return (
-                                <>
-                                  <div className="bg-blue-50 p-5 rounded-lg mb-3 border border-blue-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-blue-600 rounded-full">
-                                      {extension} VIDEO
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            case "audio":
-                              return (
-                                <>
-                                  <div className="bg-green-50 p-5 rounded-lg mb-3 border border-green-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-white px-3 py-1 bg-green-600 rounded-full">
-                                      {extension} AUDIO
-                                    </div>
-                                  </div>
-                                </>
-                              );
-
-                            default:
-                              return (
-                                <>
-                                  <div className="bg-gray-50 p-5 rounded-lg mb-3 border border-gray-100 shadow-sm">
-                                    <FileIcon filename={selectedImage.name} />
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="font-medium text-gray-700 mb-1 max-w-[220px] truncate">
-                                      {selectedImage.name}
-                                    </div>
-                                    <div className="text-xs text-gray-500 px-3 py-1 bg-gray-100 rounded-full">
-                                      {extension}
-                                    </div>
-                                  </div>
-                                </>
-                              );
-                          }
-                        })()}
-                      </div>
-                    </div>
-                  )}
-                  <motion.button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedImage(null);
-                      setPreviewUrl(null);
+                    <motion.button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedImage(null);
+                        setPreviewUrl(null);
+                        setFileSizeGB(0);
+                      }}
+                      className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none shadow-sm"
+                      aria-label="Remove image"
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                    >
+                      <svg
+                        className="w-3 h-3"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={3}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </motion.button>
+                  </div>
+                  <div className="mt-4 text-sm text-gray-600">
+                    {formatFileSize(selectedImage.size)}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="upload-prompt"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="py-8 px-4 flex flex-col items-center"
+                >
+                  <motion.div
+                    className={`w-16 h-16 mb-4 rounded-full ${
+                      isDragActive ? "bg-blue-100" : "bg-gray-50"
+                    } flex items-center justify-center transition-colors duration-300 border-2 ${
+                      isDragActive ? "border-blue-300" : "border-gray-200"
+                    }`}
+                    animate={{
+                      scale: isDragActive ? 1.05 : 1,
+                      rotate: isDragActive ? [0, -5, 5, -5, 5, 0] : 0,
                     }}
-                    className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none shadow-sm"
-                    aria-label="Remove file"
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                    transition={{
+                      duration: 0.3,
+                      rotate: { duration: 0.5, ease: "easeInOut" },
+                    }}
                   >
                     <svg
-                      className="w-3 h-3"
+                      className={`w-7 h-7 ${
+                        isDragActive ? "text-blue-600" : "text-gray-500"
+                      } transition-all duration-300`}
                       fill="none"
-                      stroke="currentColor"
                       viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
+                      stroke="currentColor"
                     >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        strokeWidth="3"
-                        d="M6 18L18 6M6 6l12 12"
-                      ></path>
+                        strokeWidth={1.5}
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
                     </svg>
-                  </motion.button>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="dropzone"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <div className="flex flex-col items-center justify-center">
-                  <svg
-                    className="mx-auto h-12 w-12 text-gray-400"
-                    stroke="currentColor"
-                    fill="none"
-                    viewBox="0 0 48 48"
-                    aria-hidden="true"
+                  </motion.div>
+                  <Typography
+                    variant="body"
+                    className={`${
+                      isUploadDisabled()
+                        ? "text-gray-500"
+                        : isDragActive
+                        ? "text-blue-600 font-medium"
+                        : "text-gray-700"
+                    } transition-colors duration-300 mb-1`}
                   >
-                    <path
-                      d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  <div className="mt-4 flex text-gray-600">
-                    <p className="text-center text-sm">
-                      <span className="font-medium text-blue-600 hover:text-blue-500">
-                        Click to browse
-                      </span>{" "}
-                      or drag and drop a file to upload
-                    </p>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Files are stored in the decentralized storage network
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                    {isDragActive
+                      ? "Drop image here"
+                      : "Drag and drop an image, or click to select"}
+                  </Typography>
+                  <Typography variant="small" className="text-gray-400">
+                    Supports JPG, PNG, GIF, WebP, and other image formats
+                  </Typography>
+                  {fileRejections.length > 0 && (
+                    <Typography variant="small" className="text-red-500 mt-2">
+                      Only image files are allowed
+                    </Typography>
+                  )}
+                  <Typography variant="small" className="text-gray-400 mt-3">
+                    For files larger than 100MB, use the &quot;Large File
+                    Upload&quot; option
+                  </Typography>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
-        {renderUploadProgress()}
+        {proofSetReady && !useChunkedUpload && renderUploadProgress()}
       </div>
     </div>
   );

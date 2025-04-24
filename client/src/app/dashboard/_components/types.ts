@@ -1,5 +1,3 @@
-// Define common interfaces used across components
-
 export interface Piece {
   id: number;
   cid: string;
@@ -11,8 +9,8 @@ export interface Piece {
   updatedAt: string;
   pendingRemoval?: boolean;
   removalDate?: string;
-  proofSetDbId?: number; // Renamed from proofSetId, now holds DB ID
-  serviceProofSetId?: string; // New field for the service's string ID
+  proofSetDbId?: number;
+  serviceProofSetId?: string;
   rootId?: string;
 }
 

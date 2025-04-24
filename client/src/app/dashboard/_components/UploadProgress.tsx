@@ -59,6 +59,23 @@ export const UploadProgress: React.FC<UploadProgressProps> = ({
                 No updates received for a while.
               </div>
             )}
+            {(uploadProgress.status === "uploading" ||
+              uploadProgress.status === "processing") &&
+              !uploadProgress.isStalled && (
+                <div className="text-gray-500 text-xs mt-1 italic">
+                  <a
+                    href="https://www.youtube.com/watch?v=OsU0CGZoV8E"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center text-blue-500 hover:text-blue-700 transition-colors"
+                  >
+                    <span>
+                      Watch this important video while we get your data on FWS
+                    </span>
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </a>
+                </div>
+              )}
             {uploadProgress.error && (
               <div className="text-red-500 text-sm mt-1 line-clamp-2">
                 Error: {uploadProgress.error}
@@ -73,7 +90,7 @@ export const UploadProgress: React.FC<UploadProgressProps> = ({
               <div className="text-xs mt-2 flex items-center">
                 <span className="mr-2">Proof Set ID:</span>
                 <a
-                  href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
+                  href={` http://explore-pdp.xyz:5173/proofsets/${uploadProgress.serviceProofSetId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:text-blue-800 underline flex items-center"
@@ -108,13 +125,12 @@ export const UploadProgress: React.FC<UploadProgressProps> = ({
           </div>
         )}
 
-        {/* Display completed upload info with links */}
         {uploadProgress.status === "complete" && uploadProgress.cid && (
           <div className="mt-3 pt-3 border-t border-green-200">
             <div className="flex flex-col gap-2">
               {uploadProgress.serviceProofSetId && (
                 <a
-                  href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
+                  href={` http://explore-pdp.xyz:5173/proofsets/${uploadProgress.serviceProofSetId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm flex items-center justify-between bg-green-100 text-green-800 p-2 rounded hover:bg-green-200 transition-colors"

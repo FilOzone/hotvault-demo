@@ -8,27 +8,73 @@ import {
 } from "react";
 import { ethers } from "ethers";
 import { useAuth } from "./AuthContext";
-import { getUSDFCBalance } from "@/lib/contracts";
+import {
+  getUSDFCBalance,
+  approveUSDFCSpending,
+  depositUSDFC,
+  approveOperator,
+  getAccountStatus,
+  getOperatorApproval,
+  withdrawUSDFC,
+} from "@/lib/contracts";
 import * as Constants from "@/lib/constants";
 
-// Define the payment status interface
+export interface TransactionRecord {
+  id: string;
+  type: "token_approval" | "deposit" | "operator_approval" | "withdraw";
+  txHash: string;
+  amount?: string;
+  timestamp: number;
+  status: "pending" | "success" | "failed";
+  error?: string;
+}
+
 interface PaymentStatus {
   usdcBalance: string;
   hasMinimumBalance: boolean;
   isLoading: boolean;
   error: string | null;
+  isTokenApproved: boolean;
+  isDeposited: boolean;
+  isOperatorApproved: boolean;
+  accountFunds: string;
+  lockedFunds: {
+    current: string;
+    rate: string;
+    lastSettledAt: string;
+  };
+  proofSetReady: boolean;
+  isCreatingProofSet: boolean;
+  lastApprovalTimestamp: number;
+  operatorApproval: {
+    rateAllowance: string;
+    lockupAllowance: string;
+    rateUsage: string;
+    lockupUsage: string;
+  } | null;
 }
 
-// Define the context type
 interface PaymentContextType {
   paymentStatus: PaymentStatus;
   refreshBalance: () => Promise<void>;
+  refreshPaymentSetupStatus: () => Promise<void>;
+  approveToken: (amount: string) => Promise<boolean>;
+  depositFunds: (amount: string) => Promise<boolean>;
+  withdrawFunds: (amount: string) => Promise<boolean>;
+  approveServiceOperator: (
+    rateAllowance: string,
+    lockupAllowance: string
+  ) => Promise<boolean>;
+  initiateProofSetCreation: () => Promise<boolean>;
+  transactions: TransactionRecord[];
+  clearTransactionHistory: () => void;
 }
 
-// Create the context
 const PaymentContext = createContext<PaymentContextType | undefined>(undefined);
 
-// Create provider component
+const generateId = () =>
+  `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
 export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
@@ -38,9 +84,47 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     hasMinimumBalance: false,
     isLoading: false,
     error: null,
+    isTokenApproved: false,
+    isDeposited: false,
+    isOperatorApproved: false,
+    accountFunds: "0",
+    lockedFunds: {
+      current: "0",
+      rate: "0",
+      lastSettledAt: "0",
+    },
+    proofSetReady: false,
+    isCreatingProofSet: false,
+    lastApprovalTimestamp: 0,
+    operatorApproval: null,
   });
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
+    null
+  );
 
-  // Function to refresh the balance
+  const addTransaction = (transaction: Omit<TransactionRecord, "id">) => {
+    const newTransaction = {
+      ...transaction,
+      id: generateId(),
+    };
+    setTransactions((prev) => [newTransaction, ...prev]);
+    return newTransaction.id;
+  };
+
+  const updateTransaction = (
+    id: string,
+    updates: Partial<TransactionRecord>
+  ) => {
+    setTransactions((prev) =>
+      prev.map((tx) => (tx.id === id ? { ...tx, ...updates } : tx))
+    );
+  };
+
+  const clearTransactionHistory = () => {
+    setTransactions([]);
+  };
+
   const refreshBalance = useCallback(async () => {
     if (!account) {
       setPaymentStatus((prev) => ({
@@ -56,17 +140,14 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Ensure ethereum exists
       if (!window.ethereum) {
         throw new Error("Ethereum provider not found");
       }
 
-      // Create a provider
       const provider = new ethers.BrowserProvider(
         window.ethereum as ethers.Eip1193Provider
       );
 
-      // Get USDFC balance
       const balanceResult = await getUSDFCBalance(
         provider,
         Constants.USDFC_TOKEN_ADDRESS,
@@ -79,15 +160,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         hasMinimumBalance: balanceResult.hasMinimumBalance,
         isLoading: false,
       }));
-
-      console.log(
-        `USDFC Balance for ${account}: ${balanceResult.formattedBalance}`
-      );
-      if (!balanceResult.hasMinimumBalance) {
-        console.warn(
-          `User has insufficient USDFC balance (${balanceResult.formattedBalance}). Minimum required: ${Constants.MINIMUM_USDFC_BALANCE}`
-        );
-      }
     } catch (error) {
       console.error("Error checking USDFC balance:", error);
       setPaymentStatus((prev) => ({
@@ -98,19 +170,562 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [account]);
 
-  // Check balance when account changes
+  const startPolling = useCallback(() => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(
+          `${Constants.API_BASE_URL}/api/v1/auth/status`,
+          {
+            method: "GET",
+            credentials: "include",
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+
+          setPaymentStatus((prev) => ({
+            ...prev,
+            proofSetReady: data.proofSetReady,
+            isCreatingProofSet: data.proofSetInitiated && !data.proofSetReady,
+          }));
+
+          if (data.proofSetReady) {
+            clearInterval(interval);
+            setPollingInterval(null);
+            refreshPaymentSetupStatus();
+          }
+        }
+      } catch (error) {
+        console.error("Error polling for proof set status:", error);
+      }
+    }, 30000);
+
+    setPollingInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+      setPollingInterval(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
+
+  const refreshPaymentSetupStatus = useCallback(async () => {
+    if (!account) return;
+
+    setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      if (!window.ethereum) {
+        throw new Error("Ethereum provider not found");
+      }
+
+      const provider = new ethers.BrowserProvider(
+        window.ethereum as ethers.Eip1193Provider
+      );
+
+      let fetchedProofSetReady = false;
+      let fetchedProofSetInitiated = false;
+      try {
+        const statusResponse = await fetch(
+          `${Constants.API_BASE_URL}/api/v1/auth/status`,
+          {
+            method: "GET",
+            credentials: "include",
+          }
+        );
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          fetchedProofSetReady = statusData.proofSetReady;
+          fetchedProofSetInitiated = statusData.proofSetInitiated;
+
+          if (
+            fetchedProofSetInitiated &&
+            !fetchedProofSetReady &&
+            !pollingInterval
+          ) {
+            startPolling();
+          }
+        }
+      } catch (authStatusError) {
+        console.error(
+          "Error fetching auth status for proofSetReady:",
+          authStatusError
+        );
+      }
+
+      try {
+        const accountStatus = await getAccountStatus(
+          provider,
+          Constants.PAYMENT_PROXY_ADDRESS,
+          Constants.USDFC_TOKEN_ADDRESS,
+          account
+        );
+
+        const operatorStatus = await getOperatorApproval(
+          provider,
+          Constants.PAYMENT_PROXY_ADDRESS,
+          Constants.USDFC_TOKEN_ADDRESS,
+          account,
+          Constants.PDP_SERVICE_ADDRESS
+        );
+
+        const minDepositAmount = parseFloat(Constants.PROOF_SET_FEE);
+        const isDeposited = parseFloat(accountStatus.funds) >= minDepositAmount;
+
+        setPaymentStatus((prev) => ({
+          ...prev,
+          isDeposited,
+          isOperatorApproved: operatorStatus.isApproved,
+          accountFunds: accountStatus.funds,
+          lockedFunds: {
+            current: accountStatus.lockupCurrent,
+            rate: accountStatus.lockupRate,
+            lastSettledAt: accountStatus.lockupLastSettledAt,
+          },
+          proofSetReady: fetchedProofSetReady,
+          isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
+          isLoading: false,
+          hasMinimumBalance: prev.hasMinimumBalance,
+        }));
+
+        console.log(`Payment setup status for ${account}:`, {
+          isDeposited,
+          funds: accountStatus.funds,
+          lockedFunds: {
+            current: accountStatus.lockupCurrent,
+            rate: accountStatus.lockupRate,
+            lastSettledAt: accountStatus.lockupLastSettledAt,
+          },
+          isOperatorApproved: operatorStatus.isApproved,
+        });
+      } catch (error) {
+        console.error("Error fetching account status:", error);
+        console.log("User hasn't interacted with the Payments contract yet");
+        setPaymentStatus((prev) => ({
+          ...prev,
+          isDeposited: false,
+          isOperatorApproved: false,
+          accountFunds: "0",
+          lockedFunds: {
+            current: "0",
+            rate: "0",
+            lastSettledAt: "0",
+          },
+          proofSetReady: fetchedProofSetReady,
+          isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
+        }));
+      }
+
+      const tokenContract = new ethers.Contract(
+        Constants.USDFC_TOKEN_ADDRESS,
+        [
+          "function allowance(address owner, address spender) view returns (uint256)",
+        ],
+        provider
+      );
+
+      const tokenAllowance = await tokenContract.allowance(
+        account,
+        Constants.PAYMENT_PROXY_ADDRESS
+      );
+
+      const minimumAllowance = ethers.parseUnits(Constants.PROOF_SET_FEE, 6);
+      const isTokenApproved = tokenAllowance >= minimumAllowance;
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isTokenApproved,
+      }));
+
+      const paymentContract = new ethers.Contract(
+        Constants.PAYMENT_PROXY_ADDRESS,
+        [
+          "function operatorApprovals(address token, address client, address operator) view returns (bool isApproved, uint256 rateAllowance, uint256 lockupAllowance, uint256 rateUsage, uint256 lockupUsage)",
+        ],
+        provider
+      );
+
+      try {
+        const approval = await paymentContract.operatorApprovals(
+          Constants.USDFC_TOKEN_ADDRESS,
+          account,
+          Constants.PDP_SERVICE_ADDRESS
+        );
+
+        setPaymentStatus((prev) => ({
+          ...prev,
+          operatorApproval: {
+            rateAllowance: ethers.formatUnits(approval.rateAllowance, 18),
+            lockupAllowance: ethers.formatUnits(approval.lockupAllowance, 18),
+            rateUsage: ethers.formatUnits(approval.rateUsage, 18),
+            lockupUsage: ethers.formatUnits(approval.lockupUsage, 18),
+          },
+        }));
+      } catch (error) {
+        console.error("Error fetching operator approval details:", error);
+      }
+    } catch (error) {
+      console.error("Error checking payment setup status:", error);
+      setPaymentStatus((prev) => ({
+        ...prev,
+        error: "Failed to check payment setup status",
+        isLoading: false,
+        proofSetReady: false,
+        isCreatingProofSet: false,
+        operatorApproval: null,
+      }));
+    }
+  }, [account, startPolling, pollingInterval]);
+
+  const approveToken = async (amount: string): Promise<boolean> => {
+    if (!account) return false;
+
+    setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    const txId = addTransaction({
+      type: "token_approval",
+      txHash: "",
+      amount,
+      timestamp: Date.now(),
+      status: "pending",
+    });
+
+    try {
+      if (!window.ethereum) {
+        throw new Error("Ethereum provider not found");
+      }
+
+      const provider = new ethers.BrowserProvider(
+        window.ethereum as ethers.Eip1193Provider
+      );
+      const signer = await provider.getSigner();
+
+      const txResponse = await approveUSDFCSpending(
+        signer,
+        Constants.USDFC_TOKEN_ADDRESS,
+        Constants.PAYMENT_PROXY_ADDRESS,
+        amount
+      );
+
+      updateTransaction(txId, {
+        txHash: txResponse.hash,
+        status: "success",
+      });
+
+      const now = Date.now();
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isTokenApproved: true,
+        isLoading: false,
+        lastApprovalTimestamp: now,
+      }));
+
+      return true;
+    } catch (error) {
+      console.error("Error approving token spending:", error);
+
+      updateTransaction(txId, {
+        status: "failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        error: "Failed to approve token spending",
+        isLoading: false,
+      }));
+      return false;
+    }
+  };
+
+  const depositFunds = async (amount: string): Promise<boolean> => {
+    if (!account) return false;
+
+    const now = Date.now();
+    const lastApproval = paymentStatus.lastApprovalTimestamp;
+    const minDelay = 5000;
+    const timeSinceApproval = now - lastApproval;
+
+    if (lastApproval > 0 && timeSinceApproval < minDelay) {
+      console.warn(
+        `Deposit attempted too soon after approval (${timeSinceApproval}ms). Waiting for confirmation...`
+      );
+
+      const remainingTime = minDelay - timeSinceApproval;
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: `Waiting ${Math.ceil(
+          remainingTime / 1000
+        )} seconds for approval confirmation...`,
+      }));
+
+      await new Promise((resolve) => setTimeout(resolve, remainingTime + 500));
+
+      setPaymentStatus((prev) => ({ ...prev, error: null }));
+    }
+
+    setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    const txId = addTransaction({
+      type: "deposit",
+      txHash: "",
+      amount,
+      timestamp: Date.now(),
+      status: "pending",
+    });
+
+    try {
+      if (!window.ethereum) {
+        throw new Error("Ethereum provider not found");
+      }
+
+      const provider = new ethers.BrowserProvider(
+        window.ethereum as ethers.Eip1193Provider
+      );
+      const signer = await provider.getSigner();
+
+      const txResponse = await depositUSDFC(
+        signer,
+        Constants.PAYMENT_PROXY_ADDRESS,
+        Constants.USDFC_TOKEN_ADDRESS,
+        amount
+      );
+
+      updateTransaction(txId, {
+        txHash: txResponse.hash,
+        status: "success",
+      });
+
+      await refreshPaymentSetupStatus();
+
+      return true;
+    } catch (error) {
+      console.error("Error depositing funds:", error);
+
+      updateTransaction(txId, {
+        status: "failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        error: "Failed to deposit funds",
+        isLoading: false,
+      }));
+      return false;
+    }
+  };
+
+  const withdrawFunds = async (amount: string): Promise<boolean> => {
+    if (!account) return false;
+
+    setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      if (!window.ethereum) {
+        throw new Error("Ethereum provider not found");
+      }
+
+      const provider = new ethers.BrowserProvider(
+        window.ethereum as ethers.Eip1193Provider
+      );
+
+      const txId = addTransaction({
+        type: "withdraw",
+        txHash: "",
+        amount,
+        timestamp: Date.now(),
+        status: "pending",
+      });
+
+      const signer = await provider.getSigner();
+
+      const txResponse = await withdrawUSDFC(
+        signer,
+        Constants.PAYMENT_PROXY_ADDRESS,
+        Constants.USDFC_TOKEN_ADDRESS,
+        amount
+      );
+
+      updateTransaction(txId, {
+        txHash: txResponse.hash,
+        status: "success",
+      });
+
+      await refreshPaymentSetupStatus();
+
+      return true;
+    } catch (error) {
+      console.error("Error withdrawing funds:", error);
+
+      if (error instanceof Error) {
+        setPaymentStatus((prev) => ({
+          ...prev,
+          error: error.message,
+          isLoading: false,
+        }));
+      } else {
+        setPaymentStatus((prev) => ({
+          ...prev,
+          error: "Failed to withdraw funds",
+          isLoading: false,
+        }));
+      }
+      return false;
+    }
+  };
+
+  const approveServiceOperator = async (
+    rateAllowance: string,
+    lockupAllowance: string
+  ): Promise<boolean> => {
+    if (!account) return false;
+
+    setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    const txId = addTransaction({
+      type: "operator_approval",
+      txHash: "",
+      amount: `Rate: ${rateAllowance}, Lockup: ${lockupAllowance}`,
+      timestamp: Date.now(),
+      status: "pending",
+    });
+
+    try {
+      if (!window.ethereum) {
+        throw new Error("Ethereum provider not found");
+      }
+
+      const provider = new ethers.BrowserProvider(
+        window.ethereum as ethers.Eip1193Provider
+      );
+      const signer = await provider.getSigner();
+
+      const txResponse = await approveOperator(
+        signer,
+        Constants.PAYMENT_PROXY_ADDRESS,
+        Constants.USDFC_TOKEN_ADDRESS,
+        Constants.PDP_SERVICE_ADDRESS,
+        rateAllowance,
+        lockupAllowance
+      );
+
+      updateTransaction(txId, {
+        txHash: txResponse.hash,
+        status: "success",
+      });
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isOperatorApproved: true,
+        isLoading: false,
+      }));
+
+      return true;
+    } catch (error) {
+      console.error("Error approving service operator:", error);
+
+      updateTransaction(txId, {
+        status: "failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        error: "Failed to approve service operator",
+        isLoading: false,
+      }));
+      return false;
+    }
+  };
+
+  const initiateProofSetCreation = async (): Promise<boolean> => {
+    if (!account) return false;
+
+    try {
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isCreatingProofSet: true,
+        error: null,
+      }));
+
+      const response = await fetch(
+        `${Constants.API_BASE_URL}/api/v1/proof-set/create`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to create proof set");
+      }
+
+      startPolling();
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isCreatingProofSet: true,
+        isLoading: false,
+      }));
+
+      return true;
+    } catch (error) {
+      console.error("Failed to create proof set:", error);
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isCreatingProofSet: false,
+        isLoading: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to create proof set. Please try again.",
+      }));
+      return false;
+    }
+  };
+
   useEffect(() => {
     refreshBalance();
-  }, [account, refreshBalance]);
+    refreshPaymentSetupStatus();
+  }, [account, refreshBalance, refreshPaymentSetupStatus]);
 
   return (
-    <PaymentContext.Provider value={{ paymentStatus, refreshBalance }}>
+    <PaymentContext.Provider
+      value={{
+        paymentStatus,
+        refreshBalance,
+        refreshPaymentSetupStatus,
+        approveToken,
+        depositFunds,
+        withdrawFunds,
+        approveServiceOperator,
+        initiateProofSetCreation,
+        transactions,
+        clearTransactionHistory,
+      }}
+    >
       {children}
     </PaymentContext.Provider>
   );
 };
 
-// Hook to use the payment context
 export function usePayment() {
   const context = useContext(PaymentContext);
   if (context === undefined) {

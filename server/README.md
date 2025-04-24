@@ -1,4 +1,4 @@
-# FWS Backend
+# Hot Vault Backend
 
 A scalable Go backend for a DApp with MetaMask integration and smart contract invocations.
 

@@ -2,19 +2,11 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Download, Trash2, ExternalLink } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 
-// Import the file type icons component
 import { FileIcon } from "./FileIcon";
 import { Piece } from "./types";
 
-// Define interfaces
 interface FileRowProps {
   piece: Piece;
   index: number;
@@ -27,7 +19,6 @@ interface FileRowProps {
   };
 }
 
-// Animation variants
 const tableRowVariants = {
   hidden: { opacity: 0, x: -5 },
   visible: (custom: number) => ({
@@ -218,36 +209,15 @@ export const FileRowComponent: React.FC<FileRowProps> = ({
             <Download className="h-5 w-5" />
           </motion.button>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="text-gray-500 hover:text-gray-700"
-                title="More options"
-              >
-                <MoreHorizontal className="h-5 w-5" />
-              </motion.button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {hasProof && (
-                <DropdownMenuItem
-                  onClick={() => openProofDetails(piece)}
-                  className="flex items-center gap-2 cursor-pointer"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  View Proof Details
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                onClick={() => handleRemoveRoot(piece)}
-                className="flex items-center gap-2 cursor-pointer text-red-600 focus:text-red-600"
-              >
-                <Trash2 className="h-4 w-4" />
-                Remove File
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => handleRemoveRoot(piece)}
+            className="text-red-600 hover:text-red-900"
+            title="Remove file"
+          >
+            <Trash2 className="h-5 w-5" />
+          </motion.button>
         </div>
       </td>
     </motion.tr>

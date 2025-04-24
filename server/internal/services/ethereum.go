@@ -8,18 +8,16 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/fws/backend/config"
-	"github.com/fws/backend/pkg/logger"
+	"github.com/hotvault/backend/config"
+	"github.com/hotvault/backend/pkg/logger"
 )
 
-// EthereumService handles interactions with Ethereum blockchain
 type EthereumService struct {
 	config config.EthereumConfig
 	client *ethclient.Client
 	logger logger.Logger
 }
 
-// NewEthereumService creates a new Ethereum service
 func NewEthereumService(config config.EthereumConfig) *EthereumService {
 	logger := logger.NewLogger()
 	client, err := ethclient.Dial(config.RPCURL)
@@ -36,7 +34,6 @@ func NewEthereumService(config config.EthereumConfig) *EthereumService {
 }
 
 func (s *EthereumService) VerifySignature(address, message, signature string) (bool, error) {
-	// Use the full message as provided
 	prefix := "\x19Ethereum Signed Message:\n"
 	prefixedMessage := prefix + strconv.Itoa(len(message)) + message
 

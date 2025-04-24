@@ -20,6 +20,7 @@ export interface AuthContextType {
   isConnecting: boolean;
   isLoading: boolean;
   error: string;
+  proofSetReady: boolean;
   handleAccountSwitch: () => Promise<void>;
   disconnectWallet: () => void;
   connectWallet: () => Promise<void>;
@@ -28,7 +29,6 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const STORAGE_KEY = "fws_wallet_connected";
-// We'll keep this for backward compatibility, but it won't be the primary storage
 const JWT_STORAGE_KEY = "jwt_token";
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -38,24 +38,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [proofSetReady, setProofSetReady] = useState<boolean>(false);
   const router = useRouter();
 
-  // Add connection lock
   const [isConnectionLocked, setIsConnectionLocked] = useState(false);
 
-  // Memoize functions to prevent infinite re-renders
   const authenticateWithBackend = useCallback(async (address: string) => {
     try {
       console.log("🔐 Authenticating with backend for address:", address);
 
-      // Step 1: Get a nonce from the backend
       const nonceResponse = await fetch(`${API_BASE_URL}/api/v1/auth/nonce`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ address }),
-        credentials: "include", // Important for cookies
+        credentials: "include",
       });
 
       if (!nonceResponse.ok) {
@@ -65,15 +63,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const { nonce } = await nonceResponse.json();
       console.log("📝 Received nonce from backend:", nonce);
 
-      // Step 2: Sign the nonce with MetaMask
       if (!window.ethereum) {
         throw new Error("MetaMask not available");
       }
 
       console.log("🖊️ Requesting signature...");
 
-      // Try a standard ethereum message format - this is what most backends expect
-      const message = `Sign this message to authenticate with FWS: ${nonce}`;
+      const message = `Sign this message to login to Hot Vault (No funds will be transferred in this step): ${nonce}`;
       console.log("Message to sign:", message);
 
       const signature = await window.ethereum.request({
@@ -83,7 +79,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       console.log("✍️ Signature:", signature);
 
-      // Step 3: Verify the signature with the backend and get JWT token
       const verifyResponse = await fetch(`${API_BASE_URL}/api/v1/auth/verify`, {
         method: "POST",
         headers: {
@@ -92,9 +87,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         body: JSON.stringify({
           address,
           signature,
-          message, // Send the message we signed so backend knows what was signed
+          message,
         }),
-        credentials: "include", // Important for cookies
+        credentials: "include",
       });
 
       if (!verifyResponse.ok) {
@@ -105,7 +100,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const { token } = await verifyResponse.json();
 
-      // Store the token in localStorage as a fallback
       if (token) {
         localStorage.setItem(JWT_STORAGE_KEY, token);
         console.log("🔑 JWT token stored");
@@ -113,8 +107,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("⚠️ No JWT token received, but cookie should be set");
       }
 
-      // Mark as connected in localStorage
       localStorage.setItem(STORAGE_KEY, "true");
+
+      try {
+        const statusResponse = await fetch(
+          `${API_BASE_URL}/api/v1/auth/status`,
+          {
+            method: "GET",
+            credentials: "include",
+          }
+        );
+        if (statusResponse.ok) {
+          const data = await statusResponse.json();
+          setProofSetReady(data.proofSetReady);
+          console.log(
+            "🔒 Updated proofSetReady status after auth:",
+            data.proofSetReady
+          );
+        } else {
+          console.warn(
+            "⚠️ Could not fetch status after authentication to update proofSetReady"
+          );
+          setProofSetReady(false); // Assume not ready if status check fails
+        }
+      } catch (statusError) {
+        console.error(
+          "🚨 Error fetching status after authentication:",
+          statusError
+        );
+        setProofSetReady(false);
+      }
 
       return token;
     } catch (error) {
@@ -123,7 +145,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  // Memoize handleAccountsChanged
   const handleAccountsChanged = useCallback(
     async (newAccounts: string[]) => {
       console.log(
@@ -138,7 +159,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(JWT_STORAGE_KEY);
-        // Also clear the cookie by calling logout endpoint
         await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
           method: "POST",
           credentials: "include",
@@ -149,7 +169,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
-      // If we have an account, first check if we're already authenticated with it
       try {
         const statusResponse = await fetch(
           `${API_BASE_URL}/api/v1/auth/status`,
@@ -167,6 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             data.address.toLowerCase() === newAccount.toLowerCase()
           ) {
             console.log("✅ Already authenticated with this account");
+            setProofSetReady(data.proofSetReady);
             setAccount(newAccount);
             localStorage.setItem(STORAGE_KEY, "true");
             setIsLoading(false);
@@ -179,7 +199,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         // Continue with authentication process
       }
 
-      // Need to authenticate with the new account
       try {
         console.log(
           "[AuthContext.tsx:handleAccountsChanged] 🔒 New account connected, starting authentication"
@@ -200,7 +219,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setAccount("");
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(JWT_STORAGE_KEY);
-        // Clear the auth cookie
         await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
           method: "POST",
           credentials: "include",
@@ -210,13 +228,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     [authenticateWithBackend, router]
   );
 
-  // Memoize handleDisconnect
   const handleDisconnect = useCallback(() => {
     console.log("🔌 Wallet disconnected");
     setAccount("");
+    setProofSetReady(false);
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(JWT_STORAGE_KEY);
-    // Clear the auth cookie
     fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
       method: "POST",
       credentials: "include",
@@ -225,29 +242,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     router.push("/");
   }, [router]);
 
-  // Memoize checkConnection
   const checkConnection = useCallback(async () => {
     console.log("⏳ Checking connection status...");
-    // Skip setting isLoading to true on each check to avoid UI flicker
-    // Only set it if we're initializing for the first time
     if (account === "") {
       setIsLoading(true);
     }
 
     try {
-      // First check if we have a valid cookie session
       const response = await fetch(`${API_BASE_URL}/api/v1/auth/status`, {
         method: "GET",
-        credentials: "include", // Important for cookies
+        credentials: "include",
       });
 
       if (response.ok) {
         const data = await response.json();
         setAccount(data.address);
         localStorage.setItem(STORAGE_KEY, "true");
+        setProofSetReady(data.proofSetReady);
         console.log(
           "✅ Authenticated via cookie session for address:",
-          data.address
+          data.address,
+          "Proof Set Ready:",
+          data.proofSetReady
         );
         setIsLoading(false);
         return true;
@@ -302,14 +318,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [authenticateWithBackend, account]);
 
   useEffect(() => {
-    // Only run once on mount
     const initialCheck = async () => {
       await checkConnection();
     };
 
     initialCheck();
 
-    // Set up event listeners for account changes and disconnection
     if (window.ethereum) {
       const accountsChangedHandler = (accounts: string[]) => {
         if (!isConnectionLocked) {
@@ -368,9 +382,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         throw new Error("No accounts returned from MetaMask");
       }
 
-      console.log("✅ Account connected:", accounts[0]);
-
-      // First check if we already have a valid session for this account
       try {
         const statusResponse = await fetch(
           `${API_BASE_URL}/api/v1/auth/status`,
@@ -387,7 +398,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             data.authenticated &&
             data.address.toLowerCase() === accounts[0].toLowerCase()
           ) {
-            console.log("✅ Already authenticated with this account");
+            setProofSetReady(data.proofSetReady);
             setAccount(accounts[0]);
             localStorage.setItem(STORAGE_KEY, "true");
             setIsLoading(false);
@@ -397,10 +408,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       } catch (error) {
         console.error("Error checking status:", error);
-        // Continue with authentication
       }
 
-      // Otherwise proceed with normal authentication flow
       await authenticateWithBackend(accounts[0]);
       setAccount(accounts[0]);
       localStorage.setItem(STORAGE_KEY, "true");
@@ -412,7 +421,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.removeItem(JWT_STORAGE_KEY);
     } finally {
       setIsConnecting(false);
-      // Small delay before unlocking to prevent accidental double-clicks
       setTimeout(() => {
         setIsConnectionLocked(false);
       }, 1000);
@@ -430,9 +438,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setIsConnectionLocked(true);
     try {
+      if (!window.ethereum) {
+        throw new Error("MetaMask not available");
+      }
+
+      await window.ethereum.request({
+        method: "wallet_requestPermissions",
+        params: [{ eth_accounts: {} }],
+      });
+
       await connectWallet();
+    } catch (error) {
+      console.error("Failed to switch account:", error);
+      setError("Failed to switch account. Please try again.");
     } finally {
-      // Small delay before unlocking to prevent accidental double-clicks
       setTimeout(() => {
         setIsConnectionLocked(false);
       }, 1000);
@@ -446,6 +465,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         isConnecting,
         isLoading,
         error,
+        proofSetReady,
         handleAccountSwitch,
         disconnectWallet,
         connectWallet,

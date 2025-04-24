@@ -4,6 +4,7 @@ import { DM_Sans } from "next/font/google";
 import "./globals.css";
 import ClientLayout from "@/components/layout/client-layout";
 import { GlobalUploadProgress } from "@/components/ui/global-upload-progress";
+import { Toaster } from "sonner";
 
 const dmSans = DM_Sans({ subsets: ["latin"] });
 const geistSans = Geist({
@@ -17,9 +18,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Filecoin Web Services",
+  title: "Hot Vault",
   description:
-    "Decentralized infrastructure for the next generation of web applications",
+    "Hot Vault is a decentralized infrastructure for the next generation of web applications",
 };
 
 export default function RootLayout({
@@ -36,6 +37,7 @@ export default function RootLayout({
           {children}
           <GlobalUploadProgress />
         </ClientLayout>
+        <Toaster richColors />
       </body>
     </html>
   );

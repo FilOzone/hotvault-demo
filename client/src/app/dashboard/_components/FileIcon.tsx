@@ -5,10 +5,8 @@ interface FileIconProps {
 }
 
 export const FileIcon: React.FC<FileIconProps> = ({ filename }) => {
-  // Extract the file extension from the filename
   const extension = filename.split(".").pop()?.toLowerCase() || "";
 
-  // Image files
   if (
     ["jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico"].includes(
       extension
@@ -32,7 +30,6 @@ export const FileIcon: React.FC<FileIconProps> = ({ filename }) => {
     );
   }
 
-  // Document files
   if (["pdf", "doc", "docx", "txt", "rtf", "odt", "md"].includes(extension)) {
     return (
       <svg
@@ -51,7 +48,6 @@ export const FileIcon: React.FC<FileIconProps> = ({ filename }) => {
     );
   }
 
-  // Spreadsheet files
   if (["xls", "xlsx", "csv", "ods", "numbers"].includes(extension)) {
     return (
       <svg
@@ -70,7 +66,6 @@ export const FileIcon: React.FC<FileIconProps> = ({ filename }) => {
     );
   }
 
-  // Archive files
   if (
     ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso"].includes(extension)
   ) {
@@ -91,7 +86,6 @@ export const FileIcon: React.FC<FileIconProps> = ({ filename }) => {
     );
   }
 
-  // Code files
   if (
     [
       "js",
@@ -132,7 +126,6 @@ export const FileIcon: React.FC<FileIconProps> = ({ filename }) => {
     );
   }
 
-  // Video files
   if (["mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"].includes(extension)) {
     return (
       <svg
@@ -152,7 +145,6 @@ export const FileIcon: React.FC<FileIconProps> = ({ filename }) => {
     );
   }
 
-  // Audio files
   if (["mp3", "wav", "ogg", "flac", "aac", "m4a"].includes(extension)) {
     return (
       <svg
@@ -172,7 +164,6 @@ export const FileIcon: React.FC<FileIconProps> = ({ filename }) => {
     );
   }
 
-  // Default (fallback)
   return (
     <svg
       className="h-6 w-6 text-gray-400"

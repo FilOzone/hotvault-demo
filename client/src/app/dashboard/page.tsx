@@ -7,7 +7,6 @@ import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { FilesTab } from "./_components/FilesTab";
 import { PaymentSetupTab } from "./_components/PaymentSetupTab";
-import { ProofSetBanner } from "@/components/ui/proof-set-banner";
 
 export default function Dashboard() {
   const { account, handleAccountSwitch, disconnectWallet } = useAuth();
@@ -16,6 +15,14 @@ export default function Dashboard() {
   );
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isLoading] = useState(false);
+
+  const handleTabChange = (tab: string) => {
+    if (tab === "payment") {
+      setActiveTab(DASHBOARD_SECTIONS.PAYMENTS);
+    } else if (tab === "files") {
+      setActiveTab(DASHBOARD_SECTIONS.FILES);
+    }
+  };
 
   if (!account) {
     return null;
@@ -33,16 +40,16 @@ export default function Dashboard() {
         disconnectWallet={disconnectWallet}
       />
 
-      <ProofSetBanner />
-
       <div className="pt-16">
         <main className="container mx-auto px-4 py-8">
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <AnimatePresence mode="wait">
               {activeTab === DASHBOARD_SECTIONS.FILES && (
-                <FilesTab isLoading={isLoading} />
+                <FilesTab isLoading={isLoading} onTabChange={handleTabChange} />
               )}
-              {activeTab === DASHBOARD_SECTIONS.PAYMENTS && <PaymentSetupTab />}
+              {activeTab === DASHBOARD_SECTIONS.PAYMENTS && (
+                <PaymentSetupTab setActiveTab={setActiveTab} />
+              )}
             </AnimatePresence>
           </div>
         </main>
