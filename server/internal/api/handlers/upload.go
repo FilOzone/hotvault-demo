@@ -238,17 +238,20 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	fileSizeMB := float64(file.Size) / (1024 * 1024)
 
-	baseDelay := time.Duration(8+int(fileSizeMB/10)) * time.Second
-	if baseDelay > 60*time.Second {
-		baseDelay = 60 * time.Second
+	baseDelay := time.Duration(2+int(fileSizeMB/5)) * time.Second
+	if baseDelay < 2*time.Second {
+		baseDelay = 2 * time.Second
+	}
+	if baseDelay > 30*time.Second {
+		baseDelay = 30 * time.Second
 	}
 
-	prepareTimeout := time.Duration(60+int(fileSizeMB*2)) * time.Second
+	prepareTimeout := time.Duration(30+int(fileSizeMB*2)) * time.Second
 	if prepareTimeout > 3600*time.Second {
 		prepareTimeout = 3600 * time.Second
 	}
 
-	uploadTimeout := time.Duration(60+int(fileSizeMB*3)) * time.Second
+	uploadTimeout := time.Duration(30+int(fileSizeMB*3)) * time.Second
 	if uploadTimeout > 7200*time.Second {
 		uploadTimeout = 7200 * time.Second
 	}
@@ -260,13 +263,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("uploadTimeout", uploadTimeout).
 		Info("Calculated timeouts for file processing")
 
-	waitWithJitter := func(baseDelay time.Duration) {
-		jitter := time.Duration(rand.Int63n(int64(baseDelay) / 2))
-		delay := baseDelay + jitter
-		log.WithField("delay", delay.String()).Info("Rate limit delay before pdptool call")
-		time.Sleep(delay)
-	}
-
 	if _, err := os.Stat("pdpservice.json"); os.IsNotExist(err) {
 		currentStage = "preparing"
 		updateStatus(UploadProgress{
@@ -274,8 +270,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			Progress: currentProgress,
 			Message:  "Creating service secret",
 		})
-
-		waitWithJitter(baseDelay)
 
 		createSecretCmd := exec.Command(pdptoolPath, "create-service-secret")
 		var createSecretOutput bytes.Buffer
@@ -399,8 +393,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  "Preparing piece",
 	})
 
-	waitWithJitter(baseDelay)
-
 	var prepareOutput bytes.Buffer
 	var prepareError bytes.Buffer
 	prepareCmd := exec.Command(pdptoolPath, "prepare-piece", tempFilePath)
@@ -465,12 +457,13 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
 	})
 
-	currentStage = "uploading"
-	updateStatus(UploadProgress{
-		Status:   currentStage,
-		Progress: currentProgress,
-		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
-	})
+	// Apply rate limiting delay just before upload-file command
+	waitWithJitter := func(baseDelay time.Duration) {
+		jitter := time.Duration(rand.Int63n(int64(baseDelay) / 2))
+		delay := baseDelay + jitter
+		log.WithField("delay", delay.String()).Info("Rate limit delay before pdptool upload-file call")
+		time.Sleep(delay)
+	}
 
 	waitWithJitter(baseDelay)
 
@@ -492,7 +485,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("args", strings.Join(uploadArgs, " ")).
 		WithField("fileSize", formatFileSize(file.Size)).
 		WithField("timeout", "none").
-		Info("Executing pdptool upload-file command without timeout")
+		Info("Executing pdptool upload-file command")
 
 	updateStatus(UploadProgress{
 		Status:   currentStage,
@@ -739,7 +732,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	updateStatus(UploadProgress{
 		Status:     currentStage,
 		Progress:   currentProgress,
-		Message:    fmt.Sprintf("Adding root to proof set %s...", proofSet.ProofSetID),
+		Message:    "Adding root to proof...",
 		CID:        compoundCID,
 		ProofSetID: proofSet.ProofSetID,
 	})
@@ -785,7 +778,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		updateStatus(UploadProgress{
 			Status:     currentStage,
 			Progress:   currentProgress,
-			Message:    fmt.Sprintf("Adding root to proof set %s (attempt %d/%d)...", proofSet.ProofSetID, attempt, maxRetries),
+			Message:    fmt.Sprintf("Adding root to proof...", proofSet.ProofSetID, attempt, maxRetries),
 			CID:        compoundCID,
 			ProofSetID: proofSet.ProofSetID,
 		})

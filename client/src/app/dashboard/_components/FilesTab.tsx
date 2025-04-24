@@ -591,7 +591,9 @@ export const FilesTab = ({
           window.URL.revokeObjectURL(url);
         }, 100);
 
-        toast.success(`${piece.filename} downloaded successfully`);
+        toast.success(`${piece.filename} downloaded successfully`, {
+          duration: 3000,
+        });
 
         setDownloadsInProgress((prev) => {
           const newState = { ...prev };
