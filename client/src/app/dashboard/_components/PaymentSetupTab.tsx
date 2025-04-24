@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { usePayment } from "@/contexts/PaymentContext";
 import { TokenBalanceCard } from "./TokenBalanceCard";
-import { Wallet, CheckCircle, Loader, Info, AlertTriangle } from "lucide-react";
+import { CheckCircle, Loader, Info, AlertTriangle, Files } from "lucide-react";
 import * as Constants from "@/lib/constants";
 import { toast } from "react-hot-toast";
 import { TransactionHistory } from "./TransactionHistory";
+import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 
 enum PaymentStep {
   APPROVE_TOKEN = 0,
@@ -12,6 +13,11 @@ enum PaymentStep {
   APPROVE_OPERATOR = 2,
   CREATE_PROOF_SET = 3,
   COMPLETE = 4,
+}
+
+// Component props interface
+interface PaymentSetupTabProps {
+  setActiveTab?: (tab: DashboardSection) => void;
 }
 
 const StepIcon = ({
@@ -50,7 +56,7 @@ const formatLargeNumber = (num: string) => {
   return `${trimmed.slice(0, 8)}...${trimmed.slice(-4)}`;
 };
 
-export const PaymentSetupTab = () => {
+export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
   const {
     paymentStatus,
     approveToken,
@@ -727,7 +733,7 @@ export const PaymentSetupTab = () => {
               <div className="mt-4 bg-white rounded-lg p-4 border border-green-100">
                 <div className="flex items-start gap-3">
                   <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
-                  <div>
+                  <div className="w-full">
                     <p className="text-base font-medium text-green-900">
                       Payment setup complete!
                     </p>
@@ -736,6 +742,15 @@ export const PaymentSetupTab = () => {
                       features of the Hot Vault service. Please go the files tab
                       to upload your files.
                     </p>
+                    <button
+                      onClick={() =>
+                        setActiveTab && setActiveTab(DASHBOARD_SECTIONS.FILES)
+                      }
+                      className="mt-4 w-full md:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Files className="w-4 h-4" />
+                      Go to Files Tab
+                    </button>
                   </div>
                 </div>
               </div>
@@ -841,21 +856,24 @@ export const PaymentSetupTab = () => {
               {renderCreateProofSetStep()}
               {renderCompletionStep()}
 
-              {!paymentStatus.hasMinimumBalance && (
-                <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium text-amber-800">
-                      Insufficient USDFC Balance
-                    </p>
-                    <p className="text-sm text-amber-700 mt-1">
-                      You need at least {Constants.MINIMUM_USDFC_BALANCE} USDFC
-                      to complete the setup. Please obtain USDFC tokens before
-                      proceeding.
-                    </p>
+              {!paymentStatus.hasMinimumBalance &&
+                !paymentStatus.proofSetReady && (
+                  <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium text-amber-800">
+                        Insufficient Contract Balance
+                      </p>
+                      <p className="text-sm text-amber-700 mt-1">
+                        You need at least {Constants.MINIMUM_USDFC_BALANCE}{" "}
+                        USDFC in your contract to complete the setup.
+                        {paymentStatus.isDeposited
+                          ? " Please deposit more funds before proceeding."
+                          : " Please complete the token approval step and deposit funds."}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {paymentStatus.error && (
                 <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-100 flex items-start gap-3">

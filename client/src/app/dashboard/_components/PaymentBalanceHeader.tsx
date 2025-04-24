@@ -135,7 +135,7 @@ export const PaymentBalanceHeader = () => {
         >
           <div className="flex items-center gap-2">
             <Wallet className="w-4 h-4 text-gray-500" />
-            <span>{formatCurrency(paymentStatus.usdcBalance)} USDFC</span>
+            <span>{formatCurrency(paymentStatus.accountFunds)} USDFC</span>
           </div>
           <ChevronDown className="w-4 h-4 text-gray-500" />
         </button>
@@ -150,13 +150,13 @@ export const PaymentBalanceHeader = () => {
               </h3>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Available Balance:</span>
+                  <span className="text-gray-600">Wallet Balance:</span>
                   <span className="font-medium">
                     {formatCurrency(paymentStatus.usdcBalance)} USDFC
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Account Funds:</span>
+                  <span className="text-gray-600">Contract Balance:</span>
                   <span className="font-medium">
                     {formatCurrency(paymentStatus.accountFunds)} USDFC
                   </span>

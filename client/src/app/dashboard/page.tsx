@@ -49,7 +49,9 @@ export default function Dashboard() {
               {activeTab === DASHBOARD_SECTIONS.FILES && (
                 <FilesTab isLoading={isLoading} onTabChange={handleTabChange} />
               )}
-              {activeTab === DASHBOARD_SECTIONS.PAYMENTS && <PaymentSetupTab />}
+              {activeTab === DASHBOARD_SECTIONS.PAYMENTS && (
+                <PaymentSetupTab setActiveTab={setActiveTab} />
+              )}
             </AnimatePresence>
           </div>
         </main>
