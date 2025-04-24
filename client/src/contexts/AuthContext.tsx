@@ -8,6 +8,7 @@ import {
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/constants";
 import type { EthereumProvider } from "@/types/window";
+import { toast } from "react-hot-toast";
 
 declare global {
   interface Window {
@@ -372,6 +373,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const connectWallet = async () => {
     if (isConnectionLocked) {
       console.log("🔒 Connection locked, please wait...");
+      toast.error("Please complete the pending wallet connection request.");
       return;
     }
 
@@ -454,23 +456,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setAccount(accounts[0]);
       localStorage.setItem(STORAGE_KEY, "true");
       router.push("/dashboard");
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("❌ Connection error:", error);
-      setError("Failed to connect wallet. Please try again.");
+
+      // Handle specific MetaMask errors
+      if (error && typeof error === "object" && "code" in error) {
+        const metamaskError = error as { code: number };
+        if (metamaskError.code === -32002) {
+          toast.error(
+            "MetaMask is already processing a connection request. Please check your MetaMask popup."
+          );
+          setError(
+            "Please check your MetaMask popup to complete the connection."
+          );
+        } else if (metamaskError.code === 4001) {
+          toast.error("You rejected the connection request.");
+          setError("Connection request was rejected. Please try again.");
+        } else {
+          toast.error("Failed to connect wallet. Please try again.");
+          setError("Failed to connect wallet. Please try again.");
+        }
+      } else {
+        toast.error("Failed to connect wallet. Please try again.");
+        setError("Failed to connect wallet. Please try again.");
+      }
+
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(JWT_STORAGE_KEY);
     } finally {
       setIsConnecting(false);
+      // Add a small delay before unlocking to prevent rapid re-clicks
       setTimeout(() => {
         setIsConnectionLocked(false);
       }, 1000);
     }
   };
 
-  const disconnectWallet = () => {
+  const disconnectWallet = async () => {
+    console.log("🔌 Disconnecting wallet");
+    setAccount("");
+    setProofSetReady(false);
+    setUserProofSetId(null);
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(JWT_STORAGE_KEY);
-    setAccount("");
+    try {
+      await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (err) {
+      console.error("Error logging out:", err);
+    }
+    setError("");
     router.push("/");
   };
 
