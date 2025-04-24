@@ -3,13 +3,21 @@
 import { usePayment } from "@/contexts/PaymentContext";
 import { Wallet, Plus, Shield, Loader, X, ArrowDownLeft } from "lucide-react";
 import { formatCurrency, formatCurrencyPrecise } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
+import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
+import { ROOT_REMOVED_EVENT } from "./PaymentBalanceHeader";
+import { BALANCE_UPDATED_EVENT } from "@/contexts/PaymentContext";
 
 export const TokenBalanceCard = () => {
-  const { paymentStatus, depositFunds, approveToken, withdrawFunds } =
-    usePayment();
+  const {
+    paymentStatus,
+    depositFunds,
+    approveToken,
+    withdrawFunds,
+    refreshPaymentSetupStatus,
+  } = usePayment();
   const [showAddFunds, setShowAddFunds] = useState(false);
   const [showSetAllowance, setShowSetAllowance] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
@@ -17,6 +25,41 @@ export const TokenBalanceCard = () => {
   const [allowanceAmount, setAllowanceAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    const handleUploadComplete = () => {
+      console.log(
+        "[TokenBalanceCard] File upload completed, refreshing balance"
+      );
+      refreshPaymentSetupStatus();
+    };
+
+    const handleRootRemoved = () => {
+      console.log("[TokenBalanceCard] Root removed, refreshing balance");
+      refreshPaymentSetupStatus();
+    };
+
+    const handleBalanceUpdate = (event: CustomEvent) => {
+      console.log("[TokenBalanceCard] Balance updated:", event.detail);
+      // The balance is already updated in the context
+    };
+
+    window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadComplete);
+    window.addEventListener(ROOT_REMOVED_EVENT, handleRootRemoved);
+    window.addEventListener(
+      BALANCE_UPDATED_EVENT,
+      handleBalanceUpdate as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadComplete);
+      window.removeEventListener(ROOT_REMOVED_EVENT, handleRootRemoved);
+      window.removeEventListener(
+        BALANCE_UPDATED_EVENT,
+        handleBalanceUpdate as EventListener
+      );
+    };
+  }, [refreshPaymentSetupStatus]);
 
   const handleAddFunds = async () => {
     if (!depositAmount || parseFloat(depositAmount) <= 0) {

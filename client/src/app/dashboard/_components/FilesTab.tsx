@@ -30,8 +30,10 @@ import { useUpload } from "@/hooks/useUpload";
 import { useUploadStore } from "@/store/upload-store";
 import { UploadProgress } from "@/components/ui/upload-progress";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePayment } from "@/contexts/PaymentContext";
 import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 import { ROOT_REMOVED_EVENT } from "./PaymentBalanceHeader";
+import { BALANCE_UPDATED_EVENT } from "@/contexts/PaymentContext";
 import { CostBanner } from "./CostBanner";
 
 interface Piece {
@@ -91,6 +93,7 @@ export const FilesTab = ({
   const [fileSizeGB, setFileSizeGB] = useState<number>(0);
 
   const { disconnectWallet, userProofSetId, updateUserProofSetId } = useAuth();
+  const { refreshPaymentSetupStatus } = usePayment();
 
   const [isProofDialogOpen, setIsProofDialogOpen] = useState(false);
   const [selectedProof, setSelectedProof] = useState<{
@@ -324,28 +327,34 @@ export const FilesTab = ({
 
       setIsLoading(true);
 
-      const refreshNow = () => {
-        fetchPieces()
-          .then(() => {
-            console.log(
-              "[FilesTab] File list refreshed successfully after upload"
-            );
-            setIsLoading(false);
+      // Refresh payment data as files affect locked funds
+      refreshPaymentSetupStatus().then(() => {
+        // Dispatch BALANCE_UPDATED_EVENT to notify all components of balance changes
+        window.dispatchEvent(
+          new CustomEvent(BALANCE_UPDATED_EVENT, {
+            detail: { newBalance: "updated" },
           })
-          .catch((error: Error) => {
-            console.error(
-              "[FilesTab] Error refreshing file list after upload:",
-              error
-            );
-            setIsLoading(false);
-          });
-      };
+        );
+      });
 
-      refreshNow();
+      // Refresh the file list
+      fetchPieces()
+        .then(() => {
+          console.log(
+            "[FilesTab] File list refreshed successfully after upload"
+          );
+          setIsLoading(false);
+        })
+        .catch((error: Error) => {
+          console.error(
+            "[FilesTab] Error refreshing file list after upload:",
+            error
+          );
+          setIsLoading(false);
+        });
 
-      setTimeout(refreshNow, 500);
-
-      setTimeout(refreshNow, 2000);
+      // Also dispatch ROOT_REMOVED_EVENT for components that listen to that event
+      window.dispatchEvent(new Event(ROOT_REMOVED_EVENT));
     };
 
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
@@ -354,7 +363,7 @@ export const FilesTab = ({
       isMounted = false;
       window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
     };
-  }, [authError, fetchPieces, fetchProofs]);
+  }, [authError, fetchPieces, fetchProofs, refreshPaymentSetupStatus]);
 
   useEffect(() => {
     const firstPieceWithProof = pieces.find(
@@ -601,6 +610,9 @@ export const FilesTab = ({
 
       // Dispatch the ROOT_REMOVED_EVENT to trigger balance refresh
       window.dispatchEvent(new Event(ROOT_REMOVED_EVENT));
+
+      // Directly refresh payment data
+      refreshPaymentSetupStatus();
 
       // Close dialog
       setIsRemoveDialogOpen(false);
