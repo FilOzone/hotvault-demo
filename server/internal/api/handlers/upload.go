@@ -778,7 +778,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		updateStatus(UploadProgress{
 			Status:     currentStage,
 			Progress:   currentProgress,
-			Message:    fmt.Sprintf("Adding root to proof...", proofSet.ProofSetID, attempt, maxRetries),
+			Message:    "Adding root to proof...",
 			CID:        compoundCID,
 			ProofSetID: proofSet.ProofSetID,
 		})
