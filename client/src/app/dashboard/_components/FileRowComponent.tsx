@@ -4,11 +4,9 @@ import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
 import { Download, Trash2 } from "lucide-react";
 
-// Import the file type icons component
 import { FileIcon } from "./FileIcon";
 import { Piece } from "./types";
 
-// Define interfaces
 interface FileRowProps {
   piece: Piece;
   index: number;
@@ -21,7 +19,6 @@ interface FileRowProps {
   };
 }
 
-// Animation variants
 const tableRowVariants = {
   hidden: { opacity: 0, x: -5 },
   visible: (custom: number) => ({

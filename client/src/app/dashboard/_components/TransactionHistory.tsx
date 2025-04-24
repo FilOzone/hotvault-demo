@@ -14,7 +14,6 @@ export const TransactionHistory = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [visibleCount, setVisibleCount] = useState(3);
 
-  // Reset visible count when transactions change
   useEffect(() => {
     setVisibleCount(3);
   }, [transactions.length]);

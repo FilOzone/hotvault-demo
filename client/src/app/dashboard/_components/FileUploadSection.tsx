@@ -29,7 +29,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
   const { proofSetReady, isLoading: isAuthLoading } = useAuth();
   const { uploadProgress, setUploadProgress } = useUploadStore();
 
-  // Refs for upload state management
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -44,11 +43,9 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       return;
     }
 
-    // Create a new AbortController for this upload
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
 
-    // Set the start time for this upload
     uploadStartTimeRef.current = Date.now();
 
     const formData = new FormData();
@@ -63,7 +60,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         filename: selectedImage.name,
       });
 
-      // Start the stall detection timer
       uploadTimeoutRef.current = setTimeout(() => {
         setUploadProgress((prev) => ({
           ...(prev || { status: "uploading", filename: selectedImage.name }),
@@ -84,7 +80,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         signal,
       });
 
-      // Clear the stall detection timer
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
         uploadTimeoutRef.current = null;
@@ -132,14 +127,12 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         jobId: data.jobId, // Store job ID for polling
       });
 
-      // Start polling for proof status if we have a job ID
       if (data.jobId) {
         setUploadProgress((prev) => ({
           ...(prev || { filename: selectedImage.name }),
           status: "processing",
         }));
 
-        // Poll for proof generation status
         const pollStatus = async () => {
           try {
             console.log(
@@ -176,16 +169,13 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 serviceProofSetId: statusData.serviceProofSetId,
               }));
 
-              // Clear the polling interval
               if (pollIntervalRef.current) {
                 clearInterval(pollIntervalRef.current);
                 pollIntervalRef.current = null;
               }
 
-              // Fetch updated pieces data
               onUploadSuccess();
 
-              // Reset the upload state after a delay
               setTimeout(() => {
                 setUploadProgress({
                   status: "complete",
@@ -205,7 +195,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 error: statusData.error || "Proof generation failed",
               }));
 
-              // Clear the polling interval
               if (pollIntervalRef.current) {
                 clearInterval(pollIntervalRef.current);
                 pollIntervalRef.current = null;
@@ -230,14 +219,11 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
           }
         };
 
-        // Poll immediately and then set interval
         pollStatus();
         pollIntervalRef.current = setInterval(pollStatus, 3000);
       } else {
-        // If no job ID, just consider it done and refresh the pieces
         onUploadSuccess();
 
-        // Reset the upload state after a delay
         setTimeout(() => {
           setUploadProgress({
             status: "complete",
@@ -248,7 +234,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         }, 5000);
       }
     } catch (error) {
-      // Clear the stall detection timer
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
         uploadTimeoutRef.current = null;
@@ -256,7 +241,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 
       console.error("[FileUploadSection] 💥 Upload caught error:", error);
       if (error instanceof Error) {
-        // Only show error if not aborted
         if (error.name !== "AbortError") {
           setUploadProgress({
             status: "error",
@@ -315,7 +299,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       }
     };
 
-    // Calculate progress width
     let progressWidth = "0%";
     if (uploadProgress.status === "uploading") {
       progressWidth = `${uploadProgress.progress || 0}%`;
@@ -366,15 +349,12 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
     if (acceptedFiles.length === 0) return;
 
     const file = acceptedFiles[0];
-
-    // Check if file is an image
     if (!file.type.startsWith("image/")) {
       toast.error("Only image files are allowed (jpg, png, gif, etc.)");
       return;
     }
 
     setSelectedImage(file);
-    // Calculate file size in GB
     setFileSizeGB(file.size / (1024 * 1024 * 1024));
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
@@ -436,7 +416,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
           </div>
         </div>
 
-        {/* Dropzone */}
         <div
           {...getRootProps()}
           className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 mt-6 ${

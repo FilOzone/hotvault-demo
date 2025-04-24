@@ -15,7 +15,6 @@ enum PaymentStep {
   COMPLETE = 4,
 }
 
-// Component props interface
 interface PaymentSetupTabProps {
   setActiveTab?: (tab: DashboardSection) => void;
 }
@@ -47,28 +46,22 @@ const StepIcon = ({
   );
 };
 
-// First, let's add a helper function at the top of the file to format large numbers
 const formatLargeNumber = (num: string) => {
-  // Remove trailing zeros after decimal
   const trimmed = num.replace(/\.?0+$/, "");
   if (trimmed.length <= 12) return trimmed;
 
   return `${trimmed.slice(0, 8)}...${trimmed.slice(-4)}`;
 };
 
-// Helper functions to convert between human-readable and contract decimal values
 const toDisplayValue = (value: string): string => {
   if (!value) return "";
-  // Convert from 18 decimals (contract value) to human-readable
   const numValue = parseFloat(value) / 1e18;
 
-  // Format with up to 4 decimal places, removing trailing zeros
   return numValue.toFixed(4).replace(/\.?0+$/, "");
 };
 
 const toContractValue = (value: string): string => {
   if (!value) return "";
-  // Convert from human-readable to 18 decimals (contract value)
   return (parseFloat(value) * 1e18).toString();
 };
 
@@ -86,7 +79,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     PaymentStep.APPROVE_TOKEN
   );
 
-  // State for user input values
   const [tokenAllowance, setTokenAllowance] = useState("100");
   const [depositAmount, setDepositAmount] = useState(
     (parseFloat(Constants.PROOF_SET_FEE) + 0.01).toFixed(2)
@@ -96,7 +88,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
   const [isUpdatingAllowances, setIsUpdatingAllowances] = useState(false);
   const [isProofSetClicked, setIsProofSetClicked] = useState(false);
 
-  // Load current allowances when operator is approved
   useEffect(() => {
     if (paymentStatus.isOperatorApproved && !isUpdatingAllowances) {
       setRateAllowance(
@@ -112,7 +103,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     isUpdatingAllowances,
   ]);
 
-  // Determine the current step based on payment status
   useEffect(() => {
     if (paymentStatus.proofSetReady) {
       setCurrentStep(PaymentStep.COMPLETE);
@@ -129,7 +119,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     }
   }, [paymentStatus]);
 
-  // Real implementation for the token approval step
   const handleApproveToken = async () => {
     if (!tokenAllowance || parseFloat(tokenAllowance) <= 0) {
       toast.error("Please enter a valid allowance amount");
@@ -153,7 +142,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     }
   };
 
-  // Real implementation for the deposit step
   const handleDeposit = async () => {
     if (
       !depositAmount ||
@@ -182,7 +170,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     }
   };
 
-  // Real implementation for the operator approval step
   const handleApproveOperator = async () => {
     if (
       !rateAllowance ||
@@ -227,7 +214,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     }
   };
 
-  // Helper to render token approval step with input field
   const renderTokenApprovalStep = () => {
     const isActive = currentStep === PaymentStep.APPROVE_TOKEN;
     const isCompleted = currentStep > PaymentStep.APPROVE_TOKEN;
@@ -321,7 +307,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     );
   };
 
-  // Helper to render deposit step with input field
   const renderDepositStep = () => {
     const isActive = currentStep === PaymentStep.DEPOSIT;
     const isCompleted = currentStep > PaymentStep.DEPOSIT;
@@ -414,7 +399,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     );
   };
 
-  // Helper to render operator approval step with input fields
   const renderOperatorApprovalStep = () => {
     const isActive = currentStep === PaymentStep.APPROVE_OPERATOR;
     const isCompleted = currentStep > PaymentStep.APPROVE_OPERATOR;
@@ -620,7 +604,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     );
   };
 
-  // Helper to render the new proof set creation step
   const renderCreateProofSetStep = () => {
     const isActive = currentStep === PaymentStep.CREATE_PROOF_SET;
     const isTrulyCompleted = currentStep > PaymentStep.CREATE_PROOF_SET;
@@ -726,7 +709,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     );
   };
 
-  // Helper to render completion step
   const renderCompletionStep = () => {
     const isCompleted =
       paymentStatus.proofSetReady && currentStep === PaymentStep.COMPLETE;
@@ -791,72 +773,13 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     <div className="animate-fadeIn">
       <div className="px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-          {/* <Wallet className="w-5 h-5 text-blue-500" /> */}
           Payment Setup
         </h1>
       </div>
 
       <div className="px-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column */}
         <div>
           <TokenBalanceCard />
-
-          {/* <div className="mt-6 bg-blue-50 rounded-lg border border-blue-100 overflow-hidden">
-            <div className="p-4 border-b border-blue-100">
-              <h3 className="text-sm font-medium text-blue-900">
-                Why do I need to set up payments?
-              </h3>
-            </div>
-            <div className="p-4">
-              <p className="text-sm text-blue-700">
-                Hot Vault requires a one-time payment setup to create your proof
-                set. This includes approving the token, depositing USDFC, and
-                allowing the service to create proofs on your behalf.
-              </p>
-
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-blue-900 mb-2">
-                  Payment Details
-                </h4>
-                <div className="bg-white bg-opacity-50 rounded p-3 space-y-2">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-blue-700">
-                      Proof Set Creation Fee
-                    </span>
-                    <span className="font-medium text-blue-900">
-                      {Constants.PROOF_SET_FEE} USDFC
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-blue-700">Payment Contract</span>
-                    <span className="font-mono text-xs text-blue-900">
-                      {Constants.PAYMENT_PROXY_ADDRESS.slice(0, 6)}...
-                      {Constants.PAYMENT_PROXY_ADDRESS.slice(-4)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {paymentStatus.isDeposited && (
-                <div className="mt-4">
-                  <h4 className="text-sm font-medium text-blue-900 mb-2">
-                    Account Status
-                  </h4>
-                  <div className="bg-white bg-opacity-50 rounded p-3">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-blue-700">
-                        Funds in Payments Contract
-                      </span>
-                      <span className="font-medium text-blue-900">
-                        {parseFloat(paymentStatus.accountFunds).toFixed(6)}{" "}
-                        USDFC
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div> */}
 
           <div className="mt-6">
             <TransactionHistory />

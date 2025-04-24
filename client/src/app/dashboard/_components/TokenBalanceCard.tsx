@@ -77,14 +77,12 @@ export const TokenBalanceCard = () => {
       return;
     }
 
-    // Convert all amounts to numbers for accurate comparison
     const withdrawAmountNum = parseFloat(withdrawAmount);
     const availableFunds =
       parseFloat(paymentStatus.accountFunds) -
       parseFloat(paymentStatus.lockedFunds.current);
     const walletBalance = parseFloat(paymentStatus.usdcBalance);
 
-    // Debug logging
     console.log("Withdrawal validation:", {
       withdrawAmount: withdrawAmountNum,
       accountFunds: paymentStatus.accountFunds,
@@ -93,7 +91,6 @@ export const TokenBalanceCard = () => {
       walletBalance,
     });
 
-    // Check contract funds first
     if (withdrawAmountNum > availableFunds) {
       const errorMsg = `Cannot withdraw more than available unlocked funds (${formatCurrency(
         availableFunds.toString()
@@ -103,7 +100,6 @@ export const TokenBalanceCard = () => {
       return;
     }
 
-    // Then check wallet balance
     if (withdrawAmountNum > walletBalance) {
       const errorMsg = `Insufficient USDFC balance in wallet to receive withdrawn funds. Current balance: ${formatCurrency(
         paymentStatus.usdcBalance
@@ -140,9 +136,7 @@ export const TokenBalanceCard = () => {
 
   return (
     <div className="bg-white rounded-lg border border-gray-200">
-      {/* Header Section */}
       <div className="p-6">
-        {/* Title */}
         <div className="flex items-center gap-3 mb-6">
           <div className="bg-blue-50 p-2.5 rounded-xl">
             <Wallet className="w-6 h-6 text-blue-500" />
@@ -150,9 +144,7 @@ export const TokenBalanceCard = () => {
           <h3 className="text-2xl font-semibold">USDFC Balance</h3>
         </div>
 
-        {/* Action Buttons and Forms Section */}
         <div className="space-y-4">
-          {/* Action Buttons */}
           <div className="space-y-3">
             <button
               onClick={() => {
@@ -189,7 +181,6 @@ export const TokenBalanceCard = () => {
             </button>
           </div>
 
-          {/* Forms */}
           {showAddFunds && (
             <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100 animate-fadeIn">
               <div className="flex items-center justify-between mb-3">
@@ -333,12 +324,9 @@ export const TokenBalanceCard = () => {
         </div>
       </div>
 
-      {/* Divider */}
       <div className="h-px bg-gray-100" />
 
-      {/* Balance Information */}
       <div className="px-6 py-6 space-y-4">
-        {/* Wallet Balance */}
         <div className="p-4 bg-blue-50 rounded-xl">
           <div className="flex items-center gap-2 mb-2">
             <Wallet className="w-5 h-5 text-blue-500" />
@@ -354,7 +342,6 @@ export const TokenBalanceCard = () => {
           </div>
         </div>
 
-        {/* Contract Balances */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-4 bg-gray-50 rounded-xl">
             <div className="text-[15px] text-gray-600 mb-1">
@@ -372,7 +359,6 @@ export const TokenBalanceCard = () => {
           </div>
         </div>
 
-        {/* Available for Withdrawal */}
         <div className="p-4 bg-green-50 rounded-xl">
           <div className="text-[15px] text-gray-700 mb-1">
             Available for Withdrawal

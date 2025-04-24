@@ -8,26 +8,20 @@ import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
 
-// Helper functions to convert between human-readable and contract decimal values
-// This converts 18 decimal contract values to human-readable format
 const formatTokenAmount = (value: string): string => {
   if (!value || value === "0") return "0";
 
-  // Convert from 18 decimals to human-readable
   const numValue = Number(value) / 1e18;
   if (numValue === 0) return "0";
 
-  // Format the number, limiting to max 2 decimal places and removing trailing zeros
   return numValue.toFixed(2).replace(/\.?0+$/, "");
 };
 
 const toContractValue = (value: string): string => {
   if (!value) return "0";
-  // Convert from human-readable to 18 decimals (contract value)
   return (parseFloat(value) * 1e18).toString();
 };
 
-// Add a custom event name for root removal
 export const ROOT_REMOVED_EVENT = "ROOT_REMOVED";
 
 export const PaymentBalanceHeader = () => {
@@ -45,7 +39,6 @@ export const PaymentBalanceHeader = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -62,7 +55,6 @@ export const PaymentBalanceHeader = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Add effect to listen for upload completion and root removal events
   useEffect(() => {
     const handleUploadComplete = () => {
       console.log(
@@ -76,11 +68,9 @@ export const PaymentBalanceHeader = () => {
       refreshPaymentSetupStatus();
     };
 
-    // Listen for both events
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadComplete);
     window.addEventListener(ROOT_REMOVED_EVENT, handleRootRemoved);
 
-    // Cleanup listeners
     return () => {
       window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadComplete);
       window.removeEventListener(ROOT_REMOVED_EVENT, handleRootRemoved);
@@ -146,7 +136,6 @@ export const PaymentBalanceHeader = () => {
 
   return (
     <div className="flex items-center justify-end px-4 h-12">
-      {/* Summary Button */}
       <div className="relative" ref={detailsRef}>
         <button
           onClick={() => setShowDetails(!showDetails)}
@@ -159,10 +148,8 @@ export const PaymentBalanceHeader = () => {
           <ChevronDown className="w-4 h-4 text-gray-500" />
         </button>
 
-        {/* Dropdown Panel */}
         {showDetails && (
           <div className="absolute right-0 top-full mt-1 w-[320px] bg-white rounded-lg shadow-lg border border-gray-200 divide-y divide-gray-100">
-            {/* Balance Summary */}
             <div className="p-3">
               <h3 className="text-sm font-medium text-gray-700 mb-2">
                 Balance Summary
@@ -203,7 +190,6 @@ export const PaymentBalanceHeader = () => {
               </div>
             </div>
 
-            {/* Operator Approval Status */}
             {paymentStatus.operatorApproval && (
               <div className="p-3">
                 <h3 className="text-sm font-medium text-gray-700 mb-2">
@@ -240,7 +226,6 @@ export const PaymentBalanceHeader = () => {
               </div>
             )}
 
-            {/* Actions */}
             <div className="p-3">
               <h3 className="text-sm font-medium text-gray-700 mb-2">
                 Actions

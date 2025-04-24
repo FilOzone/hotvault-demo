@@ -58,7 +58,6 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               </Typography>
             </motion.div>
 
-            {/* Navigation Tabs */}
             <nav className="flex items-center space-x-1">
               <button
                 onClick={() => setActiveTab(DASHBOARD_SECTIONS.FILES)}
