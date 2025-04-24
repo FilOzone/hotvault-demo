@@ -22,6 +22,9 @@ import (
 func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	handlers.Initialize(db, cfg)
 
+	// Set a larger body size limit (100MB)
+	router.MaxMultipartMemory = 100 << 20 // 100 MB
+
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3000", "https://hotvault-demo-app.yourdomain.com"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -53,6 +56,15 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 			protected.POST("/upload", handlers.UploadFile)
 			protected.GET("/upload/status/:jobId", handlers.GetUploadStatus)
 			protected.GET("/download/:cid", handlers.DownloadFile)
+
+			// Add chunked upload endpoints
+			chunkedUpload := protected.Group("/chunked-upload")
+			{
+				chunkedUpload.POST("/init", handlers.InitChunkedUpload)
+				chunkedUpload.POST("/chunk", handlers.UploadChunk)
+				chunkedUpload.POST("/complete", handlers.CompleteChunkedUpload)
+				chunkedUpload.GET("/status/:uploadId", handlers.GetChunkedUploadStatus)
+			}
 
 			pieces := protected.Group("/pieces")
 			{

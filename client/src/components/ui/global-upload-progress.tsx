@@ -482,7 +482,10 @@ export const GlobalUploadProgress = () => {
                       rel="noopener noreferrer"
                       className="flex items-center text-blue-500 hover:text-blue-700 transition-colors"
                     >
-                      <span>🎬 Time for a break! Click for a fun video</span>
+                      <span>
+                        Watch this important Video while we get your data on
+                        Filecoin
+                      </span>
                       <ExternalLink className="h-3 w-3 ml-1" />
                     </a>
                   </div>

@@ -359,6 +359,14 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                     <p className="text-sm text-blue-700 mt-1">
                       Deposit USDFC tokens to fund your vault.
                     </p>
+                    {paymentStatus.lastApprovalTimestamp > 0 &&
+                      Date.now() - paymentStatus.lastApprovalTimestamp <
+                        10000 && (
+                        <p className="text-sm text-amber-600 mt-2 font-medium">
+                          Note: If you just approved tokens, the system may need
+                          a few seconds to confirm the transaction.
+                        </p>
+                      )}
                   </div>
                 </div>
 
@@ -383,8 +391,18 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                   >
                     {isProcessing ? (
                       <>
-                        <Loader className="w-4 h-4 animate-spin" />
-                        Processing...
+                        {paymentStatus.error &&
+                        paymentStatus.error.includes("Waiting") ? (
+                          <>
+                            <Loader size={14} className="animate-spin mr-1" />
+                            {paymentStatus.error}
+                          </>
+                        ) : (
+                          <>
+                            <Loader className="w-4 h-4 animate-spin" />
+                            Processing...
+                          </>
+                        )}
                       </>
                     ) : (
                       "Deposit Funds"

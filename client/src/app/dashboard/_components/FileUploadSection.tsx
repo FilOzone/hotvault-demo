@@ -14,6 +14,7 @@ import { useUploadStore } from "@/store/upload-store";
 import { Loader, AlertTriangle } from "lucide-react";
 import { CostBanner } from "./CostBanner";
 import { formatFileSize } from "@/lib/utils";
+import ChunkedUploader from "@/components/ChunkedUploader";
 
 interface FileUploadProps {
   onUploadSuccess: () => void;
@@ -28,6 +29,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
   const router = useRouter();
   const { proofSetReady, isLoading: isAuthLoading } = useAuth();
   const { uploadProgress, setUploadProgress } = useUploadStore();
+  const [useChunkedUpload, setUseChunkedUpload] = useState<boolean>(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -65,55 +67,112 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
           ...(prev || { status: "uploading", filename: selectedImage.name }),
           isStalled: true,
         }));
-      }, 10000); // 10 seconds timeout
+      }, 30000); // Increased timeout to 30 seconds for large files
 
       console.log(
         `[FileUploadSection] 🚀 Uploading ${selectedImage.name} to ${API_BASE_URL}/api/v1/upload`
       );
 
-      const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        signal,
+      // Use XMLHttpRequest instead of fetch for upload progress tracking
+      const xhr = new XMLHttpRequest();
+
+      // Create a promise to handle the XMLHttpRequest
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.open("POST", `${API_BASE_URL}/api/v1/upload`, true);
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+        // Track upload progress
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round(
+              (event.loaded / event.total) * 100
+            );
+            setUploadProgress((prev) => ({
+              ...(prev || {
+                status: "uploading",
+                filename: selectedImage.name,
+              }),
+              progress: percentComplete,
+              lastUpdated: Date.now(),
+              isStalled: false,
+            }));
+
+            // Reset the stall timeout on progress
+            if (uploadTimeoutRef.current) {
+              clearTimeout(uploadTimeoutRef.current);
+            }
+            uploadTimeoutRef.current = setTimeout(() => {
+              setUploadProgress((prev) => ({
+                ...(prev || {
+                  status: "uploading",
+                  filename: selectedImage.name,
+                }),
+                isStalled: true,
+              }));
+            }, 30000);
+          }
+        };
+
+        // Handle response
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText) as {
+                status: string;
+                progress: number;
+                message?: string;
+                cid?: string;
+                jobId?: string;
+                proofSetId?: string;
+              };
+              resolve(data);
+            } catch (_error) {
+              reject(new Error("Invalid JSON response"));
+            }
+          } else {
+            let errorMessage = "Upload failed";
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              errorMessage =
+                errorData.message || errorData.error || errorMessage;
+            } catch (_e) {
+              errorMessage = xhr.responseText || errorMessage;
+            }
+            reject(new Error(errorMessage));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.ontimeout = () => reject(new Error("Upload request timed out"));
+
+        // Handle abort
+        xhr.onabort = () => {
+          console.log("[FileUploadSection] Upload aborted");
+          reject(new Error("AbortError"));
+        };
+
+        // Set a longer timeout for large files
+        xhr.timeout = 3600000; // 1 hour
+
+        // Send the form data
+        xhr.send(formData);
+
+        // Add signal abort handler
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            xhr.abort();
+          });
+        }
       });
+
+      // Wait for upload to complete
+      const data = await uploadPromise;
 
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
         uploadTimeoutRef.current = null;
       }
 
-      console.log(
-        `[FileUploadSection] 📬 Upload response status: ${response.status}`
-      );
-      if (!response.ok) {
-        let errorData = {
-          message: `Upload failed with status ${response.status}`,
-        };
-        try {
-          errorData = await response.json();
-          console.error(
-            "[FileUploadSection] ❌ Upload failed response body:",
-            errorData
-          );
-        } catch (jsonError) {
-          console.error(
-            "[FileUploadSection] ❌ Failed to parse upload error response as JSON:",
-            jsonError
-          );
-          const textResponse = await response.text();
-          console.error(
-            "[FileUploadSection] ❌ Upload failed response text:",
-            textResponse
-          );
-          errorData.message = textResponse || errorData.message;
-        }
-        throw new Error(errorData.message || "Upload failed");
-      }
-
-      const data = await response.json();
       console.log(
         "[FileUploadSection] ✅ Upload successful response body:",
         data
@@ -354,6 +413,17 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       return;
     }
 
+    // Add file size validation (100MB limit)
+    const maxFileSize = 100 * 1024 * 1024; // 100MB in bytes
+    if (file.size > maxFileSize) {
+      toast.error(
+        `File is too large. Maximum size is 100MB. Current size: ${formatFileSize(
+          file.size
+        )}`
+      );
+      return;
+    }
+
     setSelectedImage(file);
     setFileSizeGB(file.size / (1024 * 1024 * 1024));
     const url = URL.createObjectURL(file);
@@ -407,7 +477,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
-                disabled={!selectedImage || !proofSetReady}
+                disabled={!selectedImage || !proofSetReady || useChunkedUpload}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {selectedImage ? "Upload Selected Image" : "Upload Image"}
@@ -416,88 +486,168 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
           </div>
         </div>
 
-        <div
-          {...getRootProps()}
-          className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 mt-6 ${
-            proofSetReady
-              ? "cursor-pointer"
-              : "cursor-not-allowed bg-gray-50 opacity-70"
-          } ${
-            isDragActive
-              ? "border-blue-500 bg-blue-50 scale-[1.01]"
-              : selectedImage
-              ? "border-green-500 bg-green-50"
-              : "border-gray-200 hover:border-blue-300 hover:bg-gray-50"
-          }`}
-          onClick={(e) => !proofSetReady && e.stopPropagation()}
-        >
-          <input {...getInputProps()} disabled={!proofSetReady} />
-          <AnimatePresence mode="wait">
-            {!proofSetReady ? (
-              <motion.div
-                key="proof-set-required"
-                className="flex flex-col items-center justify-center text-gray-500"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <AlertTriangle size={40} className="mb-3 text-orange-400" />
-                <Typography
-                  variant="h4"
-                  className="font-medium text-orange-600 mb-1"
+        {/* Upload mode toggle */}
+        <div className="mt-4 mb-2 flex items-center justify-end">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-500">Standard Upload</span>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={useChunkedUpload}
+                onChange={() => setUseChunkedUpload(!useChunkedUpload)}
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+            <span className="text-sm text-gray-500">Large File Upload</span>
+          </div>
+        </div>
+
+        {useChunkedUpload ? (
+          // Chunked uploader for large files
+          <div className="mt-6">
+            <ChunkedUploader
+              onUploadSuccess={(jobId) => {
+                console.log(
+                  "[FileUploadSection] Chunked upload completed with jobId:",
+                  jobId
+                );
+                onUploadSuccess();
+              }}
+              accept="image/*"
+              maxFileSize={10 * 1024 * 1024 * 1024} // 10GB
+              chunkSize={5 * 1024 * 1024} // 5MB chunks
+            />
+          </div>
+        ) : (
+          // Standard dropzone for regular uploads
+          <div
+            {...getRootProps()}
+            className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 mt-6 ${
+              proofSetReady
+                ? "cursor-pointer"
+                : "cursor-not-allowed bg-gray-50 opacity-70"
+            } ${
+              isDragActive
+                ? "border-blue-500 bg-blue-50 scale-[1.01]"
+                : selectedImage
+                ? "border-green-500 bg-green-50"
+                : "border-gray-200 hover:border-blue-300 hover:bg-gray-50"
+            }`}
+            onClick={(e) => !proofSetReady && e.stopPropagation()}
+          >
+            <input {...getInputProps()} disabled={!proofSetReady} />
+            <AnimatePresence mode="wait">
+              {!proofSetReady ? (
+                <motion.div
+                  key="proof-set-required"
+                  className="flex flex-col items-center justify-center text-gray-500"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
                 >
-                  Proof Set Required
-                </Typography>
-                <Typography variant="muted" className="text-sm">
-                  Go to the{" "}
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      router.push("/dashboard?tab=payment");
-                    }}
-                    className="text-blue-500 hover:underline font-medium"
+                  <AlertTriangle size={40} className="mb-3 text-orange-400" />
+                  <Typography
+                    variant="h4"
+                    className="font-medium text-orange-600 mb-1"
                   >
-                    Payment Setup
-                  </a>{" "}
-                  tab to complete the required steps.
-                </Typography>
-              </motion.div>
-            ) : selectedImage ? (
-              <motion.div
-                key="preview"
-                className="relative mx-auto flex flex-col items-center"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2 }}
-              >
-                <div className="mb-2 text-base font-medium text-gray-700">
-                  Image Preview
-                </div>
-                <div className="relative max-w-md overflow-hidden">
-                  <Image
-                    src={previewUrl!}
-                    alt="Preview"
-                    className="block max-h-48 w-auto h-auto rounded-md shadow-sm object-contain bg-white"
-                    width={0}
-                    height={0}
-                    sizes="100vw"
-                  />
-                  <motion.button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedImage(null);
-                      setPreviewUrl(null);
-                      setFileSizeGB(0);
+                    Proof Set Required
+                  </Typography>
+                  <Typography variant="muted" className="text-sm">
+                    Go to the{" "}
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        router.push("/dashboard?tab=payment");
+                      }}
+                      className="text-blue-500 hover:underline font-medium"
+                    >
+                      Payment Setup
+                    </a>{" "}
+                    tab to complete the required steps.
+                  </Typography>
+                </motion.div>
+              ) : selectedImage ? (
+                <motion.div
+                  key="preview"
+                  className="relative mx-auto flex flex-col items-center"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="mb-2 text-base font-medium text-gray-700">
+                    Image Preview
+                  </div>
+                  <div className="relative max-w-md overflow-hidden">
+                    <Image
+                      src={previewUrl!}
+                      alt="Preview"
+                      className="block max-h-48 w-auto h-auto rounded-md shadow-sm object-contain bg-white"
+                      width={0}
+                      height={0}
+                      sizes="100vw"
+                    />
+                    <motion.button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedImage(null);
+                        setPreviewUrl(null);
+                        setFileSizeGB(0);
+                      }}
+                      className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none shadow-sm"
+                      aria-label="Remove image"
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                    >
+                      <svg
+                        className="w-3 h-3"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={3}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </motion.button>
+                  </div>
+                  <div className="mt-4 text-sm text-gray-600">
+                    {formatFileSize(selectedImage.size)}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="upload-prompt"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="py-8 px-4 flex flex-col items-center"
+                >
+                  <motion.div
+                    className={`w-16 h-16 mb-4 rounded-full ${
+                      isDragActive ? "bg-blue-100" : "bg-gray-50"
+                    } flex items-center justify-center transition-colors duration-300 border-2 ${
+                      isDragActive ? "border-blue-300" : "border-gray-200"
+                    }`}
+                    animate={{
+                      scale: isDragActive ? 1.05 : 1,
+                      rotate: isDragActive ? [0, -5, 5, -5, 5, 0] : 0,
                     }}
-                    className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none shadow-sm"
-                    aria-label="Remove image"
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                    transition={{
+                      duration: 0.3,
+                      rotate: { duration: 0.5, ease: "easeInOut" },
+                    }}
                   >
                     <svg
-                      className="w-3 h-3"
+                      className={`w-7 h-7 ${
+                        isDragActive ? "text-blue-600" : "text-gray-500"
+                      } transition-all duration-300`}
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -505,84 +655,44 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        strokeWidth={3}
-                        d="M6 18L18 6M6 6l12 12"
+                        strokeWidth={1.5}
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                       />
                     </svg>
-                  </motion.button>
-                </div>
-                <div className="mt-4 text-sm text-gray-600">
-                  {formatFileSize(selectedImage.size)}
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="upload-prompt"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="py-8 px-4 flex flex-col items-center"
-              >
-                <motion.div
-                  className={`w-16 h-16 mb-4 rounded-full ${
-                    isDragActive ? "bg-blue-100" : "bg-gray-50"
-                  } flex items-center justify-center transition-colors duration-300 border-2 ${
-                    isDragActive ? "border-blue-300" : "border-gray-200"
-                  }`}
-                  animate={{
-                    scale: isDragActive ? 1.05 : 1,
-                    rotate: isDragActive ? [0, -5, 5, -5, 5, 0] : 0,
-                  }}
-                  transition={{
-                    duration: 0.3,
-                    rotate: { duration: 0.5, ease: "easeInOut" },
-                  }}
-                >
-                  <svg
-                    className={`w-7 h-7 ${
-                      isDragActive ? "text-blue-600" : "text-gray-500"
-                    } transition-all duration-300`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+                  </motion.div>
+                  <Typography
+                    variant="body"
+                    className={`${
+                      isUploadDisabled()
+                        ? "text-gray-500"
+                        : isDragActive
+                        ? "text-blue-600 font-medium"
+                        : "text-gray-700"
+                    } transition-colors duration-300 mb-1`}
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                </motion.div>
-                <Typography
-                  variant="body"
-                  className={`${
-                    isUploadDisabled()
-                      ? "text-gray-500"
-                      : isDragActive
-                      ? "text-blue-600 font-medium"
-                      : "text-gray-700"
-                  } transition-colors duration-300 mb-1`}
-                >
-                  {isDragActive
-                    ? "Drop image here"
-                    : "Drag and drop an image, or click to select"}
-                </Typography>
-                <Typography variant="small" className="text-gray-400">
-                  Supports JPG, PNG, GIF, WebP, and other image formats
-                </Typography>
-                {fileRejections.length > 0 && (
-                  <Typography variant="small" className="text-red-500 mt-2">
-                    Only image files are allowed
+                    {isDragActive
+                      ? "Drop image here"
+                      : "Drag and drop an image, or click to select"}
                   </Typography>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                  <Typography variant="small" className="text-gray-400">
+                    Supports JPG, PNG, GIF, WebP, and other image formats
+                  </Typography>
+                  {fileRejections.length > 0 && (
+                    <Typography variant="small" className="text-red-500 mt-2">
+                      Only image files are allowed
+                    </Typography>
+                  )}
+                  <Typography variant="small" className="text-gray-400 mt-3">
+                    For files larger than 100MB, use the "Large File Upload"
+                    option
+                  </Typography>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
-        {proofSetReady && renderUploadProgress()}
+        {proofSetReady && !useChunkedUpload && renderUploadProgress()}
       </div>
     </div>
   );

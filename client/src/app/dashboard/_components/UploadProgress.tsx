@@ -70,7 +70,9 @@ export const UploadProgress: React.FC<UploadProgressProps> = ({
                     rel="noopener noreferrer"
                     className="flex items-center text-blue-500 hover:text-blue-700 transition-colors"
                   >
-                    <span>🎬 Time for a break! Click for a fun video</span>
+                    <span>
+                      Watch this important video while we get your data on FWS
+                    </span>
                     <ExternalLink className="h-3 w-3 ml-1" />
                   </a>
                 </div>

@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -40,6 +41,20 @@ func init() {
 	log = logger.NewLogger()
 }
 
+// Helper function to format file size in human-readable format
+func formatFileSize(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
+	}
+	div, exp := int64(unit), 0
+	for n := size / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
+}
+
 func Initialize(database *gorm.DB, appConfig *config.Config) {
 	if database == nil {
 		log.Error("Database connection is nil during initialization")
@@ -75,14 +90,6 @@ type UploadProgress struct {
 // @Success 200 {object} UploadProgress
 // @Router /api/v1/upload [post]
 func UploadFile(c *gin.Context) {
-	if db == nil {
-		log.Error("Database connection not initialized")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal server error: database not initialized",
-		})
-		return
-	}
-
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -91,50 +98,69 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	pdptoolPath := cfg.PdptoolPath
-	if pdptoolPath == "" {
-		log.Error("PDPTool path not configured in environment/config")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Server configuration error: PDPTool path missing",
-		})
-		return
-	}
-
-	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
-		log.WithField("path", pdptoolPath).Error("pdptool not found at configured path")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "pdptool executable not found at configured path",
-			"path":  pdptoolPath,
-		})
-		return
-	}
+	// Limit file size to 10GB
+	const MAX_UPLOAD_SIZE = 10 * 1024 * 1024 * 1024
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MAX_UPLOAD_SIZE)
 
 	file, err := c.FormFile("file")
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error":   "File too large",
+				"message": fmt.Sprintf("Maximum file size is %s", formatFileSize(MAX_UPLOAD_SIZE)),
+			})
+			return
+		}
+
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "No file received",
+			"error":   "Failed to get file from form",
+			"message": err.Error(),
 		})
 		return
 	}
 
+	// Generate a unique job ID for tracking this upload
 	jobID := uuid.New().String()
 
-	initialStatus := UploadProgress{
-		Status:    "starting",
+	// Create initial job status
+	uploadJobsLock.Lock()
+	uploadJobs[jobID] = UploadProgress{
+		Status:    "uploading",
 		Progress:  0,
-		Message:   "Upload job created",
+		Message:   "Starting upload",
 		Filename:  file.Filename,
 		TotalSize: file.Size,
 		JobID:     jobID,
 	}
-
-	uploadJobsLock.Lock()
-	uploadJobs[jobID] = initialStatus
 	uploadJobsLock.Unlock()
 
+	// Make sure the pdptool path is valid
+	pdptoolPath := cfg.PdptoolPath
+	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
+		log.WithField("pdptoolPath", pdptoolPath).Error("PDPTool executable not found")
+		uploadJobsLock.Lock()
+		uploadJobs[jobID] = UploadProgress{
+			Status:  "error",
+			Error:   "PDPTool executable not found",
+			Message: fmt.Sprintf("File not found at %s", pdptoolPath),
+		}
+		uploadJobsLock.Unlock()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "PDPTool executable not found",
+			"message": fmt.Sprintf("File not found at %s", pdptoolPath),
+		})
+		return
+	}
+
+	// Start processing in a goroutine to avoid blocking
 	go processUpload(jobID, file, userID.(uint), pdptoolPath)
 
-	c.JSON(http.StatusOK, initialStatus)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Upload started",
+		"jobId":   jobID,
+		"status":  "processing",
+	})
 }
 
 // @Summary Get upload status
@@ -184,13 +210,37 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	currentStage := "starting"
 	currentProgress := 0
-	maxProgress := 100
 
+	// Weight for progress calculation
 	prepareWeight := 20
-	uploadWeight := 80
 
-	// Add base delay for rate limiting
-	const baseDelay = 8 * time.Second // Increased from 3s to 8s
+	// Calculate delays and timeouts based on file size
+	fileSizeMB := float64(file.Size) / (1024 * 1024)
+
+	// Base delay with scaling for file size
+	baseDelay := time.Duration(8+int(fileSizeMB/10)) * time.Second
+	if baseDelay > 60*time.Second {
+		baseDelay = 60 * time.Second // Cap at 60 seconds
+	}
+
+	// Command timeouts based on file size
+	prepareTimeout := time.Duration(60+int(fileSizeMB*2)) * time.Second
+	if prepareTimeout > 3600*time.Second {
+		prepareTimeout = 3600 * time.Second // Cap at 1 hour
+	}
+
+	// We still calculate uploadTimeout for other parts of the code
+	uploadTimeout := time.Duration(60+int(fileSizeMB*3)) * time.Second
+	if uploadTimeout > 7200*time.Second {
+		uploadTimeout = 7200 * time.Second // Cap at 2 hours
+	}
+
+	log.WithField("fileSize", file.Size).
+		WithField("fileSizeMB", fileSizeMB).
+		WithField("baseDelay", baseDelay).
+		WithField("prepareTimeout", prepareTimeout).
+		WithField("uploadTimeout", uploadTimeout).
+		Info("Calculated timeouts for file processing")
 
 	// Helper function to wait with jitter
 	waitWithJitter := func(baseDelay time.Duration) {
@@ -228,51 +278,109 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		currentProgress += 5
 	}
 
-	tempDir, err := os.MkdirTemp("", "pdp-upload-*")
-	if err != nil {
-		updateStatus(UploadProgress{
-			Status:  "error",
-			Error:   "Failed to create temp directory",
-			Message: err.Error(),
-		})
-		return
+	// Check if we have a pre-existing file path from chunked upload
+	uploadPathsLock.RLock()
+	existingFilePath, hasExistingPath := filePaths[jobID]
+	uploadPathsLock.RUnlock()
+
+	var tempFilePath string
+	if hasExistingPath {
+		tempFilePath = existingFilePath
+		log.WithField("path", tempFilePath).Info("Using existing file path from chunked upload")
+	} else {
+		// Create a temporary directory for this upload
+		tempDir, err := os.MkdirTemp("", fmt.Sprintf("upload-%s-", jobID))
+		if err != nil {
+			log.WithField("error", err.Error()).Error("Failed to create temporary directory")
+			updateStatus(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to create temporary directory",
+				Message: err.Error(),
+			})
+			return
+		}
+
+		// Create a more robust file path for the temp file
+		originalFilename := filepath.Base(file.Filename)
+		tempFilePath = filepath.Join(tempDir, originalFilename)
+
+		// Open the uploaded file
+		src, err := file.Open()
+		if err != nil {
+			log.WithField("error", err.Error()).
+				WithField("filename", file.Filename).
+				Error("Failed to open uploaded file")
+			updateStatus(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to open uploaded file",
+				Message: err.Error(),
+			})
+			return
+		}
+		defer src.Close()
+
+		// Create the destination file
+		dst, err := os.Create(tempFilePath)
+		if err != nil {
+			log.WithField("error", err.Error()).
+				WithField("path", tempFilePath).
+				Error("Failed to create temporary file")
+			updateStatus(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to create temporary file",
+				Message: err.Error(),
+			})
+			return
+		}
+
+		// Copy the file data
+		written, err := io.Copy(dst, src)
+		dst.Close() // Close immediately after copying
+
+		// Verify file was written correctly
+		if err != nil {
+			log.WithField("error", err.Error()).
+				WithField("path", tempFilePath).
+				Error("Failed to save uploaded file")
+			updateStatus(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to save uploaded file",
+				Message: err.Error(),
+			})
+			// Clean up the temp directory on error
+			os.RemoveAll(tempDir)
+			return
+		}
+
+		if written != file.Size {
+			err := fmt.Errorf("file size mismatch: expected %d bytes, wrote %d bytes", file.Size, written)
+			log.WithField("error", err.Error()).
+				WithField("path", tempFilePath).
+				Error("Failed to save complete file")
+			updateStatus(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to save complete file",
+				Message: err.Error(),
+			})
+			// Clean up the temp directory on error
+			os.RemoveAll(tempDir)
+			return
+		}
+
+		log.WithField("path", tempFilePath).
+			WithField("size", formatFileSize(written)).
+			Info("File saved to temporary location")
 	}
-	defer os.RemoveAll(tempDir)
 
-	updateStatus(UploadProgress{
-		Status:   currentStage,
-		Progress: currentProgress,
-		Message:  "Saving uploaded file",
-	})
-
-	tempFilePath := filepath.Join(tempDir, file.Filename)
-	src, err := file.Open()
-	if err != nil {
+	// Verify the file exists and is accessible
+	if _, err := os.Stat(tempFilePath); os.IsNotExist(err) {
+		log.WithField("error", err.Error()).
+			WithField("path", tempFilePath).
+			Error("Temporary file does not exist after save")
 		updateStatus(UploadProgress{
 			Status:  "error",
-			Error:   "Failed to open uploaded file",
-			Message: err.Error(),
-		})
-		return
-	}
-	defer src.Close()
-
-	dst, err := os.Create(tempFilePath)
-	if err != nil {
-		updateStatus(UploadProgress{
-			Status:  "error",
-			Error:   "Failed to create destination file",
-			Message: err.Error(),
-		})
-		return
-	}
-	defer dst.Close()
-
-	if _, err = io.Copy(dst, src); err != nil {
-		updateStatus(UploadProgress{
-			Status:  "error",
-			Error:   "Failed to save uploaded file",
-			Message: err.Error(),
+			Error:   "Failed to verify temporary file",
+			Message: fmt.Sprintf("File does not exist: %s", err.Error()),
 		})
 		return
 	}
@@ -296,6 +404,16 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	prepareCmd.Stderr = &prepareError
 	prepareCmd.Dir = filepath.Dir(pdptoolPath)
 
+	// Create a context with timeout for prepare-piece based on file size
+	prepareCtx, prepareCancel := context.WithTimeout(context.Background(), prepareTimeout)
+	defer prepareCancel()
+
+	// Use the context for the command
+	prepareCmdWithTimeout := exec.CommandContext(prepareCtx, pdptoolPath, "prepare-piece", tempFilePath)
+	prepareCmdWithTimeout.Stdout = &prepareOutput
+	prepareCmdWithTimeout.Stderr = &prepareError
+	prepareCmdWithTimeout.Dir = filepath.Dir(pdptoolPath)
+
 	prepareDone := make(chan bool)
 	go func() {
 		prepareStartProgress := currentProgress
@@ -318,13 +436,22 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		}
 	}()
 
-	if err := prepareCmd.Run(); err != nil {
+	if err := prepareCmdWithTimeout.Run(); err != nil {
 		close(prepareDone)
-		updateStatus(UploadProgress{
-			Status:  "error",
-			Error:   "Failed to prepare piece",
-			Message: prepareError.String(),
-		})
+
+		if prepareCtx.Err() == context.DeadlineExceeded {
+			updateStatus(UploadProgress{
+				Status:  "error",
+				Error:   "Prepare piece command timed out",
+				Message: fmt.Sprintf("Operation timed out after %v. Try a smaller file or contact support.", prepareTimeout),
+			})
+		} else {
+			updateStatus(UploadProgress{
+				Status:  "error",
+				Error:   "Failed to prepare piece",
+				Message: prepareError.String(),
+			})
+		}
 		return
 	}
 
@@ -335,90 +462,66 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	updateStatus(UploadProgress{
 		Status:   currentStage,
 		Progress: currentProgress,
-		Message:  "Starting file upload",
+		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
 	})
 
-	// Add delay before upload-file
-	waitWithJitter(baseDelay * 2) // Double delay before upload as it's more intensive
+	// Begin upload
+	currentStage = "uploading"
+	updateStatus(UploadProgress{
+		Status:   currentStage,
+		Progress: currentProgress,
+		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
+	})
 
-	uploadCmd := exec.Command(
-		pdptoolPath,
+	// Add delay before upload
+	waitWithJitter(baseDelay)
+
+	var uploadOutput bytes.Buffer
+	var uploadError bytes.Buffer
+
+	// Build the command arguments
+	uploadArgs := []string{
 		"upload-file",
 		"--service-url", cfg.ServiceURL,
 		"--service-name", cfg.ServiceName,
 		tempFilePath,
-	)
-
-	var uploadOutput bytes.Buffer
-	var uploadError bytes.Buffer
-	uploadCmd.Stdout = &uploadOutput
-	uploadCmd.Stderr = &uploadError
-
-	// Log the command's working directory and relevant env vars
-	uploadCmd.Dir = filepath.Dir(pdptoolPath)
-	log.WithField("workingDir", uploadCmd.Dir).
-		WithField("command", pdptoolPath+" "+strings.Join(uploadCmd.Args[1:], " ")).
-		Info("Executing pdptool upload-file command")
-
-	if err := uploadCmd.Start(); err != nil {
-		updateStatus(UploadProgress{
-			Status:  "error",
-			Error:   "Failed to start upload command",
-			Message: err.Error(),
-		})
-		return
 	}
 
-	done := make(chan bool)
-	go func() {
-		uploadStartProgress := currentProgress
-		uploadStartTime := time.Now()
-		estimatedUploadTime := time.Duration(file.Size/1024/10) * time.Millisecond
-		if estimatedUploadTime < 5*time.Second {
-			estimatedUploadTime = 5 * time.Second
-		}
+	// Create the command without timeout
+	uploadCmd := exec.Command(pdptoolPath, uploadArgs...)
+	uploadCmd.Stdout = &uploadOutput
+	uploadCmd.Stderr = &uploadError
+	uploadCmd.Dir = filepath.Dir(pdptoolPath)
 
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
+	log.WithField("command", pdptoolPath).
+		WithField("args", strings.Join(uploadArgs, " ")).
+		WithField("fileSize", formatFileSize(file.Size)).
+		WithField("timeout", "none").
+		Info("Executing pdptool upload-file command without timeout")
 
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				elapsedRatio := float64(time.Since(uploadStartTime)) / float64(estimatedUploadTime)
-				if elapsedRatio > 1.0 {
-					elapsedRatio = 0.95
-				}
+	// Update progress while uploading
+	updateStatus(UploadProgress{
+		Status:   currentStage,
+		Progress: currentProgress,
+		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
+	})
 
-				estimatedProgress := uploadStartProgress + int(float64(uploadWeight)*elapsedRatio)
-				if estimatedProgress > currentProgress && currentProgress < maxProgress-5 {
-					currentProgress = estimatedProgress
-					updateStatus(UploadProgress{
-						Status:   currentStage,
-						Progress: currentProgress,
-						Message:  "Uploading file...",
-					})
-				}
-			}
-		}
-	}()
-
-	err = uploadCmd.Wait()
-	close(done)
-
-	if err != nil {
+	// Run command directly without a timeout
+	uploadRunErr := uploadCmd.Run()
+	if uploadRunErr != nil {
 		stderrStr := uploadError.String()
 		stdoutStr := uploadOutput.String()
+
+		log.WithField("error", uploadRunErr.Error()).
+			WithField("stderr", stderrStr).
+			WithField("stdout", stdoutStr).
+			Error("Upload command failed")
+
 		updateStatus(UploadProgress{
 			Status:  "error",
 			Error:   "Upload command failed",
 			Message: stderrStr,
 		})
-		log.WithField("error", err.Error()).
-			WithField("stderr", stderrStr).
-			WithField("stdout", stdoutStr).
-			Error("Upload command failed")
 		return
 	}
 
@@ -470,7 +573,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		} else {
 			log.Error("Upload completed but failed to extract CID from pdptool output.")
 			updateStatus(UploadProgress{
-
 				Status:  "error",
 				Error:   "Failed to extract CID from upload response",
 				Message: "Could not determine upload result CID.",
@@ -1121,10 +1223,33 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		ProofSetID: proofSet.ProofSetID,
 	})
 
+	// Only clean up the temporary directory after successful completion
+	// or after an hour (whichever comes first)
 	go func() {
+		// Get the temp directory path
+		var tempDir string
+
+		// If we created a temporary directory (non-chunked upload)
+		if !hasExistingPath && tempFilePath != "" {
+			tempDir = filepath.Dir(tempFilePath)
+		}
+
+		// For chunked uploads, the filePath is already managed by the chunked upload handler
+
+		// Wait for an hour before cleanup
 		time.Sleep(1 * time.Hour)
+
+		// Clean up job status from memory
 		uploadJobsLock.Lock()
 		delete(uploadJobs, jobID)
 		uploadJobsLock.Unlock()
+
+		// Clean up temp directory if it was created for this upload
+		if tempDir != "" && !hasExistingPath {
+			log.WithField("jobID", jobID).
+				WithField("tempDir", tempDir).
+				Info("Cleaning up temporary directory after successful upload")
+			os.RemoveAll(tempDir)
+		}
 	}()
 }

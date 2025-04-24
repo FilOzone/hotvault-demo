@@ -47,6 +47,7 @@ interface PaymentStatus {
   };
   proofSetReady: boolean;
   isCreatingProofSet: boolean;
+  lastApprovalTimestamp: number;
   operatorApproval: {
     rateAllowance: string;
     lockupAllowance: string;
@@ -100,6 +101,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     },
     proofSetReady: false,
     isCreatingProofSet: false,
+    lastApprovalTimestamp: 0,
     operatorApproval: null,
   });
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
@@ -471,11 +473,14 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         status: "success",
       });
 
-      // Update status
+      const now = Date.now();
+
+      // Update status and save the approval timestamp
       setPaymentStatus((prev) => ({
         ...prev,
         isTokenApproved: true,
         isLoading: false,
+        lastApprovalTimestamp: now,
       }));
 
       return true;
@@ -500,6 +505,34 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
   // Deposit funds into the Payments contract
   const depositFunds = async (amount: string): Promise<boolean> => {
     if (!account) return false;
+
+    const now = Date.now();
+    const lastApproval = paymentStatus.lastApprovalTimestamp;
+    const minDelay = 5000; // 5 seconds minimum delay
+    const timeSinceApproval = now - lastApproval;
+
+    // Check if we're trying to deposit too soon after approval
+    if (lastApproval > 0 && timeSinceApproval < minDelay) {
+      console.warn(
+        `Deposit attempted too soon after approval (${timeSinceApproval}ms). Waiting for confirmation...`
+      );
+
+      // Add a delay to wait for the approval to be confirmed
+      const remainingTime = minDelay - timeSinceApproval;
+
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: `Waiting ${Math.ceil(
+          remainingTime / 1000
+        )} seconds for approval confirmation...`,
+      }));
+
+      // Wait for the remaining time
+      await new Promise((resolve) => setTimeout(resolve, remainingTime + 500)); // Add extra 500ms buffer
+
+      setPaymentStatus((prev) => ({ ...prev, error: null }));
+    }
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
