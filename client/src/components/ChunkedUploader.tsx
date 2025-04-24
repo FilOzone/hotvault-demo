@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 
 interface ChunkedUploaderProps {
   onUploadSuccess: (jobId: string) => void;
-  maxFileSize?: number; // Maximum file size in bytes
-  chunkSize?: number; // Chunk size in bytes (default: 5MB)
-  accept?: string; // File types to accept
-  maxConcurrentChunks?: number; // Maximum number of chunks to upload concurrently
+  maxFileSize?: number;
+  chunkSize?: number;
+  accept?: string;
+  maxConcurrentChunks?: number;
 }
 
 interface ChunkStatus {
@@ -32,7 +32,7 @@ interface UploadSession {
   uploadedChunks: number;
   startTime: number;
   bytesUploaded: number;
-  averageSpeed: number; // bytes per second
+  averageSpeed: number;
   status:
     | "initializing"
     | "uploading"
@@ -44,23 +44,21 @@ interface UploadSession {
   errorMessage?: string;
 }
 
-// Calculate optimal chunk size based on file size
 function getOptimalChunkSize(fileSize: number): number {
-  // For very large files (>1GB), use larger chunks to reduce the number of requests
   if (fileSize > 1024 * 1024 * 1024) {
-    return 20 * 1024 * 1024; // 20MB chunks for >1GB files
+    return 20 * 1024 * 1024;
   } else if (fileSize > 500 * 1024 * 1024) {
-    return 10 * 1024 * 1024; // 10MB chunks for >500MB files
+    return 10 * 1024 * 1024;
   } else if (fileSize > 100 * 1024 * 1024) {
-    return 5 * 1024 * 1024; // 5MB chunks for >100MB files
+    return 5 * 1024 * 1024;
   } else {
-    return 2 * 1024 * 1024; // 2MB chunks for smaller files
+    return 2 * 1024 * 1024;
   }
 }
 
 const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
   onUploadSuccess,
-  maxFileSize = 10 * 1024 * 1024 * 1024, // 10GB default limit
+  maxFileSize = 10 * 1024 * 1024 * 1024,
   chunkSize: propChunkSize,
   accept = "*",
   maxConcurrentChunks = 3,
@@ -77,13 +75,11 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
   const pendingChunksRef = useRef<number[]>([]);
 
   const resetUpload = () => {
-    // Cancel any ongoing uploads
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
 
-    // Clear interval
     if (uploadIntervalRef.current) {
       clearInterval(uploadIntervalRef.current);
       uploadIntervalRef.current = null;
@@ -96,7 +92,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
   };
 
   const handleFileSelect = (selectedFile: File) => {
-    // Check file size
     if (selectedFile.size > maxFileSize) {
       toast.error(
         `File is too large. Maximum size is ${formatFileSize(
@@ -108,11 +103,9 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
 
     setFile(selectedFile);
 
-    // Determine optimal chunk size
     const optimalChunkSize =
       propChunkSize || getOptimalChunkSize(selectedFile.size);
 
-    // Generate session details
     const totalChunks = Math.ceil(selectedFile.size / optimalChunkSize);
     const chunks: ChunkStatus[] = Array.from(
       { length: totalChunks },
@@ -124,7 +117,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
       })
     );
 
-    // Initialize pending chunks
     pendingChunksRef.current = Array.from({ length: totalChunks }, (_, i) => i);
 
     setUploadSession({
@@ -142,7 +134,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
       status: "initializing",
     });
 
-    // Initialize upload session
     initializeUpload(selectedFile, totalChunks, optimalChunkSize);
   };
 
@@ -216,7 +207,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
           : null
       );
 
-      // Start uploading chunks
       startChunkedUpload(selectedFile, data.uploadId);
     } catch (error) {
       const errorMessage =
@@ -233,12 +223,10 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
 
     abortControllerRef.current = new AbortController();
 
-    // Setup tracking interval
     uploadIntervalRef.current = setInterval(() => {
       setUploadSession((prev) => {
         if (!prev) return null;
 
-        // Calculate speed based on data uploaded
         const elapsedTimeMs = Date.now() - prev.startTime;
         const elapsedTimeSec = elapsedTimeMs / 1000;
         const averageSpeed =
@@ -251,18 +239,15 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
       });
     }, 1000);
 
-    // Start uploading chunks
     activeUploadsRef.current = 0;
 
     const processNextChunk = () => {
       if (!uploadSession) return;
 
-      // Check if we're done
       if (
         pendingChunksRef.current.length === 0 &&
         activeUploadsRef.current === 0
       ) {
-        // All chunks have been uploaded
         if (uploadIntervalRef.current) {
           clearInterval(uploadIntervalRef.current);
           uploadIntervalRef.current = null;
@@ -273,7 +258,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
         return;
       }
 
-      // Start uploading chunks up to max concurrent
       while (
         activeUploadsRef.current < maxConcurrentChunks &&
         pendingChunksRef.current.length > 0
@@ -306,7 +290,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
       }
     };
 
-    // Start processing chunks
     processNextChunk();
   };
 
@@ -319,7 +302,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
       return Promise.reject("Upload aborted");
     }
 
-    // Update chunk status to uploading
     setUploadSession((prev) => {
       if (!prev) return null;
 
@@ -343,17 +325,14 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
       return Promise.reject("Authentication required");
     }
 
-    // Calculate chunk boundaries
     const start = chunkIndex * uploadSession.chunkSize;
     const end = Math.min(start + uploadSession.chunkSize, selectedFile.size);
     const chunk = selectedFile.slice(start, end);
 
     try {
-      // Create FormData
       const formData = new FormData();
       formData.append("chunk", chunk);
 
-      // Use XMLHttpRequest for progress tracking
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
 
@@ -372,7 +351,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
                 progress: percentComplete,
               };
 
-              // Calculate total bytes uploaded so far
               const chunkBytesUploaded =
                 (event.loaded / event.total) * (end - start);
               const totalBytesCompleted = prev.bytesUploaded;
@@ -393,7 +371,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
         xhr.onload = function () {
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
-              // Parse response
               const responseData = JSON.parse(xhr.responseText) as {
                 uploadId: string;
                 chunkIndex: number;
@@ -402,7 +379,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
                 allChunksReceived: boolean;
               };
 
-              // Mark chunk as complete
               setUploadSession((prev) => {
                 if (!prev) return null;
 
@@ -413,7 +389,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
                   progress: 100,
                 };
 
-                // Update uploaded chunks count
                 const chunkSize = end - start;
 
                 return {
@@ -433,17 +408,14 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
               reject(new Error("Invalid response from server"));
             }
           } else {
-            // Handle error
             setUploadSession((prev) => {
               if (!prev) return null;
 
               const updatedChunks = [...prev.chunks];
               const currentChunk = updatedChunks[chunkIndex];
 
-              // Increment retry count
               const newRetries = currentChunk.retries + 1;
 
-              // If max retries exceeded, mark as error, otherwise mark as pending to retry
               if (newRetries >= 3) {
                 updatedChunks[chunkIndex] = {
                   ...currentChunk,
@@ -471,7 +443,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
               const errorData = JSON.parse(xhr.responseText);
               errorMessage = errorData.error || errorMessage;
             } catch {
-              // If response is not JSON, use response text
               errorMessage = xhr.responseText || errorMessage;
             }
 
@@ -480,17 +451,14 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
         };
 
         xhr.onerror = () => {
-          // Mark as pending for retry
           setUploadSession((prev) => {
             if (!prev) return null;
 
             const updatedChunks = [...prev.chunks];
             const currentChunk = updatedChunks[chunkIndex];
 
-            // Increment retry count
             const newRetries = currentChunk.retries + 1;
 
-            // If max retries exceeded, mark as error, otherwise mark as pending to retry
             if (newRetries >= 3) {
               updatedChunks[chunkIndex] = {
                 ...currentChunk,
@@ -520,8 +488,7 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
           reject(new Error("Upload aborted"));
         };
 
-        // Set a timeout to prevent hanging uploads
-        xhr.timeout = 120000; // 2 minutes timeout per chunk
+        xhr.timeout = 120000;
         xhr.ontimeout = () => {
           setUploadSession((prev) => {
             if (!prev) return null;
@@ -529,10 +496,8 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
             const updatedChunks = [...prev.chunks];
             const currentChunk = updatedChunks[chunkIndex];
 
-            // Increment retry count
             const newRetries = currentChunk.retries + 1;
 
-            // If max retries exceeded, mark as error, otherwise mark as pending to retry
             if (newRetries >= 3) {
               updatedChunks[chunkIndex] = {
                 ...currentChunk,
@@ -558,7 +523,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
           reject(new Error("Chunk upload timed out"));
         };
 
-        // Send the chunk with query parameters
         xhr.open(
           "POST",
           `${API_BASE_URL}/api/v1/chunked-upload/chunk?uploadId=${uploadId}&chunkIndex=${chunkIndex}`
@@ -567,7 +531,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
         xhr.send(formData);
       });
     } catch (error) {
-      // Handle error
       setUploadSession((prev) => {
         if (!prev) return null;
 
@@ -625,7 +588,6 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
         } catch {
-          // If response is not JSON, use status text
           errorMessage = response.statusText || errorMessage;
         }
 

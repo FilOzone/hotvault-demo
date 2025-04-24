@@ -268,12 +268,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     const isActive = currentStep === PaymentStep.APPROVE_TOKEN;
     const isCompleted = currentStep > PaymentStep.APPROVE_TOKEN;
 
-    if (isActive) {
-      console.log(
-        `Rendering Approve button check: hasMinimumBalance=${paymentStatus.hasMinimumBalance}, isProcessing=${isProcessing}`
-      );
-    }
-
     return (
       <div
         className={`w-full p-6 rounded-2xl transition-all ${

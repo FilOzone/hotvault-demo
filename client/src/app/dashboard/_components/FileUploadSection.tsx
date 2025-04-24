@@ -67,21 +67,18 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
           ...(prev || { status: "uploading", filename: selectedImage.name }),
           isStalled: true,
         }));
-      }, 30000); // Increased timeout to 30 seconds for large files
+      }, 30000);
 
       console.log(
         `[FileUploadSection] 🚀 Uploading ${selectedImage.name} to ${API_BASE_URL}/api/v1/upload`
       );
 
-      // Use XMLHttpRequest instead of fetch for upload progress tracking
       const xhr = new XMLHttpRequest();
 
-      // Create a promise to handle the XMLHttpRequest
       const uploadPromise = new Promise((resolve, reject) => {
         xhr.open("POST", `${API_BASE_URL}/api/v1/upload`, true);
         xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
-        // Track upload progress
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
             const percentComplete = Math.round(
@@ -97,7 +94,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
               isStalled: false,
             }));
 
-            // Reset the stall timeout on progress
             if (uploadTimeoutRef.current) {
               clearTimeout(uploadTimeoutRef.current);
             }
@@ -113,7 +109,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
           }
         };
 
-        // Handle response
         xhr.onload = function () {
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
@@ -145,19 +140,15 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         xhr.onerror = () => reject(new Error("Network error during upload"));
         xhr.ontimeout = () => reject(new Error("Upload request timed out"));
 
-        // Handle abort
         xhr.onabort = () => {
           console.log("[FileUploadSection] Upload aborted");
           reject(new Error("AbortError"));
         };
 
-        // Set a longer timeout for large files
-        xhr.timeout = 3600000; // 1 hour
+        xhr.timeout = 3600000;
 
-        // Send the form data
         xhr.send(formData);
 
-        // Add signal abort handler
         if (signal) {
           signal.addEventListener("abort", () => {
             xhr.abort();
@@ -165,7 +156,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         }
       });
 
-      // Wait for upload to complete
       const data = (await uploadPromise) as {
         status: string;
         progress: number;
@@ -180,17 +170,12 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         uploadTimeoutRef.current = null;
       }
 
-      console.log(
-        "[FileUploadSection] ✅ Upload successful response body:",
-        data
-      );
-
       setUploadProgress({
         status: "success",
         cid: data.cid,
         message: "File uploaded successfully!",
         lastUpdated: Date.now(),
-        jobId: data.jobId, // Store job ID for polling
+        jobId: data.jobId,
       });
 
       if (data.jobId) {
@@ -201,9 +186,6 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
 
         const pollStatus = async () => {
           try {
-            console.log(
-              `[FileUploadSection] ⏳ Polling status for job ${data.jobId}...`
-            );
             const statusResponse = await fetch(
               `${API_BASE_URL}/api/v1/upload/status/${data.jobId}`,
               {
@@ -213,21 +195,13 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
               }
             );
 
-            console.log(
-              `[FileUploadSection] 📬 Poll response status: ${statusResponse.status}`
-            );
             if (!statusResponse.ok) {
               throw new Error("Failed to check proof status");
             }
 
             const statusData = await statusResponse.json();
-            console.log(
-              "[FileUploadSection] 📊 Polling status update:",
-              statusData
-            );
 
             if (statusData.status === "complete") {
-              console.log("[FileUploadSection] ✅ Proof generation complete!");
               setUploadProgress((prev) => ({
                 ...(prev || { filename: selectedImage.name }),
                 status: "complete",
@@ -420,8 +394,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       return;
     }
 
-    // Add file size validation (100MB limit)
-    const maxFileSize = 100 * 1024 * 1024; // 100MB in bytes
+    const maxFileSize = 100 * 1024 * 1024;
     if (file.size > maxFileSize) {
       toast.error(
         `File is too large. Maximum size is 100MB. Current size: ${formatFileSize(
@@ -511,23 +484,17 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
         </div>
 
         {useChunkedUpload ? (
-          // Chunked uploader for large files
           <div className="mt-6">
             <ChunkedUploader
-              onUploadSuccess={(jobId) => {
-                console.log(
-                  "[FileUploadSection] Chunked upload completed with jobId:",
-                  jobId
-                );
+              onUploadSuccess={() => {
                 onUploadSuccess();
               }}
               accept="image/*"
-              maxFileSize={10 * 1024 * 1024 * 1024} // 10GB
-              chunkSize={5 * 1024 * 1024} // 5MB chunks
+              maxFileSize={10 * 1024 * 1024 * 1024}
+              chunkSize={5 * 1024 * 1024}
             />
           </div>
         ) : (
-          // Standard dropzone for regular uploads
           <div
             {...getRootProps()}
             className={`text-center p-8 rounded-xl border-2 border-dashed transition-all duration-300 mt-6 ${

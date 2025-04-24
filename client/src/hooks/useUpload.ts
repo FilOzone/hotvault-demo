@@ -47,14 +47,12 @@ export const useUpload = (onSuccess?: () => void) => {
           throw new Error("Authentication required");
         }
 
-        // Create a new abort controller
         if (abortControllerRef.current) {
           abortControllerRef.current.abort();
         }
         abortControllerRef.current = new AbortController();
         const signal = abortControllerRef.current.signal;
 
-        // Record upload start time
         uploadStartTimeRef.current = Date.now();
 
         setUploadProgress({
@@ -98,7 +96,6 @@ export const useUpload = (onSuccess?: () => void) => {
             isStalled: false,
           }));
 
-          // Start polling for status updates (with a small initial delay)
           setTimeout(() => {
             pollStatus(data.jobId, token);
           }, 1000);
@@ -108,11 +105,9 @@ export const useUpload = (onSuccess?: () => void) => {
           throw new Error("No job ID received from server");
         }
       } catch (error) {
-        // Clear the abort controller reference on error
         abortControllerRef.current = null;
         uploadStartTimeRef.current = null;
 
-        // Handle AbortError specially
         if (error instanceof DOMException && error.name === "AbortError") {
           console.log("[useUpload] Upload was cancelled by user");
           return;
@@ -150,7 +145,6 @@ export const useUpload = (onSuccess?: () => void) => {
         const data = await response.json();
         console.log("[useUpload] Got status update:", data);
 
-        // If status is complete/success AND progress is 100, immediately clear progress
         if (
           (data.status === "complete" || data.status === "success") &&
           data.progress === 100
@@ -159,16 +153,13 @@ export const useUpload = (onSuccess?: () => void) => {
             "[useUpload] Upload complete with 100% progress. Immediately cleaning up."
           );
 
-          // Stop polling immediately
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
           }
 
-          // Call success callback first before clearing
           onSuccess?.();
 
-          // Wait 100ms to ensure event listeners catch the update, then clear
           setTimeout(() => {
             clearUploadProgress();
           }, 100);
@@ -183,7 +174,6 @@ export const useUpload = (onSuccess?: () => void) => {
           isStalled: false,
         }));
 
-        // If upload is complete or failed, stop polling
         if (data.status === "complete" || data.status === "error") {
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
@@ -191,13 +181,9 @@ export const useUpload = (onSuccess?: () => void) => {
           }
 
           if (data.status === "complete") {
-            console.log("[useUpload] Upload complete!");
-            // Call the onSuccess callback immediately instead of waiting
             onSuccess?.();
-            // Let GlobalUploadProgress handle the clearUploadProgress call
           }
         } else {
-          // Continue polling
           if (!pollIntervalRef.current) {
             pollIntervalRef.current = setInterval(() => {
               pollStatus(jobId, token);
@@ -206,7 +192,6 @@ export const useUpload = (onSuccess?: () => void) => {
         }
       } catch (error) {
         console.error("[useUpload] Error polling for status:", error);
-        // Don't stop polling on error - the server might be temporarily unavailable
       }
     },
     [setUploadProgress, clearUploadProgress, onSuccess]

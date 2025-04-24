@@ -59,7 +59,6 @@ export const UploadProgress: React.FC<UploadProgressProps> = ({
                 No updates received for a while.
               </div>
             )}
-            {/* Easter egg for when files are being uploaded */}
             {(uploadProgress.status === "uploading" ||
               uploadProgress.status === "processing") &&
               !uploadProgress.isStalled && (
@@ -126,7 +125,6 @@ export const UploadProgress: React.FC<UploadProgressProps> = ({
           </div>
         )}
 
-        {/* Display completed upload info with links */}
         {uploadProgress.status === "complete" && uploadProgress.cid && (
           <div className="mt-3 pt-3 border-t border-green-200">
             <div className="flex flex-col gap-2">

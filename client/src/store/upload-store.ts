@@ -46,7 +46,6 @@ export const useUploadStore = create<UploadStore>()(
             : progress;
         console.log("[UploadStore] Setting progress:", newProgress);
 
-        // Force immediate clear if status is complete and progress is 100%
         if (
           newProgress &&
           (newProgress.status === "complete" ||
@@ -57,13 +56,11 @@ export const useUploadStore = create<UploadStore>()(
             "[UploadStore] Complete status with 100% detected, forcing cleanup soon"
           );
 
-          // Set the progress but also schedule immediate cleanup
           set({ uploadProgress: newProgress });
           setTimeout(() => {
             console.log(
               "[UploadStore] Force clearing progress after complete status"
             );
-            // Explicitly remove from localStorage
             if (typeof window !== "undefined") {
               localStorage.removeItem("upload-storage");
             }
@@ -72,11 +69,9 @@ export const useUploadStore = create<UploadStore>()(
           return;
         }
 
-        // Check if the upload is stalled
         if (newProgress.lastUpdated) {
           const timeSinceLastUpdate = Date.now() - newProgress.lastUpdated;
           if (timeSinceLastUpdate > 10000) {
-            // 10 seconds
             newProgress.isStalled = true;
           }
         }
@@ -85,15 +80,12 @@ export const useUploadStore = create<UploadStore>()(
       },
       clearUploadProgress: () => {
         console.log("[UploadStore] Clearing progress");
-        // Explicitly clear from localStorage then update the state
         if (typeof window !== "undefined") {
           const storageKey = "upload-storage";
           try {
-            // Get current storage state
             const storageData = localStorage.getItem(storageKey);
             if (storageData) {
               console.log("[UploadStore] Found data in localStorage, removing");
-              // Instead of trying to modify it, just remove the item completely
               localStorage.removeItem(storageKey);
             }
           } catch (e) {
@@ -106,10 +98,7 @@ export const useUploadStore = create<UploadStore>()(
     {
       name: "upload-storage",
       partialize: (state) => ({ uploadProgress: state.uploadProgress }),
-      // Add storage merger that ensures proper clearing
       merge: (persistedState, currentState) => {
-        // If state is being restored from localStorage but uploadProgress has been
-        // explicitly set to null in memory, keep it as null (don't restore)
         const uploadProgressCleared =
           currentState.uploadProgress === null &&
           JSON.stringify(persistedState) !== "{}";

@@ -81,7 +81,6 @@ export const TokenBalanceCard = () => {
     const lockedAmount = parseFloat(paymentStatus.lockedFunds.current);
     const totalFunds = parseFloat(paymentStatus.accountFunds);
 
-    // Calculate available funds with precision handling
     const availableFunds = Math.max(
       0,
       parseFloat((totalFunds - lockedAmount).toFixed(6))
@@ -99,7 +98,6 @@ export const TokenBalanceCard = () => {
       },
     });
 
-    // Use a small buffer (0.001) to account for precision errors
     if (withdrawAmountNum > availableFunds + 0.001) {
       const errorMsg = `Cannot withdraw more than available unlocked funds (${formatCurrency(
         availableFunds.toString()
@@ -109,18 +107,12 @@ export const TokenBalanceCard = () => {
       return;
     }
 
-    // If the user is trying to withdraw all funds, adjust to the exact available amount
     if (Math.abs(withdrawAmountNum - totalFunds) < 0.01) {
-      console.log(
-        "Adjusting withdrawal amount to maximum available:",
-        availableFunds
-      );
       setWithdrawAmount(availableFunds.toString());
     }
 
     setIsProcessing(true);
     try {
-      console.log("Initiating withdrawal:", withdrawAmount);
       const result = await withdrawFunds(withdrawAmount);
       if (result) {
         toast.success(`Successfully withdrew ${withdrawAmount} USDFC`);

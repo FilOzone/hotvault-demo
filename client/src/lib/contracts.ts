@@ -1,6 +1,5 @@
 import { ethers } from "ethers";
 
-// Simple ERC20 ABI with just the functions we need
 const ERC20_ABI = [
   // Read-only functions
   "function balanceOf(address owner) view returns (uint256)",
@@ -36,20 +35,15 @@ export async function getUSDFCBalance(
       provider
     );
 
-    // Get token decimals
     const decimals = await tokenContract.decimals();
 
-    // Get raw balance
     const rawBalance = await tokenContract.balanceOf(walletAddress);
 
-    // Format the balance with proper decimals
     const formattedBalance = ethers.formatUnits(rawBalance, decimals);
 
-    // Check if balance meets minimum requirement (10 USDFC)
     const minimumBalance = ethers.parseUnits("10", decimals);
     const hasMinimumBalance = rawBalance >= minimumBalance;
 
-    // Add this log
     console.log(
       `getUSDFCBalance check: rawBalance=${rawBalance.toString()}, decimals=${decimals}, minimumBalance=${minimumBalance.toString()}, hasMinimumBalance=${hasMinimumBalance}`
     );
@@ -83,15 +77,11 @@ export async function approveUSDFCSpending(
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
     const decimals = await tokenContract.decimals();
 
-    // Convert amount to token units with proper decimals
     const amountInWei = ethers.parseUnits(amount, decimals);
 
-    // Send approval transaction
     const tx = await tokenContract.approve(spenderAddress, amountInWei);
-    // Wait for transaction to be mined
     const receipt = await tx.wait();
 
-    // Return transaction details including hash
     return {
       hash: tx.hash,
       receipt,
@@ -102,9 +92,7 @@ export async function approveUSDFCSpending(
   }
 }
 
-// Payments contract ABI with just the functions we need
 const PAYMENTS_ABI = [
-  // Read-only functions
   "function accounts(address token, address owner) view returns (uint256 funds, uint256 lockupCurrent, uint256 lockupRate, uint256 lockupLastSettledAt)",
   "function operatorApprovals(address token, address client, address operator) view returns (bool isApproved, uint256 rateAllowance, uint256 lockupAllowance, uint256 rateUsage, uint256 lockupUsage)",
   // Write functions
@@ -133,27 +121,21 @@ export async function depositUSDFC(
       signer
     );
 
-    // Get the signer's address
     const signerAddress = await signer.getAddress();
 
-    // Get token decimals to convert amount
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
     const decimals = await tokenContract.decimals();
 
-    // Convert amount to token units with proper decimals
     const amountInWei = ethers.parseUnits(amount, decimals);
 
-    // Send deposit transaction - deposit to self
     const tx = await paymentsContract.deposit(
       tokenAddress,
       signerAddress,
       amountInWei
     );
 
-    // Wait for transaction to be mined
     const receipt = await tx.wait();
 
-    // Return transaction details including hash
     return {
       hash: tx.hash,
       receipt,
@@ -189,15 +171,12 @@ export async function approveOperator(
       signer
     );
 
-    // Get token decimals to convert amount
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
     const decimals = await tokenContract.decimals();
 
-    // Convert amounts to token units with proper decimals
     const rateInWei = ethers.parseUnits(rateAllowance, decimals);
     const lockupInWei = ethers.parseUnits(lockupAllowance, decimals);
 
-    // Send approval transaction
     const tx = await paymentsContract.setOperatorApproval(
       tokenAddress,
       operatorAddress,
@@ -206,10 +185,8 @@ export async function approveOperator(
       lockupInWei
     );
 
-    // Wait for transaction to be mined
     const receipt = await tx.wait();
 
-    // Return transaction details including hash
     return {
       hash: tx.hash,
       receipt,
@@ -241,7 +218,6 @@ export async function getAccountStatus(
       provider
     );
 
-    // Get token decimals
     const tokenContract = new ethers.Contract(
       tokenAddress,
       ERC20_ABI,
@@ -251,7 +227,6 @@ export async function getAccountStatus(
 
     console.log("decimals", decimals);
 
-    // Get account details from the payments contract
     const account = await paymentsContract.accounts(
       tokenAddress,
       walletAddress
@@ -292,7 +267,6 @@ export async function getOperatorApproval(
       provider
     );
 
-    // Get token decimals
     const tokenContract = new ethers.Contract(
       tokenAddress,
       ERC20_ABI,
@@ -300,7 +274,6 @@ export async function getOperatorApproval(
     );
     const decimals = await tokenContract.decimals();
 
-    // Get operator approval details
     const approval = await paymentsContract.operatorApprovals(
       tokenAddress,
       walletAddress,
@@ -341,20 +314,15 @@ export async function withdrawUSDFC(
       signer
     );
 
-    // Get token decimals to convert amount
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
     const decimals = await tokenContract.decimals();
 
-    // Convert amount to token units with proper decimals
     const amountInWei = ethers.parseUnits(amount, decimals);
 
-    // Send withdraw transaction
     const tx = await paymentsContract.withdraw(tokenAddress, amountInWei);
 
-    // Wait for transaction to be mined
     const receipt = await tx.wait();
 
-    // Return transaction details including hash
     return {
       hash: tx.hash,
       receipt,

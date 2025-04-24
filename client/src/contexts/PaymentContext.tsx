@@ -19,7 +19,6 @@ import {
 } from "@/lib/contracts";
 import * as Constants from "@/lib/constants";
 
-// Define interface for transaction history
 export interface TransactionRecord {
   id: string;
   type: "token_approval" | "deposit" | "operator_approval" | "withdraw";
@@ -30,7 +29,6 @@ export interface TransactionRecord {
   error?: string;
 }
 
-// Define the payment status interface
 interface PaymentStatus {
   usdcBalance: string;
   hasMinimumBalance: boolean;
@@ -56,7 +54,6 @@ interface PaymentStatus {
   } | null;
 }
 
-// Define the context type
 interface PaymentContextType {
   paymentStatus: PaymentStatus;
   refreshBalance: () => Promise<void>;
@@ -73,14 +70,11 @@ interface PaymentContextType {
   clearTransactionHistory: () => void;
 }
 
-// Create the context
 const PaymentContext = createContext<PaymentContextType | undefined>(undefined);
 
-// Helper to generate a unique ID
 const generateId = () =>
   `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-// Create provider component
 export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
@@ -109,7 +103,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     null
   );
 
-  // Function to add a transaction to history
   const addTransaction = (transaction: Omit<TransactionRecord, "id">) => {
     const newTransaction = {
       ...transaction,
@@ -119,7 +112,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     return newTransaction.id;
   };
 
-  // Function to update a transaction in history
   const updateTransaction = (
     id: string,
     updates: Partial<TransactionRecord>
@@ -129,12 +121,10 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     );
   };
 
-  // Function to clear transaction history
   const clearTransactionHistory = () => {
     setTransactions([]);
   };
 
-  // Function to refresh the balance
   const refreshBalance = useCallback(async () => {
     if (!account) {
       setPaymentStatus((prev) => ({
@@ -150,17 +140,14 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Ensure ethereum exists
       if (!window.ethereum) {
         throw new Error("Ethereum provider not found");
       }
 
-      // Create a provider
       const provider = new ethers.BrowserProvider(
         window.ethereum as ethers.Eip1193Provider
       );
 
-      // Get USDFC balance
       const balanceResult = await getUSDFCBalance(
         provider,
         Constants.USDFC_TOKEN_ADDRESS,
@@ -173,15 +160,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         hasMinimumBalance: balanceResult.hasMinimumBalance,
         isLoading: false,
       }));
-
-      console.log(
-        `USDFC Balance for ${account}: ${balanceResult.formattedBalance}`
-      );
-      if (!balanceResult.hasMinimumBalance) {
-        console.warn(
-          `User has insufficient USDFC balance (${balanceResult.formattedBalance}). Minimum required: ${Constants.MINIMUM_USDFC_BALANCE}`
-        );
-      }
     } catch (error) {
       console.error("Error checking USDFC balance:", error);
       setPaymentStatus((prev) => ({
@@ -192,14 +170,11 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [account]);
 
-  // Function to start polling
   const startPolling = useCallback(() => {
-    // Clear any existing polling
     if (pollingInterval) {
       clearInterval(pollingInterval);
     }
 
-    // Set up new polling interval
     const interval = setInterval(async () => {
       try {
         const response = await fetch(
@@ -213,14 +188,12 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         if (response.ok) {
           const data = await response.json();
 
-          // Update status based on response
           setPaymentStatus((prev) => ({
             ...prev,
             proofSetReady: data.proofSetReady,
             isCreatingProofSet: data.proofSetInitiated && !data.proofSetReady,
           }));
 
-          // If proof set is ready, stop polling and refresh payment setup status
           if (data.proofSetReady) {
             clearInterval(interval);
             setPollingInterval(null);
@@ -230,18 +203,16 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       } catch (error) {
         console.error("Error polling for proof set status:", error);
       }
-    }, 30000); // Changed from 5000 to 30000 (30 seconds)
+    }, 30000);
 
     setPollingInterval(interval);
 
-    // Cleanup function
     return () => {
       clearInterval(interval);
       setPollingInterval(null);
     };
   }, []);
 
-  // Clean up polling on unmount
   useEffect(() => {
     return () => {
       if (pollingInterval) {
@@ -250,24 +221,20 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     };
   }, [pollingInterval]);
 
-  // Function to refresh the payment setup status
   const refreshPaymentSetupStatus = useCallback(async () => {
     if (!account) return;
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Ensure ethereum exists
       if (!window.ethereum) {
         throw new Error("Ethereum provider not found");
       }
 
-      // Create a provider
       const provider = new ethers.BrowserProvider(
         window.ethereum as ethers.Eip1193Provider
       );
 
-      // Fetch proof set status from the auth endpoint
       let fetchedProofSetReady = false;
       let fetchedProofSetInitiated = false;
       try {
@@ -283,7 +250,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           fetchedProofSetReady = statusData.proofSetReady;
           fetchedProofSetInitiated = statusData.proofSetInitiated;
 
-          // Start polling if proof set is initiated but not ready
           if (
             fetchedProofSetInitiated &&
             !fetchedProofSetReady &&
@@ -299,7 +265,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         );
       }
 
-      // Check if user has deposited funds into the Payments contract
       try {
         const accountStatus = await getAccountStatus(
           provider,
@@ -308,7 +273,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           account
         );
 
-        // Check if user has approved the PDP service operator
         const operatorStatus = await getOperatorApproval(
           provider,
           Constants.PAYMENT_PROXY_ADDRESS,
@@ -317,7 +281,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           Constants.PDP_SERVICE_ADDRESS
         );
 
-        // Check if deposited amount is at least the proof set fee
         const minDepositAmount = parseFloat(Constants.PROOF_SET_FEE);
         const isDeposited = parseFloat(accountStatus.funds) >= minDepositAmount;
 
@@ -348,7 +311,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           isOperatorApproved: operatorStatus.isApproved,
         });
       } catch (error) {
-        // If we can't get the account status, it likely means the user hasn't interacted with the contract yet
         console.error("Error fetching account status:", error);
         console.log("User hasn't interacted with the Payments contract yet");
         setPaymentStatus((prev) => ({
@@ -366,7 +328,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         }));
       }
 
-      // Create a token contract to check allowance
       const tokenContract = new ethers.Contract(
         Constants.USDFC_TOKEN_ADDRESS,
         [
@@ -380,8 +341,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         Constants.PAYMENT_PROXY_ADDRESS
       );
 
-      // Check if allowance is enough for the proof set fee
-      const minimumAllowance = ethers.parseUnits(Constants.PROOF_SET_FEE, 6); // Assume 6 decimals for USDFC
+      const minimumAllowance = ethers.parseUnits(Constants.PROOF_SET_FEE, 6);
       const isTokenApproved = tokenAllowance >= minimumAllowance;
 
       setPaymentStatus((prev) => ({
@@ -389,7 +349,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         isTokenApproved,
       }));
 
-      // Get operator approval details
       const paymentContract = new ethers.Contract(
         Constants.PAYMENT_PROXY_ADDRESS,
         [
@@ -430,13 +389,11 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [account, startPolling, pollingInterval]);
 
-  // Approve the Payments contract to spend tokens
   const approveToken = async (amount: string): Promise<boolean> => {
     if (!account) return false;
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
-    // Create transaction record
     const txId = addTransaction({
       type: "token_approval",
       txHash: "",
@@ -446,18 +403,15 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     });
 
     try {
-      // Ensure ethereum exists
       if (!window.ethereum) {
         throw new Error("Ethereum provider not found");
       }
 
-      // Create a provider and signer
       const provider = new ethers.BrowserProvider(
         window.ethereum as ethers.Eip1193Provider
       );
       const signer = await provider.getSigner();
 
-      // Approve spending
       const txResponse = await approveUSDFCSpending(
         signer,
         Constants.USDFC_TOKEN_ADDRESS,
@@ -465,7 +419,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         amount
       );
 
-      // Update transaction with hash
       updateTransaction(txId, {
         txHash: txResponse.hash,
         status: "success",
@@ -473,7 +426,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
       const now = Date.now();
 
-      // Update status and save the approval timestamp
       setPaymentStatus((prev) => ({
         ...prev,
         isTokenApproved: true,
@@ -485,7 +437,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     } catch (error) {
       console.error("Error approving token spending:", error);
 
-      // Update transaction with error
       updateTransaction(txId, {
         status: "failed",
         error: error instanceof Error ? error.message : "Unknown error",
@@ -500,22 +451,19 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  // Deposit funds into the Payments contract
   const depositFunds = async (amount: string): Promise<boolean> => {
     if (!account) return false;
 
     const now = Date.now();
     const lastApproval = paymentStatus.lastApprovalTimestamp;
-    const minDelay = 5000; // 5 seconds minimum delay
+    const minDelay = 5000;
     const timeSinceApproval = now - lastApproval;
 
-    // Check if we're trying to deposit too soon after approval
     if (lastApproval > 0 && timeSinceApproval < minDelay) {
       console.warn(
         `Deposit attempted too soon after approval (${timeSinceApproval}ms). Waiting for confirmation...`
       );
 
-      // Add a delay to wait for the approval to be confirmed
       const remainingTime = minDelay - timeSinceApproval;
 
       setPaymentStatus((prev) => ({
@@ -526,15 +474,13 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         )} seconds for approval confirmation...`,
       }));
 
-      // Wait for the remaining time
-      await new Promise((resolve) => setTimeout(resolve, remainingTime + 500)); // Add extra 500ms buffer
+      await new Promise((resolve) => setTimeout(resolve, remainingTime + 500));
 
       setPaymentStatus((prev) => ({ ...prev, error: null }));
     }
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
-    // Create transaction record
     const txId = addTransaction({
       type: "deposit",
       txHash: "",
@@ -544,18 +490,15 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     });
 
     try {
-      // Ensure ethereum exists
       if (!window.ethereum) {
         throw new Error("Ethereum provider not found");
       }
 
-      // Create a provider and signer
       const provider = new ethers.BrowserProvider(
         window.ethereum as ethers.Eip1193Provider
       );
       const signer = await provider.getSigner();
 
-      // Deposit funds
       const txResponse = await depositUSDFC(
         signer,
         Constants.PAYMENT_PROXY_ADDRESS,
@@ -563,20 +506,17 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         amount
       );
 
-      // Update transaction with hash
       updateTransaction(txId, {
         txHash: txResponse.hash,
         status: "success",
       });
 
-      // Update status and refresh account funds
       await refreshPaymentSetupStatus();
 
       return true;
     } catch (error) {
       console.error("Error depositing funds:", error);
 
-      // Update transaction with error
       updateTransaction(txId, {
         status: "failed",
         error: error instanceof Error ? error.message : "Unknown error",
@@ -591,24 +531,20 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  // Withdraw funds from the Payments contract
   const withdrawFunds = async (amount: string): Promise<boolean> => {
     if (!account) return false;
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Ensure ethereum exists
       if (!window.ethereum) {
         throw new Error("Ethereum provider not found");
       }
 
-      // Create a provider and signer
       const provider = new ethers.BrowserProvider(
         window.ethereum as ethers.Eip1193Provider
       );
 
-      // Create transaction record
       const txId = addTransaction({
         type: "withdraw",
         txHash: "",
@@ -619,7 +555,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
       const signer = await provider.getSigner();
 
-      // Withdraw funds
       const txResponse = await withdrawUSDFC(
         signer,
         Constants.PAYMENT_PROXY_ADDRESS,
@@ -627,20 +562,17 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         amount
       );
 
-      // Update transaction with hash
       updateTransaction(txId, {
         txHash: txResponse.hash,
         status: "success",
       });
 
-      // Update status and refresh account funds
       await refreshPaymentSetupStatus();
 
       return true;
     } catch (error) {
       console.error("Error withdrawing funds:", error);
 
-      // Update transaction with error if it was created
       if (error instanceof Error) {
         setPaymentStatus((prev) => ({
           ...prev,
@@ -658,7 +590,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  // Approve the PDP service operator
   const approveServiceOperator = async (
     rateAllowance: string,
     lockupAllowance: string
@@ -667,7 +598,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
     setPaymentStatus((prev) => ({ ...prev, isLoading: true, error: null }));
 
-    // Create transaction record
     const txId = addTransaction({
       type: "operator_approval",
       txHash: "",
@@ -677,18 +607,15 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     });
 
     try {
-      // Ensure ethereum exists
       if (!window.ethereum) {
         throw new Error("Ethereum provider not found");
       }
 
-      // Create a provider and signer
       const provider = new ethers.BrowserProvider(
         window.ethereum as ethers.Eip1193Provider
       );
       const signer = await provider.getSigner();
 
-      // Approve operator
       const txResponse = await approveOperator(
         signer,
         Constants.PAYMENT_PROXY_ADDRESS,
@@ -698,13 +625,11 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         lockupAllowance
       );
 
-      // Update transaction with hash
       updateTransaction(txId, {
         txHash: txResponse.hash,
         status: "success",
       });
 
-      // Update status
       setPaymentStatus((prev) => ({
         ...prev,
         isOperatorApproved: true,
@@ -715,7 +640,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     } catch (error) {
       console.error("Error approving service operator:", error);
 
-      // Update transaction with error
       updateTransaction(txId, {
         status: "failed",
         error: error instanceof Error ? error.message : "Unknown error",
@@ -730,7 +654,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  // Function to initiate proof set creation
   const initiateProofSetCreation = async (): Promise<boolean> => {
     if (!account) return false;
 
@@ -754,7 +677,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         throw new Error(errorData.error || "Failed to create proof set");
       }
 
-      // Start polling for status updates
       startPolling();
 
       setPaymentStatus((prev) => ({
@@ -779,7 +701,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  // Check balance and payment setup status when account changes
   useEffect(() => {
     refreshBalance();
     refreshPaymentSetupStatus();
@@ -805,7 +726,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
   );
 };
 
-// Hook to use the payment context
 export function usePayment() {
   const context = useContext(PaymentContext);
   if (context === undefined) {

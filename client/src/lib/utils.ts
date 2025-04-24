@@ -26,22 +26,18 @@ export const getFilePreviewType = (
   | "generic" => {
   const extension = filename.split(".").pop()?.toLowerCase() || "";
 
-  // Images
   if (["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"].includes(extension)) {
     return "image";
   }
 
-  // Documents
   if (["pdf", "doc", "docx", "txt", "rtf", "odt"].includes(extension)) {
     return "document";
   }
 
-  // Spreadsheets
   if (["xls", "xlsx", "csv", "ods"].includes(extension)) {
     return "spreadsheet";
   }
 
-  // Code files
   if (
     [
       "js",
@@ -56,27 +52,37 @@ export const getFilePreviewType = (
       "cpp",
       "rb",
       "php",
+      "go",
+      "swift",
+      "kotlin",
+      "scala",
+      "rust",
+      "haskell",
+      "erlang",
+      "elixir",
+      "dart",
+      "typescript",
+      "javascript",
+      "ruby",
+      "python",
+      "csharp",
     ].includes(extension)
   ) {
     return "code";
   }
 
-  // Archives
   if (["zip", "rar", "tar", "gz", "7z"].includes(extension)) {
     return "archive";
   }
 
-  // Video files
   if (["mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"].includes(extension)) {
     return "video";
   }
 
-  // Audio files
   if (["mp3", "wav", "ogg", "flac", "aac", "m4a"].includes(extension)) {
     return "audio";
   }
 
-  // Default/generic
   return "generic";
 };
 
@@ -86,7 +92,6 @@ export const getFilePreviewType = (
  * @returns Full URL to the transaction on the block explorer
  */
 export function getExplorerUrl(txHash: string): string {
-  // Get network from environment or default to Calibration
   const network = process.env.NEXT_PUBLIC_NETWORK || "calibration";
 
   switch (network.toLowerCase()) {
@@ -112,7 +117,6 @@ export const formatCurrency = (
 ): string => {
   const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
 
-  // For very large or very small numbers, use scientific notation
   if (
     Math.abs(numAmount) >= 1e15 ||
     (Math.abs(numAmount) > 0 && Math.abs(numAmount) < 0.001)
@@ -120,10 +124,8 @@ export const formatCurrency = (
     return numAmount.toExponential(4);
   }
 
-  // Format with the specified number of decimal places
   const formatted = numAmount.toFixed(decimals);
 
-  // Optionally trim trailing zeros after the decimal point
   return trimZeros ? formatted.replace(/\.?0+$/, "") : formatted;
 };
 
@@ -137,19 +139,14 @@ export const formatCurrencyPrecise = (
   amount: string | number,
   maxDecimals: number = 18
 ): string => {
-  // Convert to string if it's a number
   const strAmount = typeof amount === "string" ? amount : amount.toString();
 
-  // Parse the string to handle potential scientific notation
   const numAmount = parseFloat(strAmount);
 
-  // Format the number with maximum precision
   let formatted = numAmount.toFixed(maxDecimals);
 
-  // Remove trailing zeros after the decimal point, but keep at least one digit after decimal
   formatted = formatted.replace(/\.?0+$/, "");
 
-  // If we accidentally removed the entire decimal part, add .0
   if (!formatted.includes(".")) {
     formatted = `${formatted}.0`;
   }

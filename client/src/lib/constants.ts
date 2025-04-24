@@ -1,8 +1,6 @@
-// API endpoints
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8008";
 
-// Contract addresses (Calibnet)
 export const USDFC_TOKEN_ADDRESS =
   process.env.NEXT_PUBLIC_USDFC_TOKEN_ADDRESS ||
   "0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0";
@@ -13,11 +11,9 @@ export const PDP_SERVICE_ADDRESS =
   process.env.NEXT_PUBLIC_PDP_SERVICE_ADDRESS ||
   "0xdbE4bEF3F313dAC36257b0621e4a3BC8Dc9679a1";
 
-// Payment constants
-export const MINIMUM_USDFC_BALANCE = "10"; // Minimum required balance in USDFC
+export const MINIMUM_USDFC_BALANCE = "10";
 export const PROOF_SET_FEE = "0.1";
 
-// Upload status colors
 export const statusColors = {
   uploading: "bg-blue-100 text-blue-800",
   processing: "bg-blue-100 text-blue-800",
@@ -26,7 +22,6 @@ export const statusColors = {
   cancelled: "bg-gray-100 text-gray-800",
 } as const;
 
-// Upload status text mapping
 export const getStatusText = (status: string): string => {
   const statusMap: Record<string, string> = {
     uploading: "Uploading...",
