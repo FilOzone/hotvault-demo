@@ -240,27 +240,62 @@ export const GlobalUploadProgress = () => {
       return;
     }
 
+    // Immediately clear progress if progress is 100%
+    if (uploadProgress.progress === 100 || uploadProgress.progress === 100.0) {
+      console.log(
+        "[GlobalUploadProgress] Progress reached 100%, forcing immediate dismissal"
+      );
+      // Dispatch the completion event immediately
+      try {
+        window.dispatchEvent(
+          new CustomEvent(UPLOAD_COMPLETED_EVENT, {
+            detail: {
+              cid: uploadProgress.cid,
+              filename: uploadProgress.filename,
+              serviceProofSetId: uploadProgress.serviceProofSetId,
+            },
+          })
+        );
+      } catch (err) {
+        console.error("[GlobalUploadProgress] Error dispatching event:", err);
+      }
+
+      // Force clear immediately - no delay
+      clearUploadProgress();
+      setHasStalled(false);
+      return;
+    }
+
     // If upload is complete/successful, dispatch event to refresh file list
     if (
       uploadProgress.status === "complete" ||
       uploadProgress.status === "success"
     ) {
-      // Dispatch a custom event that can be listened to by the file list component
-      window.dispatchEvent(
-        new CustomEvent(UPLOAD_COMPLETED_EVENT, {
-          detail: {
-            cid: uploadProgress.cid,
-            filename: uploadProgress.filename,
-            serviceProofSetId: uploadProgress.serviceProofSetId,
-          },
-        })
+      console.log(
+        "[GlobalUploadProgress] Upload complete, dispatching event immediately"
       );
 
-      // Set timer to clear the progress notification
+      // Dispatch the event IMMEDIATELY to refresh the file list
+      try {
+        window.dispatchEvent(
+          new CustomEvent(UPLOAD_COMPLETED_EVENT, {
+            detail: {
+              cid: uploadProgress.cid,
+              filename: uploadProgress.filename,
+              serviceProofSetId: uploadProgress.serviceProofSetId,
+            },
+          })
+        );
+      } catch (err) {
+        console.error("[GlobalUploadProgress] Error dispatching event:", err);
+      }
+
+      // Set timer to clear the progress notification - use a SHORTER timeout
       const timer = setTimeout(() => {
+        console.log("[GlobalUploadProgress] Clearing upload progress");
         clearUploadProgress();
         setHasStalled(false);
-      }, 5000); // Dismiss after 5 seconds
+      }, 500); // Reduced from 1500 to 500 (0.5 seconds) - much faster dismissal
 
       return () => clearTimeout(timer);
     }
@@ -268,6 +303,7 @@ export const GlobalUploadProgress = () => {
     // Handle error state
     if (uploadProgress.status === "error") {
       const timer = setTimeout(() => {
+        console.log("[GlobalUploadProgress] Clearing error state");
         clearUploadProgress();
         setHasStalled(false);
       }, 5000); // Dismiss after 5 seconds

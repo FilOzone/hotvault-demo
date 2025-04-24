@@ -150,6 +150,32 @@ export const useUpload = (onSuccess?: () => void) => {
         const data = await response.json();
         console.log("[useUpload] Got status update:", data);
 
+        // If status is complete/success AND progress is 100, immediately clear progress
+        if (
+          (data.status === "complete" || data.status === "success") &&
+          data.progress === 100
+        ) {
+          console.log(
+            "[useUpload] Upload complete with 100% progress. Immediately cleaning up."
+          );
+
+          // Stop polling immediately
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+
+          // Call success callback first before clearing
+          onSuccess?.();
+
+          // Wait 100ms to ensure event listeners catch the update, then clear
+          setTimeout(() => {
+            clearUploadProgress();
+          }, 100);
+
+          return;
+        }
+
         setUploadProgress((prev) => ({
           ...prev,
           ...data,
@@ -166,12 +192,9 @@ export const useUpload = (onSuccess?: () => void) => {
 
           if (data.status === "complete") {
             console.log("[useUpload] Upload complete!");
-            // Keep the success message for a few seconds then clear it
-            setTimeout(() => {
-              clearUploadProgress();
-              // Call the onSuccess callback if provided
-              onSuccess?.();
-            }, 3000);
+            // Call the onSuccess callback immediately instead of waiting
+            onSuccess?.();
+            // Let GlobalUploadProgress handle the clearUploadProgress call
           }
         } else {
           // Continue polling

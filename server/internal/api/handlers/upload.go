@@ -1113,7 +1113,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	currentProgress = 100
 
 	updateStatus(UploadProgress{
-		Status:     currentStage,
+		Status:     "complete",
 		Progress:   currentProgress,
 		Message:    "Upload completed successfully",
 		CID:        compoundCID,

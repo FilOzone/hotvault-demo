@@ -291,16 +291,42 @@ export const FilesTab = ({
     loadData();
 
     // Add event listener for upload completion
-    const handleUploadCompleted = () => {
+    const handleUploadCompleted = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
       console.log(
-        "[FilesTab] Detected upload completion, refreshing file list"
+        "[FilesTab] Detected upload completion, refreshing file list",
+        detail
       );
-      fetchPieces().catch((error: Error) => {
-        console.error(
-          "[FilesTab] Error refreshing file list after upload:",
-          error
-        );
-      });
+
+      // Ensure we always have the latest file list
+      setIsLoading(true);
+
+      // Refresh pieces immediately and after a delay to catch any backend delays
+      const refreshNow = () => {
+        fetchPieces()
+          .then(() => {
+            console.log(
+              "[FilesTab] File list refreshed successfully after upload"
+            );
+            setIsLoading(false);
+          })
+          .catch((error: Error) => {
+            console.error(
+              "[FilesTab] Error refreshing file list after upload:",
+              error
+            );
+            setIsLoading(false);
+          });
+      };
+
+      // Immediate refresh
+      refreshNow();
+
+      // Delayed refresh (in case backend processing takes time)
+      setTimeout(refreshNow, 500);
+
+      // Additional refresh after a longer delay
+      setTimeout(refreshNow, 2000);
     };
 
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
