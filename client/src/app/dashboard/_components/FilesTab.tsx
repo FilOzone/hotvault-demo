@@ -1282,14 +1282,14 @@ export const FilesTab = ({
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={handleSubmitImage}
-                disabled={isUploadDisabled()}
+                disabled={isUploadDisabled() || !selectedImage}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors duration-200 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isUploadDisabled()
-                  ? "Upload Disabled (Proof Set Creating)"
+                  ? "Upload Disabled (Create Vault First)"
                   : selectedImage
                   ? "Upload Selected File"
-                  : "Upload File"}
+                  : "Select a File First"}
               </Button>
             </motion.div>
           </div>
@@ -1509,24 +1509,12 @@ export const FilesTab = ({
                       setPreviewUrl(null);
                       setFileSizeGB(0);
                     }}
-                    className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors leading-none shadow-sm"
+                    className="absolute top-2 right-2 p-1.5 bg-red-200 text-red-700 rounded-full hover:bg-red-300 transition-colors leading-none shadow-sm"
                     aria-label="Remove file"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                   >
-                    <svg
-                      className="w-3 h-3"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={3}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
+                    <Trash2 className="w-4 h-4" />
                   </motion.button>
                 </div>
                 <div className="mt-4 text-sm text-gray-600 max-w-md truncate">
