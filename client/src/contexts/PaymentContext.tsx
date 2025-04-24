@@ -457,10 +457,17 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  const updateBalanceAndNotify = (newBalance: string) => {
+  const updateBalanceAndNotify = (updates: {
+    newBalance: string;
+    newLockedFunds?: string;
+  }) => {
     setPaymentStatus((prev) => ({
       ...prev,
-      accountFunds: newBalance,
+      accountFunds: updates.newBalance,
+      lockedFunds: {
+        ...prev.lockedFunds,
+        current: updates.newLockedFunds || prev.lockedFunds.current,
+      },
       isLoading: false,
       error: null,
     }));
@@ -468,7 +475,10 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     // Dispatch event to notify all components
     window.dispatchEvent(
       new CustomEvent(BALANCE_UPDATED_EVENT, {
-        detail: { newBalance },
+        detail: {
+          newBalance: updates.newBalance,
+          newLockedFunds: updates.newLockedFunds,
+        },
       })
     );
   };
@@ -537,7 +547,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       const newBalance = (
         parseFloat(paymentStatus.accountFunds) + parseFloat(amount)
       ).toString();
-      updateBalanceAndNotify(newBalance);
+      updateBalanceAndNotify({ newBalance });
 
       // Refresh in background
       await refreshPaymentSetupStatus();
@@ -600,7 +610,11 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       const newBalance = (
         parseFloat(paymentStatus.accountFunds) - parseFloat(amount)
       ).toString();
-      updateBalanceAndNotify(newBalance);
+      const newLockedFunds = paymentStatus.lockedFunds.current; // Locked funds remain unchanged on withdrawal
+      updateBalanceAndNotify({
+        newBalance,
+        newLockedFunds,
+      });
 
       // Refresh in background
       await Promise.all([refreshBalance(), refreshPaymentSetupStatus()]);

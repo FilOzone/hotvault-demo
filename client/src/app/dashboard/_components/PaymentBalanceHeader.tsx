@@ -57,8 +57,9 @@ export const PaymentBalanceHeader = () => {
 
     const handleBalanceUpdate = (event: CustomEvent) => {
       console.log("[PaymentBalanceHeader] Balance updated:", event.detail);
-      // The balance is already updated in the context, just trigger a re-render
-      setShowDetails(false); // Close the dropdown if open
+      // The balance and locked funds are already updated in the context
+      // Just trigger a re-render and close dropdown if open
+      setShowDetails(false);
     };
 
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadComplete);

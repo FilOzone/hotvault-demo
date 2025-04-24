@@ -118,15 +118,6 @@ export const TokenBalanceCard = () => {
         toast.success(`Successfully withdrew ${withdrawAmount} USDFC`);
         setWithdrawAmount("");
         setShowWithdraw(false);
-
-        // Update the UI immediately with the new balance
-        const newAvailableFunds = Math.max(
-          0,
-          parseFloat(paymentStatus.accountFunds) - parseFloat(withdrawAmount)
-        ).toString();
-
-        // Force a re-render with the new balance
-        paymentStatus.accountFunds = newAvailableFunds;
       } else {
         if (paymentStatus.error) {
           console.error("Withdrawal failed with error:", paymentStatus.error);
