@@ -6,19 +6,6 @@ import { formatCurrency, formatCurrencyPrecise } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { ProgressBar } from "@/components/ui/progress-bar";
-import { useEthersSigner } from "@/lib/hooks/useEthersSigner";
-import useWallet from "@/lib/hooks/useWallet";
-import { CHAIN_MAPPING, TOKEN_MAPPING } from "@/lib/constants";
-import { formatBigInt } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 
 export const TokenBalanceCard = () => {
   const { paymentStatus, depositFunds, approveToken, withdrawFunds } =
@@ -30,9 +17,6 @@ export const TokenBalanceCard = () => {
   const [allowanceAmount, setAllowanceAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [withdrawAmountDisplay, setWithdrawAmountDisplay] = useState("");
-  const [isLoadingBalance, setIsLoadingBalance] = useState(true);
-  const [isLoadingLockedFunds, setIsLoadingLockedFunds] = useState(true);
 
   const handleAddFunds = async () => {
     if (!depositAmount || parseFloat(depositAmount) <= 0) {

@@ -126,7 +126,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                 proofSetId?: string;
               };
               resolve(data);
-            } catch (_error) {
+            } catch {
               reject(new Error("Invalid JSON response"));
             }
           } else {
@@ -135,7 +135,7 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
               const errorData = JSON.parse(xhr.responseText);
               errorMessage =
                 errorData.message || errorData.error || errorMessage;
-            } catch (_e) {
+            } catch {
               errorMessage = xhr.responseText || errorMessage;
             }
             reject(new Error(errorMessage));
@@ -166,7 +166,14 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       });
 
       // Wait for upload to complete
-      const data = await uploadPromise;
+      const data = (await uploadPromise) as {
+        status: string;
+        progress: number;
+        message?: string;
+        cid?: string;
+        jobId?: string;
+        proofSetId?: string;
+      };
 
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
@@ -683,8 +690,8 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
                     </Typography>
                   )}
                   <Typography variant="small" className="text-gray-400 mt-3">
-                    For files larger than 100MB, use the "Large File Upload"
-                    option
+                    For files larger than 100MB, use the &quot;Large File
+                    Upload&quot; option
                   </Typography>
                 </motion.div>
               )}
