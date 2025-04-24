@@ -114,6 +114,7 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
   useEffect(() => {
     if (paymentStatus.proofSetReady) {
       setCurrentStep(PaymentStep.COMPLETE);
+      setIsProofSetClicked(false);
     } else if (paymentStatus.isCreatingProofSet) {
       setCurrentStep(PaymentStep.CREATE_PROOF_SET);
     } else if (paymentStatus.isOperatorApproved) {
