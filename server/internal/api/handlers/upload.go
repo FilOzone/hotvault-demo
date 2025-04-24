@@ -646,13 +646,13 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		log.WithField("attempt", verifyAttempt).
 			WithField("maxRetries", verifyMaxRetries).
 			WithField("proofSetID", proofSet.ProofSetID).
-			Info(fmt.Sprintf("Verifying proof set (attempt %d/%d)", verifyAttempt, verifyMaxRetries))
+			Info("Verifying proof set")
 
 		if verifyAttempt > 1 {
 			updateStatus(UploadProgress{
 				Status:     currentStage,
 				Progress:   currentProgress,
-				Message:    fmt.Sprintf("Verifying proof set (attempt %d/%d)...", verifyAttempt, verifyMaxRetries),
+				Message:    "Verifying proof set",
 				CID:        compoundCID,
 				ProofSetID: proofSet.ProofSetID,
 			})
