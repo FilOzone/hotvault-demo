@@ -129,7 +129,7 @@ export default function Home() {
                       Get Started
                     </Button>
                     <a
-                      href="https://calibration.pdp-explorer.eng.filoz.org"
+                      href=" http://explore-pdp.xyz:5173"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 transition-colors"

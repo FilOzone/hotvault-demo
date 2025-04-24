@@ -100,7 +100,7 @@ export const UploadProgress = ({
                 <div className="text-xs mt-2 flex items-center">
                   <span className="mr-2">Proof Set ID:</span>
                   <a
-                    href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${uploadProgress.serviceProofSetId}`}
+                    href={` http://explore-pdp.xyz:5173/proofsets/${uploadProgress.serviceProofSetId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:text-blue-800 underline flex items-center"

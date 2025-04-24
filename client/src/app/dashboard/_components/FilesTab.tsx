@@ -1266,7 +1266,7 @@ export const FilesTab = ({
                 whileTap={{ scale: 0.98 }}
               >
                 <a
-                  href={`https://calibration.pdp-explorer.eng.filoz.org/proofsets/${userProofSetId}`}
+                  href={` http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
@@ -2015,7 +2015,7 @@ export const FilesTab = ({
                     className="gap-2 justify-start bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
                     onClick={() =>
                       window.open(
-                        `https://calibration.pdp-explorer.eng.filoz.org/proofsets/${selectedProof?.serviceProofSetId}`,
+                        ` http://explore-pdp.xyz:5173/proofsets/${selectedProof?.serviceProofSetId}`,
                         "_blank"
                       )
                     }

@@ -179,7 +179,7 @@ export const ProofDetailsDialog: React.FC<ProofDetailsDialogProps> = ({
                 className="gap-2 justify-start bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
                 onClick={() =>
                   window.open(
-                    `https://calibration.pdp-explorer.eng.filoz.org/proofsets/${selectedProof?.serviceProofSetId}`,
+                    ` http://explore-pdp.xyz:5173/proofsets/${selectedProof?.serviceProofSetId}`,
                     "_blank"
                   )
                 }
