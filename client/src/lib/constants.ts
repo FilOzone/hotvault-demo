@@ -13,6 +13,8 @@ export const PDP_SERVICE_ADDRESS =
 
 export const MINIMUM_USDFC_BALANCE = "10";
 export const PROOF_SET_FEE = "0.1";
+export const STORAGE_RATE_PER_GB = 2; // 2 USDFC per GB per month
+export const LOCK_PERIOD_DAYS = 10; // 10 days lock period
 
 export const statusColors = {
   uploading: "bg-blue-100 text-blue-800",
