@@ -23,10 +23,8 @@ func main() {
 	log.Info("Loading configuration...")
 	cfg := config.LoadConfig()
 
-	// Apply logging configuration
 	loggingConfig := logger.GetLoggingConfig()
 
-	// Configure Gin mode based on logging settings
 	if loggingConfig.DisableGINLogging || loggingConfig.ProductionMode {
 		gin.SetMode(gin.ReleaseMode)
 	} else if ginMode := os.Getenv("GIN_MODE"); ginMode != "" {

@@ -15,10 +15,8 @@ func JWTAuth(secret string) gin.HandlerFunc {
 		var tokenString string
 		var err error
 
-		// Try to get the token from the cookie first
 		tokenString, err = c.Cookie("jwt_token")
 
-		// If no cookie, check the Authorization header
 		if err != nil {
 			authHeader := c.GetHeader("Authorization")
 			if authHeader == "" {
@@ -37,7 +35,6 @@ func JWTAuth(secret string) gin.HandlerFunc {
 			tokenString = parts[1]
 		}
 
-		// Parse and validate the token
 		claims := &models.JWTClaims{}
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -52,7 +49,6 @@ func JWTAuth(secret string) gin.HandlerFunc {
 			return
 		}
 
-		// Set the user context
 		c.Set("userID", claims.UserID)
 		c.Set("walletAddress", claims.WalletAddress)
 

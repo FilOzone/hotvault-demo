@@ -92,14 +92,14 @@ const ChunkedUploader: React.FC<ChunkedUploaderProps> = ({
   };
 
   const handleFileSelect = (selectedFile: File) => {
-    if (selectedFile.size > maxFileSize) {
-      toast.error(
-        `File is too large. Maximum size is ${formatFileSize(
-          maxFileSize
-        )}. Selected file size: ${formatFileSize(selectedFile.size)}`
-      );
-      return;
-    }
+    // if (selectedFile.size > maxFileSize) {
+    //   toast.error(
+    //     `File is too large. Maximum size is ${formatFileSize(
+    //       maxFileSize
+    //     )}. Selected file size: ${formatFileSize(selectedFile.size)}`
+    //   );
+    //   return;
+    // }
 
     setFile(selectedFile);
 

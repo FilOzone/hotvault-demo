@@ -394,15 +394,15 @@ export const FileUploadSection: React.FC<FileUploadProps> = ({
       return;
     }
 
-    const maxFileSize = 100 * 1024 * 1024;
-    if (file.size > maxFileSize) {
-      toast.error(
-        `File is too large. Maximum size is 100MB. Current size: ${formatFileSize(
-          file.size
-        )}`
-      );
-      return;
-    }
+    // const maxFileSize = 100 * 1024 * 1024;
+    // if (file.size > maxFileSize) {
+    //   toast.error(
+    //     `File is too large. Maximum size is 100MB. Current size: ${formatFileSize(
+    //       file.size
+    //     )}`
+    //   );
+    //   return;
+    // }
 
     setSelectedImage(file);
     setFileSizeGB(file.size / (1024 * 1024 * 1024));

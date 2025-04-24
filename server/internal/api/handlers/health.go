@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// HealthResponse represents the health check response
 type HealthResponse struct {
 	Status string `json:"status" example:"ok"`
 }

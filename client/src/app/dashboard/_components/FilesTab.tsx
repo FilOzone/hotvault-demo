@@ -372,15 +372,15 @@ export const FilesTab = ({
     const file = acceptedFiles[0];
 
     // Check file size (99MB limit)
-    const maxFileSize = 99 * 1024 * 1024; // 99MB in bytes
-    if (file.size > maxFileSize) {
-      toast.error(
-        `File is too large. Maximum size is 99MB. Current size: ${formatFileSize(
-          file.size
-        )}`
-      );
-      return;
-    }
+    // const maxFileSize = 99 * 1024 * 1024; // 99MB in bytes
+    // if (file.size > maxFileSize) {
+    //   toast.error(
+    //     `File is too large. Maximum size is 99MB. Current size: ${formatFileSize(
+    //       file.size
+    //     )}`
+    //   );
+    //   return;
+    // }
 
     setSelectedImage(file);
 
@@ -1557,7 +1557,7 @@ export const FilesTab = ({
                   {getDropzoneMessage()}
                 </Typography>
                 <Typography variant="small" className="text-gray-400">
-                  Accepts any file type up to 99MB
+                  Accepts any file type
                 </Typography>
               </motion.div>
             )}

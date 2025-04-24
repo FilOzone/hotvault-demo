@@ -21,7 +21,6 @@ type RemoveRootRequest struct {
 	RootID      string `json:"rootId"`
 }
 
-// ProofSet represents the structure returned by get-proof-set command
 type ProofSet struct {
 	ID        int      `json:"id"`
 	ServiceID string   `json:"service_id"`
@@ -29,7 +28,6 @@ type ProofSet struct {
 	Roots     []Root   `json:"roots"`
 }
 
-// Root represents an individual root in the proof set
 type Root struct {
 	ID       string `json:"id"`
 	CID      string `json:"cid"`

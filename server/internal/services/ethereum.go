@@ -12,14 +12,12 @@ import (
 	"github.com/hotvault/backend/pkg/logger"
 )
 
-// EthereumService handles interactions with Ethereum blockchain
 type EthereumService struct {
 	config config.EthereumConfig
 	client *ethclient.Client
 	logger logger.Logger
 }
 
-// NewEthereumService creates a new Ethereum service
 func NewEthereumService(config config.EthereumConfig) *EthereumService {
 	logger := logger.NewLogger()
 	client, err := ethclient.Dial(config.RPCURL)
@@ -36,7 +34,6 @@ func NewEthereumService(config config.EthereumConfig) *EthereumService {
 }
 
 func (s *EthereumService) VerifySignature(address, message, signature string) (bool, error) {
-	// Use the full message as provided
 	prefix := "\x19Ethereum Signed Message:\n"
 	prefixedMessage := prefix + strconv.Itoa(len(message)) + message
 

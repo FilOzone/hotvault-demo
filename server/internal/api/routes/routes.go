@@ -1,4 +1,3 @@
-// Package routes contains the API route definitions
 package routes
 
 import (
@@ -22,8 +21,7 @@ import (
 func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	handlers.Initialize(db, cfg)
 
-	// Set a larger body size limit (100MB)
-	router.MaxMultipartMemory = 100 << 20 // 100 MB
+	router.MaxMultipartMemory = 1000 << 20 // 1000 MB
 
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3000", "https://hotvault-demo-app.yourdomain.com"},
@@ -57,7 +55,6 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 			protected.GET("/upload/status/:jobId", handlers.GetUploadStatus)
 			protected.GET("/download/:cid", handlers.DownloadFile)
 
-			// Add chunked upload endpoints
 			chunkedUpload := protected.Group("/chunked-upload")
 			{
 				chunkedUpload.POST("/init", handlers.InitChunkedUpload)
@@ -75,7 +72,6 @@ func SetupRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 				pieces.GET("/proofs", handlers.GetPieceProofs)
 			}
 
-			// New route for manually creating a proof set
 			protected.POST("/proof-set/create", authHandler.CreateProofSet)
 
 			roots := protected.Group("/roots")

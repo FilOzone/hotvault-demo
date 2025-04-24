@@ -41,7 +41,6 @@ func init() {
 	log = logger.NewLogger()
 }
 
-// Helper function to format file size in human-readable format
 func formatFileSize(size int64) string {
 	const unit = 1024
 	if size < unit {
@@ -97,8 +96,6 @@ func UploadFile(c *gin.Context) {
 		})
 		return
 	}
-
-	// Limit file size to 10GB
 	const MAX_UPLOAD_SIZE = 10 * 1024 * 1024 * 1024
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MAX_UPLOAD_SIZE)
 
@@ -120,10 +117,8 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Generate a unique job ID for tracking this upload
 	jobID := uuid.New().String()
 
-	// Create initial job status
 	uploadJobsLock.Lock()
 	uploadJobs[jobID] = UploadProgress{
 		Status:    "uploading",
@@ -135,7 +130,6 @@ func UploadFile(c *gin.Context) {
 	}
 	uploadJobsLock.Unlock()
 
-	// Make sure the pdptool path is valid
 	pdptoolPath := cfg.PdptoolPath
 	if _, err := os.Stat(pdptoolPath); os.IsNotExist(err) {
 		log.WithField("pdptoolPath", pdptoolPath).Error("PDPTool executable not found")
@@ -153,7 +147,6 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Start processing in a goroutine to avoid blocking
 	go processUpload(jobID, file, userID.(uint), pdptoolPath)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -211,28 +204,23 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	currentStage := "starting"
 	currentProgress := 0
 
-	// Weight for progress calculation
 	prepareWeight := 20
 
-	// Calculate delays and timeouts based on file size
 	fileSizeMB := float64(file.Size) / (1024 * 1024)
 
-	// Base delay with scaling for file size
 	baseDelay := time.Duration(8+int(fileSizeMB/10)) * time.Second
 	if baseDelay > 60*time.Second {
-		baseDelay = 60 * time.Second // Cap at 60 seconds
+		baseDelay = 60 * time.Second
 	}
 
-	// Command timeouts based on file size
 	prepareTimeout := time.Duration(60+int(fileSizeMB*2)) * time.Second
 	if prepareTimeout > 3600*time.Second {
-		prepareTimeout = 3600 * time.Second // Cap at 1 hour
+		prepareTimeout = 3600 * time.Second
 	}
 
-	// We still calculate uploadTimeout for other parts of the code
 	uploadTimeout := time.Duration(60+int(fileSizeMB*3)) * time.Second
 	if uploadTimeout > 7200*time.Second {
-		uploadTimeout = 7200 * time.Second // Cap at 2 hours
+		uploadTimeout = 7200 * time.Second
 	}
 
 	log.WithField("fileSize", file.Size).
@@ -242,7 +230,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("uploadTimeout", uploadTimeout).
 		Info("Calculated timeouts for file processing")
 
-	// Helper function to wait with jitter
 	waitWithJitter := func(baseDelay time.Duration) {
 		jitter := time.Duration(rand.Int63n(int64(baseDelay) / 2))
 		delay := baseDelay + jitter
@@ -258,7 +245,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			Message:  "Creating service secret",
 		})
 
-		// Add delay before create-service-secret
 		waitWithJitter(baseDelay)
 
 		createSecretCmd := exec.Command(pdptoolPath, "create-service-secret")
@@ -278,7 +264,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		currentProgress += 5
 	}
 
-	// Check if we have a pre-existing file path from chunked upload
 	uploadPathsLock.RLock()
 	existingFilePath, hasExistingPath := filePaths[jobID]
 	uploadPathsLock.RUnlock()
@@ -288,7 +273,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		tempFilePath = existingFilePath
 		log.WithField("path", tempFilePath).Info("Using existing file path from chunked upload")
 	} else {
-		// Create a temporary directory for this upload
 		tempDir, err := os.MkdirTemp("", fmt.Sprintf("upload-%s-", jobID))
 		if err != nil {
 			log.WithField("error", err.Error()).Error("Failed to create temporary directory")
@@ -300,11 +284,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			return
 		}
 
-		// Create a more robust file path for the temp file
 		originalFilename := filepath.Base(file.Filename)
 		tempFilePath = filepath.Join(tempDir, originalFilename)
 
-		// Open the uploaded file
 		src, err := file.Open()
 		if err != nil {
 			log.WithField("error", err.Error()).
@@ -319,7 +301,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		}
 		defer src.Close()
 
-		// Create the destination file
 		dst, err := os.Create(tempFilePath)
 		if err != nil {
 			log.WithField("error", err.Error()).
@@ -333,11 +314,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			return
 		}
 
-		// Copy the file data
 		written, err := io.Copy(dst, src)
-		dst.Close() // Close immediately after copying
+		dst.Close()
 
-		// Verify file was written correctly
 		if err != nil {
 			log.WithField("error", err.Error()).
 				WithField("path", tempFilePath).
@@ -347,7 +326,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				Error:   "Failed to save uploaded file",
 				Message: err.Error(),
 			})
-			// Clean up the temp directory on error
 			os.RemoveAll(tempDir)
 			return
 		}
@@ -362,7 +340,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				Error:   "Failed to save complete file",
 				Message: err.Error(),
 			})
-			// Clean up the temp directory on error
 			os.RemoveAll(tempDir)
 			return
 		}
@@ -372,7 +349,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			Info("File saved to temporary location")
 	}
 
-	// Verify the file exists and is accessible
 	if _, err := os.Stat(tempFilePath); os.IsNotExist(err) {
 		log.WithField("error", err.Error()).
 			WithField("path", tempFilePath).
@@ -394,7 +370,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  "Preparing piece",
 	})
 
-	// Add delay before prepare-piece
 	waitWithJitter(baseDelay)
 
 	var prepareOutput bytes.Buffer
@@ -404,11 +379,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	prepareCmd.Stderr = &prepareError
 	prepareCmd.Dir = filepath.Dir(pdptoolPath)
 
-	// Create a context with timeout for prepare-piece based on file size
 	prepareCtx, prepareCancel := context.WithTimeout(context.Background(), prepareTimeout)
 	defer prepareCancel()
 
-	// Use the context for the command
 	prepareCmdWithTimeout := exec.CommandContext(prepareCtx, pdptoolPath, "prepare-piece", tempFilePath)
 	prepareCmdWithTimeout.Stdout = &prepareOutput
 	prepareCmdWithTimeout.Stderr = &prepareError
@@ -465,7 +438,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
 	})
 
-	// Begin upload
 	currentStage = "uploading"
 	updateStatus(UploadProgress{
 		Status:   currentStage,
@@ -473,13 +445,11 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
 	})
 
-	// Add delay before upload
 	waitWithJitter(baseDelay)
 
 	var uploadOutput bytes.Buffer
 	var uploadError bytes.Buffer
 
-	// Build the command arguments
 	uploadArgs := []string{
 		"upload-file",
 		"--service-url", cfg.ServiceURL,
@@ -487,7 +457,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		tempFilePath,
 	}
 
-	// Create the command without timeout
 	uploadCmd := exec.Command(pdptoolPath, uploadArgs...)
 	uploadCmd.Stdout = &uploadOutput
 	uploadCmd.Stderr = &uploadError
@@ -499,14 +468,12 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		WithField("timeout", "none").
 		Info("Executing pdptool upload-file command without timeout")
 
-	// Update progress while uploading
 	updateStatus(UploadProgress{
 		Status:   currentStage,
 		Progress: currentProgress,
 		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
 	})
 
-	// Run command directly without a timeout
 	uploadRunErr := uploadCmd.Run()
 	if uploadRunErr != nil {
 		stderrStr := uploadError.String()
@@ -602,8 +569,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		CID:      compoundCID,
 	})
 
-	// Increased initial delay before attempting to add root
-	preAddRootDelay := 10 * time.Second // Increased from 10s to 30s
+	preAddRootDelay := 10 * time.Second
 	log.Info(fmt.Sprintf("Waiting %v before adding root to allow service registration...", preAddRootDelay))
 	time.Sleep(preAddRootDelay)
 
@@ -625,7 +591,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		return
 	}
 
-	// Double check that the proof set ID is valid
 	if proofSet.ProofSetID == "" {
 		errMsg := "Proof set creation is still pending. Please wait."
 		log.WithField("userID", userID).WithField("dbProofSetID", proofSet.ID).Warning(errMsg)
@@ -641,7 +606,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	log.WithField("userID", userID).WithField("serviceProofSetID", proofSet.ProofSetID).Info("Found ready proof set for user, proceeding to add root")
 
-	// Verify the proof set exists on the service before proceeding
 	updateStatus(UploadProgress{
 		Status:     currentStage,
 		Progress:   currentProgress,
@@ -650,7 +614,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		ProofSetID: proofSet.ProofSetID,
 	})
 
-	// First verify the proof set exists on the remote service
 	verifyProofSetArgs := []string{
 		"get-proof-set",
 		"--service-url", cfg.ServiceURL,
@@ -658,15 +621,12 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		proofSet.ProofSetID,
 	}
 
-	// Verification retry configuration
 	verifyMaxRetries := 5
-	verifyBackoff := 15 * time.Second    // Increased from 5s to 15s
-	verifyMaxBackoff := 60 * time.Second // Increased from 30s to 60s
+	verifyBackoff := 15 * time.Second
+	verifyMaxBackoff := 60 * time.Second
 	verifySuccess := false
 
-	// Try to verify the proof set with retries
 	for verifyAttempt := 1; verifyAttempt <= verifyMaxRetries; verifyAttempt++ {
-		// Add delay before verification
 		waitWithJitter(baseDelay)
 
 		log.WithField("attempt", verifyAttempt).
@@ -675,7 +635,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			Info(fmt.Sprintf("Verifying proof set (attempt %d/%d)", verifyAttempt, verifyMaxRetries))
 
 		if verifyAttempt > 1 {
-			// Update UI with retry status for verification
 			updateStatus(UploadProgress{
 				Status:     currentStage,
 				Progress:   currentProgress,
@@ -693,7 +652,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		verifyCmd.Stdout = &verifyOutput
 		verifyCmd.Stderr = &verifyError
 
-		// Add a timeout context for verification
 		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		verifyCmdWithTimeout := exec.CommandContext(verifyCtx, pdptoolPath, verifyProofSetArgs...)
 		verifyCmdWithTimeout.Dir = filepath.Dir(pdptoolPath)
@@ -711,7 +669,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				WithField("attempt", verifyAttempt).
 				Warning("Proof set verification attempt failed")
 
-			// Check specific errors that suggest the proof set is still initializing
 			isRetryableError := false
 
 			if verifyCtx.Err() == context.DeadlineExceeded {
@@ -729,13 +686,10 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				continue
 			}
 
-			// If we've reached max retries for verification
 			if verifyAttempt >= verifyMaxRetries {
 				log.WithField("proofSetID", proofSet.ProofSetID).
 					Warning("Proof set verification failed after max retries, proceeding anyway")
 
-				// Continue with adding roots anyway - the proof set might be in the process of being created
-				// and we're going to retry the add-roots operation multiple times
 				updateStatus(UploadProgress{
 					Status:     currentStage,
 					Progress:   currentProgress,
@@ -743,11 +697,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 					CID:        compoundCID,
 					ProofSetID: proofSet.ProofSetID,
 				})
-				// Don't return, continue to add-roots
 				break
 			}
 		} else {
-			// Verification succeeded
 			verifySuccess = true
 			log.WithField("proofSetID", proofSet.ProofSetID).Info("Proof set verification successful")
 			break
@@ -779,7 +731,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	log.WithField("add-roots-args", strings.Join(addRootsArgs, " ")).Info("Adding root to proof set")
 
-	// Check command working directory and secret file
 	cmdDir := filepath.Dir(pdptoolPath)
 	secretPath := filepath.Join(cmdDir, "pdpservice.json")
 	log.WithField("expectedCmdDir", cmdDir).Info("Checking command working directory")
@@ -792,17 +743,14 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		log.WithField("error", errStat.Error()).Error("Error checking for pdpservice.json")
 	}
 
-	// Retry configuration for add-roots
 	maxRetries := 10
-	initialBackoff := 20 * time.Second // Increased from 8s to 20s
-	maxBackoff := 180 * time.Second    // Increased from 90s to 180s
+	initialBackoff := 20 * time.Second
+	maxBackoff := 180 * time.Second
 	backoff := initialBackoff
 	success := false
 
-	// Execute add-roots command with retries
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		// Add delay before add-roots
-		waitWithJitter(baseDelay * 2) // Double delay for add-roots as it's intensive
+		waitWithJitter(baseDelay * 2)
 
 		log.WithField("command", pdptoolPath).
 			WithField("args", strings.Join(addRootsArgs, " ")).
@@ -810,7 +758,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			WithField("maxRetries", maxRetries).
 			Info("Executing add-roots command")
 
-		// Update UI with current retry attempt
 		updateStatus(UploadProgress{
 			Status:     currentStage,
 			Progress:   currentProgress,
@@ -827,11 +774,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		addRootCmd.Stdout = &addRootOutput
 		addRootCmd.Stderr = &addRootError
 
-		// Add a timeout context to prevent hanging on the command execution
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // Increased from 45 to 60 seconds
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		// Use the context with the command
 		cmdWithTimeout := exec.CommandContext(ctx, pdptoolPath, addRootsArgs...)
 		cmdWithTimeout.Dir = filepath.Dir(pdptoolPath)
 		cmdWithTimeout.Stdout = &addRootOutput
@@ -841,14 +786,12 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			stderrStr := addRootError.String()
 			stdoutStr := addRootOutput.String()
 
-			// Check if it was a timeout
 			if ctx.Err() == context.DeadlineExceeded {
 				log.WithField("attempt", attempt).
 					WithField("maxRetries", maxRetries).
 					Error("Command execution timed out after 60 seconds")
 
 				if attempt < maxRetries {
-					// Update UI with timeout status
 					updateStatus(UploadProgress{
 						Status:     currentStage,
 						Progress:   currentProgress,
@@ -857,10 +800,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 						ProofSetID: proofSet.ProofSetID,
 					})
 
-					// Wait with exponential backoff
 					time.Sleep(backoff)
 
-					// Double the backoff for next attempt, capped at maxBackoff
 					backoff *= 2
 					if backoff > maxBackoff {
 						backoff = maxBackoff
@@ -878,7 +819,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				}
 			}
 
-			// Log the error with detailed information
 			log.WithField("error", err.Error()).
 				WithField("stderr", stderrStr).
 				WithField("stdout", stdoutStr).
@@ -887,7 +827,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				WithField("maxRetries", maxRetries).
 				Error("pdptool add-roots command failed")
 
-			// Check for specific error patterns that indicate a retry might succeed
 			shouldRetry := false
 
 			if strings.Contains(stderrStr, "subroot CID") && strings.Contains(stderrStr, "not found or does not belong to service") {
@@ -906,7 +845,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			} else if strings.Contains(stderrStr, "can't add root to non-existing proof set") {
 				shouldRetry = true
 			} else {
-				// For any other error, let's retry anyway since the proof set might just need more time
 				shouldRetry = true
 			}
 
@@ -921,7 +859,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				continue
 			}
 
-			// If we've reached max retries or it's not a retryable error, fail
 			if attempt >= maxRetries {
 				updateStatus(UploadProgress{
 					Status:     "error",
@@ -933,7 +870,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				return
 			}
 
-			// For non-retryable errors, fail immediately
 			updateStatus(UploadProgress{
 				Status:     "error",
 				Error:      "Failed to add root to proof set",
@@ -944,7 +880,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			return
 		}
 
-		// Command succeeded, break out of retry loop
 		addRootStderrStrOnSuccess := addRootError.String()
 		if addRootStderrStrOnSuccess != "" {
 			log.WithField("stderr", addRootStderrStrOnSuccess).Warning("add-roots command succeeded but produced output on stderr")
@@ -983,22 +918,20 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	})
 
 	var extractedIntegerRootID string
-	initialPollInterval := 15 * time.Second // Increased from 5s to 15s
-	maxPollInterval := 45 * time.Second     // Increased from 15s to 45s
+	initialPollInterval := 15 * time.Second
+	maxPollInterval := 45 * time.Second
 	pollInterval := initialPollInterval
-	maxPollAttempts := 60 // Reduced from 120 to 60 since intervals are longer
+	maxPollAttempts := 60
 	pollAttempt := 0
 	foundRootInPoll := false
 	consecutiveErrors := 0
 	maxConsecutiveErrors := 10
 
 	for pollAttempt < maxPollAttempts {
-		// Add delay before get-proof-set
 		waitWithJitter(baseDelay)
 
 		pollAttempt++
 
-		// Update UI every 5 attempts to show progress
 		if pollAttempt%5 == 0 {
 			updateStatus(UploadProgress{
 				Status:     currentStage,
@@ -1033,18 +966,14 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				WithField("stderr", stderrStr).
 				Warning(fmt.Sprintf("pdptool get-proof-set command failed during poll attempt %d. Retrying after %v...", pollAttempt, pollInterval))
 
-			// Increase consecutive error count
 			consecutiveErrors++
 
-			// Check for specific initialization errors we can ignore
 			if strings.Contains(stderrStr, "Failed to retrieve next challenge epoch") ||
 				strings.Contains(stderrStr, "can't scan NULL into") {
 
 				log.Info("Detected proof set initialization error, this is normal during proof set creation")
 
-				// If we've seen a lot of these initialization errors, slow down our polling
-				if consecutiveErrors > 3 {
-					// Gradually increase poll interval to avoid hammering the service
+				if consecutiveErrors > 5 {
 					if pollInterval < maxPollInterval {
 						pollInterval += time.Second
 					}
@@ -1054,11 +983,9 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 				continue
 			}
 
-			// For other errors, still continue polling but with a warning
 			if consecutiveErrors > maxConsecutiveErrors {
 				log.Warning(fmt.Sprintf("Received %d consecutive errors while polling for root ID", consecutiveErrors))
 
-				// Increase the interval more aggressively when hitting many errors
 				if pollInterval < maxPollInterval {
 					pollInterval *= 2
 					if pollInterval > maxPollInterval {
@@ -1071,13 +998,11 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			continue
 		}
 
-		// Reset consecutive error counter on success
 		consecutiveErrors = 0
 
 		getProofSetOutput := getProofSetStdout.String()
 		log.WithField("output", getProofSetOutput).Debug(fmt.Sprintf("get-proof-set poll attempt %d output received", pollAttempt))
 
-		// Check if this is an empty proof set response
 		if strings.Contains(getProofSetOutput, "Roots:") && !strings.Contains(getProofSetOutput, "Root ID:") {
 			log.Debug("Found proof set but no roots listed yet. Continuing to poll...")
 			time.Sleep(pollInterval)
@@ -1130,8 +1055,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			break
 		}
 
-		// If we saw Root IDs but none matched our CID yet, that's progress!
-		// Reduce polling interval to check more frequently
 		if sawAnyRootID {
 			log.Info("Proof set has roots, but none matching our CID yet. Reducing poll interval.")
 			pollInterval = initialPollInterval
@@ -1141,15 +1064,12 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		time.Sleep(pollInterval)
 	}
 
-	// If we didn't find the root in the poll but have seen successful get-proof-set responses
-	// we can fallback to using a default numeric root ID
 	if !foundRootInPoll && consecutiveErrors < maxConsecutiveErrors {
 		log.WithField("baseCID", baseCID).
 			WithField("proofSetID", proofSet.ProofSetID).
 			WithField("attempts", maxPollAttempts).
 			Warning("Failed to find integer Root ID in get-proof-set output after polling. Using fallback Root ID.")
 
-		// Use "1" as fallback Root ID
 		extractedIntegerRootID = "1"
 		foundRootInPoll = true
 
@@ -1223,28 +1143,19 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		ProofSetID: proofSet.ProofSetID,
 	})
 
-	// Only clean up the temporary directory after successful completion
-	// or after an hour (whichever comes first)
 	go func() {
-		// Get the temp directory path
 		var tempDir string
 
-		// If we created a temporary directory (non-chunked upload)
 		if !hasExistingPath && tempFilePath != "" {
 			tempDir = filepath.Dir(tempFilePath)
 		}
 
-		// For chunked uploads, the filePath is already managed by the chunked upload handler
-
-		// Wait for an hour before cleanup
 		time.Sleep(1 * time.Hour)
 
-		// Clean up job status from memory
 		uploadJobsLock.Lock()
 		delete(uploadJobs, jobID)
 		uploadJobsLock.Unlock()
 
-		// Clean up temp directory if it was created for this upload
 		if tempDir != "" && !hasExistingPath {
 			log.WithField("jobID", jobID).
 				WithField("tempDir", tempDir).

@@ -6,7 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// ProofSet represents a PDP proof set in the system
 type ProofSet struct {
 	ID              uint           `gorm:"primaryKey" json:"id"`
 	UserID          uint           `gorm:"index;not null" json:"userId"`

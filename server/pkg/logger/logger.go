@@ -24,35 +24,28 @@ type LogrusLogger struct {
 	entry  *logrus.Entry
 }
 
-// LogFormat determines the output format of the logger
 type LogFormat string
 
 const (
 	JSONFormat   LogFormat = "json"
 	TextFormat   LogFormat = "text"
-	PrettyFormat LogFormat = "pretty" // Colored, human-readable format
+	PrettyFormat LogFormat = "pretty"
 )
 
-// Configuration options for the application-wide logging
 type LoggingConfig struct {
-	// Main application log level and format
 	Level  string
 	Format string
 
-	// Controls for specific logging sources
 	DisableGORMLogging bool
 	DisableGINLogging  bool
 
-	// Only log errors in production
 	ProductionMode bool
 }
 
-// GetLoggingConfig reads environment variables to configure logging
 func GetLoggingConfig() LoggingConfig {
 	env := strings.ToLower(os.Getenv("ENV"))
 	isProduction := env == "production"
 
-	// By default, disable verbose logs in production
 	disableGORMLogging := isProduction
 	if val := strings.ToLower(os.Getenv("DISABLE_GORM_LOGGING")); val != "" {
 		disableGORMLogging = val == "true" || val == "1" || val == "yes"
@@ -63,11 +56,10 @@ func GetLoggingConfig() LoggingConfig {
 		disableGINLogging = val == "true" || val == "1" || val == "yes"
 	}
 
-	// Set default log level based on environment
 	logLevel := os.Getenv("LOG_LEVEL")
 	if logLevel == "" {
 		if isProduction {
-			logLevel = "warn" // Reduce noise in production
+			logLevel = "warn"
 		} else {
 			logLevel = "debug"
 		}
@@ -82,20 +74,17 @@ func GetLoggingConfig() LoggingConfig {
 	}
 }
 
-// NewLogger creates a new logger instance with configuration from environment variables
 func NewLogger() Logger {
 	logger := logrus.New()
 	logger.SetOutput(os.Stdout)
 
 	config := GetLoggingConfig()
 
-	// Determine log format from environment
 	format := config.Format
 	if format == "" {
-		format = string(TextFormat) // Default to text format if not specified
+		format = string(TextFormat)
 	}
 
-	// Set up formatter based on environment
 	switch strings.ToLower(format) {
 	case string(JSONFormat):
 		logger.SetFormatter(&logrus.JSONFormatter{
@@ -109,7 +98,7 @@ func NewLogger() Logger {
 			ForceColors:     true,
 			DisableQuote:    true,
 		})
-	default: // Text format
+	default:
 		logger.SetFormatter(&logrus.TextFormatter{
 			FullTimestamp:   true,
 			TimestampFormat: "2006-01-02 15:04:05",
@@ -118,10 +107,8 @@ func NewLogger() Logger {
 		})
 	}
 
-	// Parse and set log level
 	level, err := logrus.ParseLevel(config.Level)
 	if err != nil {
-		// If invalid log level, default to info
 		level = logrus.InfoLevel
 		fmt.Fprintf(os.Stderr, "Invalid LOG_LEVEL: '%s', defaulting to INFO\n", config.Level)
 	}

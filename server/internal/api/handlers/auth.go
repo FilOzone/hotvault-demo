@@ -26,19 +26,16 @@ import (
 
 var authLog = logrus.New()
 
-// ErrorResponse represents an error response
 type ErrorResponse struct {
 	Error string `json:"error" example:"Invalid request"`
 }
 
-// AuthHandler handles authentication related requests
 type AuthHandler struct {
 	db         *gorm.DB
 	cfg        *config.Config
 	ethService *services.EthereumService
 }
 
-// NewAuthHandler creates a new auth handler
 func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
 	ethService := services.NewEthereumService(cfg.Ethereum)
 	return &AuthHandler{
@@ -150,7 +147,6 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		return
 	}
 
-	// Get the user from the database
 	var user models.User
 	if err := h.db.Where("wallet_address = ?", req.Address).First(&user).Error; err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid wallet address"})
@@ -190,7 +186,6 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		return
 	}
 
-	// Generate a new nonce for the next authentication
 	nonceBytes := make([]byte, 32)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to generate nonce"})
@@ -198,16 +193,11 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 	}
 	newNonce := hex.EncodeToString(nonceBytes)
 
-	// Update the user's nonce
 	if err := h.db.Model(&user).Update("nonce", newNonce).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update nonce"})
 		return
 	}
 
-	// Check if the user has a proof set, create one in background if not
-	// go h.ensureProofSetExists(&user) // REMOVED: Proof set creation is now manual
-
-	// Generate a JWT token IMMEDIATELY
 	expirationTime := time.Now().Add(h.cfg.JWT.Expiration)
 	claims := &models.JWTClaims{
 		UserID:        user.ID,
@@ -225,7 +215,6 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		return
 	}
 
-	// Set the JWT as an HTTP-only cookie
 	domain := "" // Default domain is the current domain
 	isProduction := h.cfg.Server.Env == "production"
 	if isProduction {
@@ -234,7 +223,6 @@ func (h *AuthHandler) VerifySignature(c *gin.Context) {
 		c.SetCookie("jwt_token", tokenString, int(h.cfg.JWT.Expiration.Seconds()), "/", domain, false, true)
 	}
 
-	// Return token in body
 	c.JSON(http.StatusOK, VerifyResponse{
 		Token:   tokenString,
 		Expires: expirationTime.Unix(),
@@ -265,41 +253,32 @@ func (h *AuthHandler) CreateProofSet(c *gin.Context) {
 		return
 	}
 
-	// Check if proof set already exists or is in progress
 	var existingProofSet models.ProofSet
 	err := h.db.Where("user_id = ?", user.ID).First(&existingProofSet).Error
 	if err == nil {
-		// Found a record
 		if existingProofSet.ProofSetID != "" {
 			authLog.WithField("userID", user.ID).Warn("CreateProofSet called but ProofSetID already exists.")
 			c.JSON(http.StatusConflict, ErrorResponse{Error: "Proof set already exists and is complete for this user"})
 			return
 		}
 		if existingProofSet.TransactionHash != "" {
-			// This means creation was initiated but might not be complete yet.
 			authLog.WithField("userID", user.ID).Warn("CreateProofSet called but TransactionHash exists (creation likely in progress).")
 			c.JSON(http.StatusConflict, ErrorResponse{Error: "Proof set creation is already in progress for this user. Check status."})
 			return
 		}
-		// If record exists but both fields are empty, we can proceed (maybe a previous attempt failed early)
 		authLog.WithField("userID", user.ID).Info("Found existing proof set record with empty fields, proceeding with creation attempt.")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		// Database error other than not found
 		authLog.WithField("userID", user.ID).Errorf("Error checking for existing proof set: %v", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to check for existing proof sets"})
 		return
 	} else {
-		// Record not found, create a placeholder if needed (optional, CreateProofSetForUser will handle it)
-		// We can let createProofSetForUser handle creation/update entirely.
 		authLog.WithField("userID", user.ID).Info("No existing proof set record found.")
 	}
 
-	// Initiate creation in a goroutine so the request returns quickly
 	go func(u *models.User) {
 		authLog.WithField("userID", u.ID).Info("Starting background proof set creation...")
 		if err := h.createProofSetForUser(u); err != nil {
 			authLog.WithField("userID", u.ID).Errorf("Background proof set creation failed: %v", err)
-			// Consider updating the DB record status to "Failed" here if using status field
 		} else {
 			authLog.WithField("userID", u.ID).Info("Background proof set creation completed successfully.")
 		}
@@ -308,7 +287,6 @@ func (h *AuthHandler) CreateProofSet(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Proof set creation initiated successfully. Monitor /auth/status for readiness."})
 }
 
-// createProofSetForUser remains mostly the same - designed to be called by ensureProofSetExists
 func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	pdptoolPath := h.cfg.PdptoolPath
 	if pdptoolPath == "" {
@@ -358,7 +336,6 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	if err := createProofSetCmd.Run(); err != nil {
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to run create-proof-set command for user %d: %v, stderr: %s", user.ID, err, createProofSetError.String())
 		authLog.Error(errMsg)
-		// Optionally: Update DB status to failed here
 		return errors.New(errMsg)
 	}
 
@@ -373,42 +350,35 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 		txHash = txHashMatches[1]
 		authLog.WithField("txHash", txHash).Infof("[Goroutine Create] Extracted transaction hash for user %d. Updating database and starting polling...", user.ID)
 
-		// --- Update database immediately with TransactionHash ---
 		proofSetToUpdate := models.ProofSet{
 			UserID:          user.ID,
 			TransactionHash: txHash,
-			ServiceName:     serviceName, // Store service details early
+			ServiceName:     serviceName,
 			ServiceURL:      serviceURL,
 		}
-		// Use FirstOrCreate to handle both new and existing placeholder records
 		result := h.db.Where(models.ProofSet{UserID: user.ID}).Assign(proofSetToUpdate).FirstOrCreate(&models.ProofSet{})
 		if result.Error != nil {
 			errMsg := fmt.Sprintf("[Goroutine Create] Failed to save/update proof set with txHash for user %d: %v", user.ID, result.Error)
 			authLog.Error(errMsg)
-			return errors.New(errMsg) // Stop if we can't save the txHash
+			return errors.New(errMsg)
 		}
-		// -------------------------------------------------------
 
 	} else {
 		authLog.Warn("[Goroutine Create] Could not extract transaction hash using Location regex for user ", user.ID, ". Check pdptool output format.")
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to extract transaction hash needed for polling for user %d. Output: %s", user.ID, outputStr)
 		authLog.Error(errMsg)
-		// Optionally: Update DB status to failed here
 		return errors.New(errMsg)
 	}
 
 	extractedID, pollErr := h.pollForProofSetID(pdptoolPath, serviceURL, serviceName, txHash, user)
 	if pollErr != nil {
 		authLog.Errorf("[Goroutine Create] Failed to poll for proof set ID for user %d: %v", user.ID, pollErr)
-		// Optionally: Update DB status to failed polling here
 		return pollErr
 	}
 
-	// --- Update database with the final ProofSetID ---
 	finalUpdate := models.ProofSet{
 		ProofSetID: extractedID,
 	}
-	// Update only the ProofSetID field for the user's record
 	result := h.db.Model(&models.ProofSet{}).Where("user_id = ?", user.ID).Updates(finalUpdate)
 	if result.Error != nil {
 		errMsg := fmt.Sprintf("[Goroutine Create] Failed to update proof set with ProofSetID for user %d: %v", user.ID, result.Error)
@@ -424,7 +394,6 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	return nil
 }
 
-// pollForProofSetID polls the status using the transaction hash and extracts the ProofSet ID string
 func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, txHash string, user *models.User) (string, error) {
 	proofSetIDRegex := regexp.MustCompile(`ProofSet ID:[ \t]*(\d+)`)
 	creationStatusRegex := regexp.MustCompile(`Proofset Created:[ \t]*(true|false)`)
@@ -605,7 +574,6 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	})
 }
 
-// encodeExtraData encodes the metadata and payer address according to the expected ABI.
 func encodeExtraData(metadata string, payerAddress string) (string, error) {
 	if !common.IsHexAddress(payerAddress) {
 		return "", fmt.Errorf("invalid payer address format: %s", payerAddress)

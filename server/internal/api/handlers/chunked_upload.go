@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// ChunkedUploadInfo stores information about an ongoing chunked upload
 type ChunkedUploadInfo struct {
 	ID             string       `json:"id"`
 	UserID         uint         `json:"userId"`
@@ -33,13 +32,11 @@ type ChunkedUploadInfo struct {
 	FileType       string       `json:"fileType"`
 }
 
-// Chunked upload in-memory storage
 var (
 	chunkedUploads      = make(map[string]*ChunkedUploadInfo)
 	chunkedUploadsMutex sync.RWMutex
 )
 
-// Cleanup old uploads periodically
 func init() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
@@ -50,7 +47,6 @@ func init() {
 	}()
 }
 
-// cleanupOldChunkedUploads removes uploads older than 24 hours
 func cleanupOldChunkedUploads() {
 	threshold := time.Now().Add(-24 * time.Hour)
 
@@ -59,18 +55,15 @@ func cleanupOldChunkedUploads() {
 
 	for id, info := range chunkedUploads {
 		if info.UpdatedAt.Before(threshold) {
-			// Remove temp directory
 			if info.TempDir != "" {
 				os.RemoveAll(info.TempDir)
 			}
-			// Remove from map
 			delete(chunkedUploads, id)
 			log.WithField("uploadId", id).Info("Cleaned up expired chunked upload")
 		}
 	}
 }
 
-// InitChunkedUpload initializes a new chunked upload
 func InitChunkedUpload(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -80,7 +73,6 @@ func InitChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Parse upload details
 	var request struct {
 		Filename    string `json:"filename" binding:"required"`
 		TotalSize   int64  `json:"totalSize" binding:"required"`
@@ -96,7 +88,6 @@ func InitChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Create temp directory for chunks
 	uploadID := uuid.New().String()
 	tempDir := filepath.Join(os.TempDir(), "chunked_uploads", uploadID)
 
@@ -107,7 +98,6 @@ func InitChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Create upload info
 	now := time.Now()
 	uploadInfo := &ChunkedUploadInfo{
 		ID:             uploadID,
@@ -125,7 +115,6 @@ func InitChunkedUpload(c *gin.Context) {
 		FileType:       request.FileType,
 	}
 
-	// Store upload info
 	chunkedUploadsMutex.Lock()
 	chunkedUploads[uploadID] = uploadInfo
 	chunkedUploadsMutex.Unlock()
@@ -143,7 +132,6 @@ func InitChunkedUpload(c *gin.Context) {
 	})
 }
 
-// UploadChunk handles a single chunk of a chunked upload
 func UploadChunk(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -153,7 +141,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Get upload ID from query params
 	uploadID := c.Query("uploadId")
 	if uploadID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -162,7 +149,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Get chunk index from query params
 	chunkIndexStr := c.Query("chunkIndex")
 	if chunkIndexStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -179,7 +165,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Retrieve upload info
 	chunkedUploadsMutex.RLock()
 	uploadInfo, exists := chunkedUploads[uploadID]
 	chunkedUploadsMutex.RUnlock()
@@ -191,7 +176,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Verify user owns this upload
 	if uploadInfo.UserID != userID.(uint) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "You don't have permission to access this upload",
@@ -199,7 +183,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Verify chunk index is valid
 	if chunkIndex < 0 || chunkIndex >= uploadInfo.TotalChunks {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("Invalid chunk index. Must be between 0 and %d", uploadInfo.TotalChunks-1),
@@ -207,7 +190,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Check if chunk already received
 	chunkedUploadsMutex.RLock()
 	_, chunkExists := uploadInfo.ChunksReceived[chunkIndex]
 	chunkedUploadsMutex.RUnlock()
@@ -223,7 +205,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Get the chunk data from multipart form
 	file, err := c.FormFile("chunk")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -232,7 +213,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Open the uploaded chunk
 	src, err := file.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -242,7 +222,6 @@ func UploadChunk(c *gin.Context) {
 	}
 	defer src.Close()
 
-	// Create the destination file for this chunk
 	chunkPath := filepath.Join(uploadInfo.TempDir, fmt.Sprintf("chunk_%d", chunkIndex))
 	dst, err := os.Create(chunkPath)
 	if err != nil {
@@ -253,7 +232,6 @@ func UploadChunk(c *gin.Context) {
 	}
 	defer dst.Close()
 
-	// Copy the chunk data
 	if _, err = io.Copy(dst, src); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to save chunk data: " + err.Error(),
@@ -261,7 +239,6 @@ func UploadChunk(c *gin.Context) {
 		return
 	}
 
-	// Update upload info
 	chunkedUploadsMutex.Lock()
 	uploadInfo.ChunksReceived[chunkIndex] = true
 	uploadInfo.UploadedChunks++
@@ -289,7 +266,6 @@ func UploadChunk(c *gin.Context) {
 	})
 }
 
-// CompleteChunkedUpload finalizes a chunked upload
 func CompleteChunkedUpload(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -310,7 +286,6 @@ func CompleteChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Retrieve upload info
 	chunkedUploadsMutex.RLock()
 	uploadInfo, exists := chunkedUploads[request.UploadID]
 	chunkedUploadsMutex.RUnlock()
@@ -322,7 +297,6 @@ func CompleteChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Verify user owns this upload
 	if uploadInfo.UserID != userID.(uint) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "You don't have permission to access this upload",
@@ -330,7 +304,6 @@ func CompleteChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Verify all chunks are received
 	if uploadInfo.UploadedChunks != uploadInfo.TotalChunks {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("Not all chunks received. Got %d of %d chunks",
@@ -341,15 +314,12 @@ func CompleteChunkedUpload(c *gin.Context) {
 		return
 	}
 
-	// Update status
 	chunkedUploadsMutex.Lock()
 	uploadInfo.Status = "assembling"
 	chunkedUploadsMutex.Unlock()
 
-	// Create a job ID for tracking the assembly and processing
 	jobID := uuid.New().String()
 
-	// Start a goroutine to assemble and process the file
 	go assembleAndProcessFile(uploadInfo, jobID, userID.(uint))
 
 	c.JSON(http.StatusOK, gin.H{
@@ -360,7 +330,6 @@ func CompleteChunkedUpload(c *gin.Context) {
 	})
 }
 
-// GetChunkedUploadStatus returns the status of a chunked upload
 func GetChunkedUploadStatus(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -378,7 +347,6 @@ func GetChunkedUploadStatus(c *gin.Context) {
 		return
 	}
 
-	// Retrieve upload info
 	chunkedUploadsMutex.RLock()
 	uploadInfo, exists := chunkedUploads[uploadID]
 	chunkedUploadsMutex.RUnlock()
@@ -390,7 +358,6 @@ func GetChunkedUploadStatus(c *gin.Context) {
 		return
 	}
 
-	// Verify user owns this upload
 	if uploadInfo.UserID != userID.(uint) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "You don't have permission to access this upload",
@@ -409,9 +376,7 @@ func GetChunkedUploadStatus(c *gin.Context) {
 	})
 }
 
-// assembleAndProcessFile combines all chunks into a single file and processes it
 func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID uint) {
-	// Create initial job status
 	uploadJobsLock.Lock()
 	uploadJobs[jobID] = UploadProgress{
 		Status:    "assembling",
@@ -423,12 +388,10 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 	}
 	uploadJobsLock.Unlock()
 
-	// Update chunked upload status
 	chunkedUploadsMutex.Lock()
 	uploadInfo.Status = "assembling"
 	chunkedUploadsMutex.Unlock()
 
-	// Ensure the temp directory exists
 	if _, err := os.Stat(uploadInfo.TempDir); os.IsNotExist(err) {
 		log.WithField("tempDir", uploadInfo.TempDir).Error("Temp directory doesn't exist")
 		updateJobStatus(jobID, UploadProgress{
@@ -439,10 +402,8 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Create the final file
 	finalFilePath := filepath.Join(uploadInfo.TempDir, uploadInfo.Filename)
 
-	// Check if the final file already exists and remove it if it does
 	if _, err := os.Stat(finalFilePath); err == nil {
 		log.WithField("finalFilePath", finalFilePath).Info("Final file already exists, removing it")
 		if err := os.Remove(finalFilePath); err != nil {
@@ -469,20 +430,16 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Close finalFile at the end
 	defer func() {
-		// Only try to close if the file is not nil
 		if finalFile != nil {
 			finalFile.Close()
 		}
 	}()
 
-	// Assemble chunks in order
 	totalBytesWritten := int64(0)
 	missingChunks := false
 
 	for i := 0; i < uploadInfo.TotalChunks; i++ {
-		// Update assembly progress
 		updateJobStatus(jobID, UploadProgress{
 			Status:    "assembling",
 			Progress:  int(float64(i) / float64(uploadInfo.TotalChunks) * 30), // Assembly = 0-30%
@@ -493,7 +450,6 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 
 		chunkPath := filepath.Join(uploadInfo.TempDir, fmt.Sprintf("chunk_%d", i))
 
-		// Check if the chunk file exists
 		if _, err := os.Stat(chunkPath); os.IsNotExist(err) {
 			log.WithField("chunkPath", chunkPath).Error("Chunk file doesn't exist")
 			missingChunks = true
@@ -539,7 +495,6 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Verify file size
 	if totalBytesWritten != uploadInfo.TotalSize {
 		log.WithField("expectedSize", uploadInfo.TotalSize).
 			WithField("actualSize", totalBytesWritten).
@@ -552,7 +507,6 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Ensure all data is written to disk
 	if err := finalFile.Sync(); err != nil {
 		log.WithField("error", err.Error()).Error("Failed to sync final file")
 		updateJobStatus(jobID, UploadProgress{
@@ -563,7 +517,6 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Close the file explicitly before proceeding
 	if err := finalFile.Close(); err != nil {
 		log.WithField("error", err.Error()).Error("Failed to close final file")
 		updateJobStatus(jobID, UploadProgress{
@@ -574,10 +527,8 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Set finalFile to nil so the defer doesn't try to close it again
 	finalFile = nil
 
-	// Verify the file exists and is accessible before proceeding
 	fileInfo, err := os.Stat(finalFilePath)
 	if err != nil {
 		log.WithField("error", err.Error()).
@@ -591,7 +542,6 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Double-check file size
 	if fileInfo.Size() != uploadInfo.TotalSize {
 		log.WithField("expectedSize", uploadInfo.TotalSize).
 			WithField("actualSize", fileInfo.Size()).
@@ -604,7 +554,6 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Update status to processing
 	updateJobStatus(jobID, UploadProgress{
 		Status:    "processing",
 		Progress:  30,
@@ -621,14 +570,12 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		WithField("fileSize", fileInfo.Size()).
 		Info("File successfully assembled, proceeding to processing")
 
-	// Now create a wrapper to make the file compatible with processUpload's expectations
 	fileHeader := &multipart.FileHeader{
 		Filename: uploadInfo.Filename,
 		Size:     uploadInfo.TotalSize,
 		Header:   make(map[string][]string),
 	}
 
-	// Store the path for custom handling in processUpload
 	uploadPathsLock.Lock()
 	filePaths[jobID] = finalFilePath
 	log.WithField("jobID", jobID).
@@ -636,7 +583,6 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		Info("Storing file path for processing")
 	uploadPathsLock.Unlock()
 
-	// Verify the path is stored correctly
 	uploadPathsLock.RLock()
 	storedPath, pathExists := filePaths[jobID]
 	uploadPathsLock.RUnlock()
@@ -655,31 +601,23 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 		return
 	}
 
-	// Process the file using the existing upload pipeline
 	processUpload(jobID, fileHeader, userID, cfg.PdptoolPath)
 
-	// Clean up temp files after processing completes or fails
-	// This is done in a separate goroutine to not delay the response
 	go func() {
-		// Wait a bit to ensure processing has started
 		time.Sleep(5 * time.Second)
 
-		// Check if uploading already finished
 		uploadJobsLock.RLock()
 		progress, exists := uploadJobs[jobID]
 		uploadJobsLock.RUnlock()
 
 		if exists && (progress.Status == "complete" || progress.Status == "error") {
-			// Clean up temp directory
 			log.WithField("tempDir", uploadInfo.TempDir).Info("Cleaning up temp directory after completion")
 			os.RemoveAll(uploadInfo.TempDir)
 
-			// Remove the path mapping
 			uploadPathsLock.Lock()
 			delete(filePaths, jobID)
 			uploadPathsLock.Unlock()
 
-			// Remove the upload info from memory
 			chunkedUploadsMutex.Lock()
 			delete(chunkedUploads, uploadInfo.ID)
 			chunkedUploadsMutex.Unlock()
@@ -693,7 +631,6 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 				WithField("status", progress.Status).
 				Info("Upload still in progress, will clean up later")
 
-			// Start a periodic check to clean up when done
 			go func() {
 				cleanupTicker := time.NewTicker(30 * time.Second)
 				defer cleanupTicker.Stop()
@@ -708,15 +645,12 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 							WithField("jobId", jobID).
 							Info("Cleaning up chunked upload in delayed cleanup")
 
-						// Clean up temp directory
 						os.RemoveAll(uploadInfo.TempDir)
 
-						// Remove the path mapping
 						uploadPathsLock.Lock()
 						delete(filePaths, jobID)
 						uploadPathsLock.Unlock()
 
-						// Remove the upload info from memory
 						chunkedUploadsMutex.Lock()
 						delete(chunkedUploads, uploadInfo.ID)
 						chunkedUploadsMutex.Unlock()
@@ -729,13 +663,11 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 	}()
 }
 
-// Storage for file paths by job ID
 var (
 	filePaths       = make(map[string]string)
 	uploadPathsLock sync.RWMutex
 )
 
-// Helper function to update job status
 func updateJobStatus(jobID string, progress UploadProgress) {
 	progress.JobID = jobID
 	uploadJobsLock.Lock()
