@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -167,6 +167,17 @@ func RemoveRoot(c *gin.Context) {
 		return
 	}
 
+	// Change working directory to pdptool directory
+	pdptoolDir := getPdptoolParentDir(pdptoolPath)
+	if err := os.Chdir(pdptoolDir); err != nil {
+		log.Error(fmt.Sprintf("Failed to change working directory to pdptool directory: %v", err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to set working directory",
+		})
+		return
+	}
+	log.WithField("pdptoolDir", pdptoolDir).Info("Changed working directory to pdptool directory")
+
 	if serviceURL == "" || serviceName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Service URL and Service Name are required but missing from piece/proofset data",
@@ -182,7 +193,6 @@ func RemoveRoot(c *gin.Context) {
 		"--root-id", storedIntegerRootIDStr,
 	}
 	removeCmd := exec.Command(pdptoolPath, removeArgs...)
-	removeCmd.Dir = filepath.Dir(pdptoolPath)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

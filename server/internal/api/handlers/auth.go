@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -302,6 +302,15 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 		return errors.New(errMsg)
 	}
 
+	// Change working directory to pdptool directory
+	pdptoolDir := getPdptoolParentDir(pdptoolPath)
+	if err := os.Chdir(pdptoolDir); err != nil {
+		errMsg := fmt.Sprintf("Failed to change working directory to pdptool directory: %v", err)
+		authLog.Error(errMsg)
+		return errors.New(errMsg)
+	}
+	authLog.WithField("pdptoolDir", pdptoolDir).Info("Changed working directory to pdptool directory")
+
 	authLog.Infof("[Goroutine Create] Creating proof set for user %d (Address: %s)...", user.ID, user.WalletAddress)
 
 	metadata := fmt.Sprintf("hotvault-user-%d", user.ID)
@@ -324,7 +333,6 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	}
 
 	createProofSetCmd := exec.Command(pdptoolPath, createProofSetArgs...)
-	createProofSetCmd.Dir = filepath.Dir(pdptoolPath)
 
 	var createProofSetOutput bytes.Buffer
 	var createProofSetError bytes.Buffer
@@ -400,6 +408,15 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 	txStatusRegex := regexp.MustCompile(`Transaction Status:[ \t]*(confirmed|pending|failed)`)
 	txSuccessRegex := regexp.MustCompile(`Transaction Successful:[ \t]*(true|false|Pending)`)
 
+	// Change working directory to pdptool directory
+	pdptoolDir := getPdptoolParentDir(pdptoolPath)
+	if err := os.Chdir(pdptoolDir); err != nil {
+		errMsg := fmt.Sprintf("Failed to change working directory to pdptool directory: %v", err)
+		authLog.Error(errMsg)
+		return "", errors.New(errMsg)
+	}
+	authLog.WithField("pdptoolDir", pdptoolDir).Info("Changed working directory to pdptool directory")
+
 	sleepDuration := 10 * time.Second
 	attemptCounter := 0
 	const maxLogInterval = 6
@@ -415,7 +432,6 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 			"--service-name", serviceName,
 			"--tx-hash", txHash,
 		)
-		getStatusCmd.Dir = filepath.Dir(pdptoolPath)
 
 		var getStatusOutput bytes.Buffer
 		var getStatusError bytes.Buffer

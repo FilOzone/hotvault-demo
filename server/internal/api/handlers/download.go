@@ -87,6 +87,17 @@ func DownloadFile(c *gin.Context) {
 		return
 	}
 
+	// Change working directory to pdptool directory
+	pdptoolDir := getPdptoolParentDir(pdptoolPath)
+	if err := os.Chdir(pdptoolDir); err != nil {
+		log.Error(fmt.Sprintf("Failed to change working directory to pdptool directory: %v", err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to set working directory",
+		})
+		return
+	}
+	log.WithField("pdptoolDir", pdptoolDir).Info("Changed working directory to pdptool directory")
+
 	log.WithField("path", pdptoolPath).Info("Using pdptool at path")
 
 	processCid := cid
@@ -119,8 +130,6 @@ func DownloadFile(c *gin.Context) {
 		"--chunk-file", chunkFile,
 		"--output-file", outputFile,
 	)
-
-	downloadCmd.Dir = filepath.Dir(pdptoolPath)
 
 	var errOutput bytes.Buffer
 	downloadCmd.Stderr = &errOutput
