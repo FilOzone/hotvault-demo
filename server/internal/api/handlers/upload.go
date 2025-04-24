@@ -54,6 +54,11 @@ func formatFileSize(size int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
+func getPdptoolParentDir(pdptoolPath string) string {
+	// Get the directory containing the pdptool executable
+	return filepath.Dir(pdptoolPath)
+}
+
 func Initialize(database *gorm.DB, appConfig *config.Config) {
 	if database == nil {
 		log.Error("Database connection is nil during initialization")
@@ -65,6 +70,17 @@ func Initialize(database *gorm.DB, appConfig *config.Config) {
 	}
 	db = database
 	cfg = appConfig
+
+	// Change working directory to pdptool directory
+	if cfg.PdptoolPath != "" {
+		pdptoolDir := getPdptoolParentDir(cfg.PdptoolPath)
+		if err := os.Chdir(pdptoolDir); err != nil {
+			log.Error(fmt.Sprintf("Failed to change working directory to pdptool directory: %v", err))
+			return
+		}
+		log.WithField("pdptoolDir", pdptoolDir).Info("Changed working directory to pdptool directory")
+	}
+
 	log.Info("Upload handler initialized with database and configuration")
 }
 
@@ -194,6 +210,20 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		return
 	}
 
+	// Change working directory to pdptool directory
+	pdptoolDir := getPdptoolParentDir(pdptoolPath)
+	if err := os.Chdir(pdptoolDir); err != nil {
+		log.Error(fmt.Sprintf("Failed to change working directory to pdptool directory: %v", err))
+		uploadJobsLock.Lock()
+		progress := uploadJobs[jobID]
+		progress.Status = "error"
+		progress.Error = "Failed to set working directory"
+		uploadJobs[jobID] = progress
+		uploadJobsLock.Unlock()
+		return
+	}
+	log.WithField("pdptoolDir", pdptoolDir).Info("Changed working directory to pdptool directory")
+
 	updateStatus := func(progress UploadProgress) {
 		progress.JobID = jobID
 		uploadJobsLock.Lock()
@@ -248,7 +278,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		waitWithJitter(baseDelay)
 
 		createSecretCmd := exec.Command(pdptoolPath, "create-service-secret")
-		createSecretCmd.Dir = filepath.Dir(pdptoolPath)
 		var createSecretOutput bytes.Buffer
 		var createSecretError bytes.Buffer
 		createSecretCmd.Stdout = &createSecretOutput
@@ -377,7 +406,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	prepareCmd := exec.Command(pdptoolPath, "prepare-piece", tempFilePath)
 	prepareCmd.Stdout = &prepareOutput
 	prepareCmd.Stderr = &prepareError
-	prepareCmd.Dir = filepath.Dir(pdptoolPath)
 
 	prepareCtx, prepareCancel := context.WithTimeout(context.Background(), prepareTimeout)
 	defer prepareCancel()
@@ -385,7 +413,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	prepareCmdWithTimeout := exec.CommandContext(prepareCtx, pdptoolPath, "prepare-piece", tempFilePath)
 	prepareCmdWithTimeout.Stdout = &prepareOutput
 	prepareCmdWithTimeout.Stderr = &prepareError
-	prepareCmdWithTimeout.Dir = filepath.Dir(pdptoolPath)
 
 	prepareDone := make(chan bool)
 	go func() {
@@ -460,7 +487,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	uploadCmd := exec.Command(pdptoolPath, uploadArgs...)
 	uploadCmd.Stdout = &uploadOutput
 	uploadCmd.Stderr = &uploadError
-	uploadCmd.Dir = filepath.Dir(pdptoolPath)
 
 	log.WithField("command", pdptoolPath).
 		WithField("args", strings.Join(uploadArgs, " ")).
@@ -645,8 +671,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		}
 
 		verifyCmd := exec.Command(pdptoolPath, verifyProofSetArgs...)
-		verifyCmd.Dir = filepath.Dir(pdptoolPath)
-
 		var verifyOutput bytes.Buffer
 		var verifyError bytes.Buffer
 		verifyCmd.Stdout = &verifyOutput
@@ -654,7 +678,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		verifyCmdWithTimeout := exec.CommandContext(verifyCtx, pdptoolPath, verifyProofSetArgs...)
-		verifyCmdWithTimeout.Dir = filepath.Dir(pdptoolPath)
+		verifyCmdWithTimeout.Dir = pdptoolDir
 		verifyCmdWithTimeout.Stdout = &verifyOutput
 		verifyCmdWithTimeout.Stderr = &verifyError
 
@@ -731,7 +755,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	log.WithField("add-roots-args", strings.Join(addRootsArgs, " ")).Info("Adding root to proof set")
 
-	cmdDir := filepath.Dir(pdptoolPath)
+	cmdDir := pdptoolDir
 	secretPath := filepath.Join(cmdDir, "pdpservice.json")
 	log.WithField("expectedCmdDir", cmdDir).Info("Checking command working directory")
 	log.WithField("checkingSecretPath", secretPath).Info("Checking for pdpservice.json")
@@ -767,8 +791,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		})
 
 		addRootCmd := exec.Command(pdptoolPath, addRootsArgs...)
-		addRootCmd.Dir = filepath.Dir(pdptoolPath)
-
 		var addRootOutput bytes.Buffer
 		var addRootError bytes.Buffer
 		addRootCmd.Stdout = &addRootOutput
@@ -778,7 +800,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		defer cancel()
 
 		cmdWithTimeout := exec.CommandContext(ctx, pdptoolPath, addRootsArgs...)
-		cmdWithTimeout.Dir = filepath.Dir(pdptoolPath)
+		cmdWithTimeout.Dir = pdptoolDir
 		cmdWithTimeout.Stdout = &addRootOutput
 		cmdWithTimeout.Stderr = &addRootError
 
@@ -951,8 +973,6 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			proofSet.ProofSetID,
 		}
 		getProofSetCmd := exec.Command(pdptoolPath, getProofSetArgs...)
-		getProofSetCmd.Dir = filepath.Dir(pdptoolPath)
-
 		var getProofSetStdout bytes.Buffer
 		var getProofSetStderr bytes.Buffer
 		getProofSetCmd.Stdout = &getProofSetStdout
