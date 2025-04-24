@@ -8,21 +8,9 @@ import type { ReactElement } from "react";
 import { useDropzone } from "react-dropzone";
 import { API_BASE_URL } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
-import {
-  AlertTriangle,
-  Download,
-  Trash2,
-  ExternalLink,
-  MoreHorizontal,
-} from "lucide-react";
-import Image from "next/image";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { AlertTriangle, Download, Trash2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import Image from "next/image";
 import {
   Dialog,
   DialogContent,
@@ -1037,16 +1025,6 @@ export const FilesTab = ({
                 {/* Display serviceProofSetId */}
                 Set #{piece.serviceProofSetId}
               </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="px-2 py-1 text-xs"
-                  onClick={() => openProofDetails(piece)}
-                >
-                  Details
-                </Button>
-              </div>
             </div>
           ) : (
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
@@ -1075,63 +1053,44 @@ export const FilesTab = ({
                   disabled={isDownloading}
                   className="h-8 flex items-center transition-all duration-200 hover:text-blue-600"
                 >
-                  <Download className="h-4 w-4" />
+                  <Download className="h-4 w-4 mr-1" />
+                  <span>Download</span>
                 </Button>
               </motion.div>
-              <DropdownMenu>
+
+              {hasProof && (
                 <motion.div
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className="h-8 w-8 p-0 transition-all duration-200"
-                    >
-                      <span className="sr-only">Open menu</span>
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openProofDetails(piece)}
+                    className="h-8 flex items-center transition-all duration-200 hover:text-blue-600"
+                  >
+                    <span>Details</span>
+                  </Button>
                 </motion.div>
-                <DropdownMenuContent
-                  align="end"
-                  sideOffset={5}
-                  className="animate-in fade-in-50 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+              )}
+
+              {!isPendingRemoval && (
+                <motion.div
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
                 >
-                  {/* Use hasProof (which checks serviceProofSetId) */}
-                  {hasProof && (
-                    <DropdownMenuItem
-                      onClick={() => openProofDetails(piece)}
-                      className="cursor-pointer"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-4 w-4 mr-2"
-                      >
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                      </svg>
-                      View Proof
-                    </DropdownMenuItem>
-                  )}
-                  {!isPendingRemoval && (
-                    <DropdownMenuItem
-                      onClick={() => handleRemoveRoot(piece)}
-                      className="cursor-pointer text-red-600"
-                      // Disable if it's already marked (though it should be removed from UI now)
-                      disabled={piece.pendingRemoval}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Remove File
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveRoot(piece)}
+                    disabled={piece.pendingRemoval}
+                    className="h-8 flex items-center transition-all duration-200 hover:text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    <span>Remove</span>
+                  </Button>
+                </motion.div>
+              )}
             </div>
           )}
         </td>
