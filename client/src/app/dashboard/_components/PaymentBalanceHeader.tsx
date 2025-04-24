@@ -1,30 +1,12 @@
 "use client";
 
 import { usePayment } from "@/contexts/PaymentContext";
-import { formatCurrency, formatCurrencyPrecise } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { Plus, Loader, Shield, ChevronDown, Wallet } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
-
-// Helper function to format contract values with readable precision
-const formatContractValue = (value: string): string => {
-  const numValue = Number(value) / 1e18;
-
-  // For effectively zero values (very small numbers), display as 0
-  if (Math.abs(numValue) < 1e-10) {
-    return "0";
-  }
-
-  // For very small non-zero values, use formatCurrencyPrecise which handles this better
-  return formatCurrencyPrecise(numValue);
-};
-
-const toContractValue = (value: string): string => {
-  if (!value) return "0";
-  return (parseFloat(value) * 1e18).toString();
-};
 
 export const ROOT_REMOVED_EVENT = "ROOT_REMOVED";
 
@@ -129,6 +111,11 @@ export const PaymentBalanceHeader = () => {
     }
   };
 
+  const toContractValue = (value: string): string => {
+    if (!value) return "0";
+    return (parseFloat(value) * 1e18).toString();
+  };
+
   if (
     !paymentStatus.isLoading &&
     !paymentStatus.isDeposited &&
@@ -174,11 +161,8 @@ export const PaymentBalanceHeader = () => {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Locked Funds:</span>
                   <span className="font-medium font-mono overflow-hidden text-ellipsis max-w-[150px]">
-                    {parseFloat(paymentStatus.lockedFunds.current) < 0.001
-                      ? "0 USDFC"
-                      : formatCurrencyPrecise(
-                          paymentStatus.lockedFunds.current
-                        ) + " USDFC"}
+                    {parseFloat(paymentStatus.lockedFunds.current).toFixed(5) +
+                      " USDFC"}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -186,25 +170,18 @@ export const PaymentBalanceHeader = () => {
                     Available for Withdrawal:
                   </span>
                   <span className="font-medium font-mono overflow-hidden text-ellipsis max-w-[150px]">
-                    {formatCurrencyPrecise(
-                      Math.max(
-                        0,
-                        parseFloat(
-                          (
-                            parseFloat(paymentStatus.accountFunds) -
-                            parseFloat(paymentStatus.lockedFunds.current) -
-                            0.0001
-                          ).toFixed(6)
-                        )
-                      ).toString()
-                    )}{" "}
+                    {Math.max(
+                      0,
+                      parseFloat(paymentStatus.accountFunds) -
+                        parseFloat(paymentStatus.lockedFunds.current)
+                    ).toFixed(5)}{" "}
                     USDFC
                   </span>
                 </div>
               </div>
             </div>
 
-            {paymentStatus.operatorApproval && (
+            {/* {paymentStatus.operatorApproval && (
               <div className="p-3">
                 <h3 className="text-sm font-medium text-gray-700 mb-2">
                   Operator Approval
@@ -238,7 +215,7 @@ export const PaymentBalanceHeader = () => {
                   </div>
                 </div>
               </div>
-            )}
+            )} */}
 
             <div className="p-3">
               <h3 className="text-sm font-medium text-gray-700 mb-2">

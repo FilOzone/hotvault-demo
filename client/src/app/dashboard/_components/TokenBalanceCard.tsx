@@ -393,7 +393,9 @@ export const TokenBalanceCard = () => {
             <div className="text-[15px] text-gray-600 mb-1">Locked Funds</div>
             <div className="text-2xl font-semibold overflow-hidden text-ellipsis">
               <span className="font-mono tracking-tight break-all">
-                {formatCurrencyPrecise(paymentStatus.lockedFunds.current)}
+                {formatCurrencyPrecise(
+                  parseFloat(paymentStatus.lockedFunds.current).toFixed(5)
+                )}
               </span>
               <span className="ml-1">USDFC</span>
             </div>
@@ -406,18 +408,11 @@ export const TokenBalanceCard = () => {
           </div>
           <div className="text-2xl font-semibold text-green-700 flex items-baseline">
             <span className="font-mono tracking-tight">
-              {formatCurrencyPrecise(
-                Math.max(
-                  0,
-                  parseFloat(
-                    (
-                      parseFloat(paymentStatus.accountFunds) -
-                      parseFloat(paymentStatus.lockedFunds.current) -
-                      0.0001
-                    ).toFixed(6)
-                  )
-                ).toString()
-              )}
+              {Math.max(
+                0,
+                parseFloat(paymentStatus.accountFunds) -
+                  parseFloat(paymentStatus.lockedFunds.current)
+              ).toFixed(5)}
             </span>
             <span className="ml-1">USDFC</span>
           </div>

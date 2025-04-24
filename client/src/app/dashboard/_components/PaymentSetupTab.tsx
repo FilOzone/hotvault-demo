@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { usePayment } from "@/contexts/PaymentContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { TokenBalanceCard } from "./TokenBalanceCard";
 import { CheckCircle, Loader, Info, AlertTriangle, Files } from "lucide-react";
 import * as Constants from "@/lib/constants";
@@ -74,6 +75,7 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     refreshPaymentSetupStatus,
     initiateProofSetCreation,
   } = usePayment();
+  const { account } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState<PaymentStep>(
     PaymentStep.APPROVE_TOKEN
@@ -119,9 +121,25 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     }
   }, [paymentStatus]);
 
+  useEffect(() => {
+    setIsProcessing(false);
+  }, [
+    account,
+    paymentStatus.isTokenApproved,
+    paymentStatus.isDeposited,
+    paymentStatus.isOperatorApproved,
+  ]);
+
   const handleApproveToken = async () => {
     if (!tokenAllowance || parseFloat(tokenAllowance) <= 0) {
       toast.error("Please enter a valid allowance amount");
+      return;
+    }
+
+    if (!paymentStatus.hasMinimumBalance) {
+      toast.error(
+        `You need at least ${Constants.MINIMUM_USDFC_BALANCE} USDFC in your wallet to proceed`
+      );
       return;
     }
 
@@ -149,6 +167,13 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     ) {
       toast.error(
         `Deposit amount must be at least ${Constants.PROOF_SET_FEE} USDFC`
+      );
+      return;
+    }
+
+    if (!paymentStatus.hasMinimumBalance) {
+      toast.error(
+        `You need at least ${Constants.MINIMUM_USDFC_BALANCE} USDFC in your wallet to proceed`
       );
       return;
     }
@@ -214,9 +239,40 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     }
   };
 
+  const handleCreateProofSet = async () => {
+    if (
+      parseFloat(paymentStatus.accountFunds) <
+      parseFloat(Constants.PROOF_SET_FEE)
+    ) {
+      toast.error(
+        `You need at least ${Constants.PROOF_SET_FEE} USDFC in your FWS funds to create a proof set`
+      );
+      return;
+    }
+
+    setIsProofSetClicked(true);
+    try {
+      const result = await initiateProofSetCreation();
+      if (!result) {
+        toast.error("Failed to create Hot Vault space");
+        setIsProofSetClicked(false);
+      }
+    } catch (error) {
+      console.error("Error creating Hot Vault space:", error);
+      toast.error("Error creating Hot Vault space. Please try again.");
+      setIsProofSetClicked(false);
+    }
+  };
+
   const renderTokenApprovalStep = () => {
     const isActive = currentStep === PaymentStep.APPROVE_TOKEN;
     const isCompleted = currentStep > PaymentStep.APPROVE_TOKEN;
+
+    if (isActive) {
+      console.log(
+        `Rendering Approve button check: hasMinimumBalance=${paymentStatus.hasMinimumBalance}, isProcessing=${isProcessing}`
+      );
+    }
 
     return (
       <div
@@ -283,6 +339,9 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                   />
                   <div className="flex items-center justify-between text-sm text-gray-500">
                     <span>Minimum required: 10 USDFC</span>
+                    <span>
+                      Wallet balance: {paymentStatus.usdcBalance} USDFC
+                    </span>
                   </div>
                   <button
                     onClick={handleApproveToken}
@@ -383,6 +442,9 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                   />
                   <div className="flex items-center justify-between text-sm text-gray-500">
                     <span>Minimum required: 10 USDFC</span>
+                    <span>
+                      Wallet balance: {paymentStatus.usdcBalance} USDFC
+                    </span>
                   </div>
                   <button
                     onClick={handleDeposit}
@@ -628,11 +690,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     const isProcessingCreation =
       paymentStatus.isCreatingProofSet && !isTrulyCompleted;
 
-    const handleCreateProofSet = async () => {
-      setIsProofSetClicked(true);
-      await initiateProofSetCreation();
-    };
-
     return (
       <div
         className={`w-full p-6 rounded-2xl transition-all ${
@@ -690,12 +747,25 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                       This will register your unique proof set with the Hot
                       Vault service. This process may take several minutes.
                     </p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      <span className="font-medium">Cost:</span>{" "}
+                      {Constants.PROOF_SET_FEE} USDFC
+                      <span className="ml-2 font-medium">
+                        Available funds:
+                      </span>{" "}
+                      {paymentStatus.accountFunds} USDFC
+                    </p>
                   </div>
                 </div>
 
                 <button
                   onClick={handleCreateProofSet}
-                  disabled={isProcessingCreation || isProofSetClicked}
+                  disabled={
+                    isProcessingCreation ||
+                    isProofSetClicked ||
+                    parseFloat(paymentStatus.accountFunds) <
+                      parseFloat(Constants.PROOF_SET_FEE)
+                  }
                   className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   Get Hot Vault Space

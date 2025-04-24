@@ -334,9 +334,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           proofSetReady: fetchedProofSetReady,
           isCreatingProofSet: fetchedProofSetInitiated && !fetchedProofSetReady,
           isLoading: false,
-          hasMinimumBalance:
-            parseFloat(accountStatus.funds) >=
-            parseFloat(Constants.MINIMUM_USDFC_BALANCE),
+          hasMinimumBalance: prev.hasMinimumBalance,
         }));
 
         console.log(`Payment setup status for ${account}:`, {

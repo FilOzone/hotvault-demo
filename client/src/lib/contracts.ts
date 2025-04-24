@@ -49,6 +49,11 @@ export async function getUSDFCBalance(
     const minimumBalance = ethers.parseUnits("10", decimals);
     const hasMinimumBalance = rawBalance >= minimumBalance;
 
+    // Add this log
+    console.log(
+      `getUSDFCBalance check: rawBalance=${rawBalance.toString()}, decimals=${decimals}, minimumBalance=${minimumBalance.toString()}, hasMinimumBalance=${hasMinimumBalance}`
+    );
+
     return {
       rawBalance,
       formattedBalance,
