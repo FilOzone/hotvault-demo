@@ -46,6 +46,9 @@ export type PaymentStatus = {
     rateAllowance: string;
     lockupAllowance: string;
   } | null;
+  lockedFunds: {
+    current: string;
+  };
 };
 
 interface PaymentContextType {
@@ -83,6 +86,9 @@ const initialState: PaymentStatus = {
   isLoading: false,
   lastApprovalTimestamp: 0,
   operatorApproval: null,
+  lockedFunds: {
+    current: "0",
+  },
 };
 
 export const PaymentProvider: React.FC<{ children: ReactNode }> = ({

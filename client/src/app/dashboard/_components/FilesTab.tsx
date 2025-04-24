@@ -1151,7 +1151,7 @@ export const FilesTab = ({
             <p className="font-medium mb-1">Proof Set Creation in Progress</p>
             <p className="text-sm">
               Your proof set is being created on FWS. This process typically
-              takes 5-10 minutes to complete. During this time, uploads are
+              takes few minutesto complete. During this time, uploads are
               disabled until the proof set creation is finalized.
             </p>
           </div>

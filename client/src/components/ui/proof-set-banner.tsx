@@ -71,7 +71,7 @@ export const ProofSetBanner: React.FC = () => {
             </p>
             <p className="text-xs">
               Your proof set is being created on FWS. This process typically
-              takes 5-10 minutes.{" "}
+              takes few minutes to complete.{" "}
               <span className="font-semibold">
                 File uploads are temporarily disabled
               </span>{" "}

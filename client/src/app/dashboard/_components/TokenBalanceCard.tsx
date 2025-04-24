@@ -160,6 +160,58 @@ export const TokenBalanceCard = () => {
         </div>
 
         <div className="space-y-4">
+          {/* Wallet Balance Section */}
+          <div className="p-6 bg-blue-50 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Wallet className="w-5 h-5 text-blue-500" />
+              <div className="text-[15px] font-medium text-blue-700">
+                Wallet Balance
+              </div>
+            </div>
+            <div className="text-2xl font-semibold text-blue-900 font-mono">
+              {parseFloat(paymentStatus.usdcBalance).toFixed(5)} USDFC
+            </div>
+            <div className="text-[15px] text-blue-600 mt-1">
+              Available in your connected wallet
+            </div>
+          </div>
+
+          {/* Total FWS Funds */}
+          <div className="p-6 bg-gray-50 rounded-xl">
+            <div className="text-[15px] text-gray-600 mb-1">
+              Total FWS Funds
+            </div>
+            <div className="text-2xl font-semibold font-mono">
+              {parseFloat(paymentStatus.accountFunds).toFixed(5)} USDFC
+            </div>
+          </div>
+
+          {/* Locked Funds */}
+          <div className="p-6 bg-gray-50 rounded-xl">
+            <div className="text-[15px] text-gray-600 mb-1">Locked Funds</div>
+            <div className="text-2xl font-semibold font-mono">
+              {parseFloat(paymentStatus.lockedFunds.current).toFixed(5)} USDFC
+            </div>
+          </div>
+
+          {/* Available for Withdrawal */}
+          <div className="p-6 bg-gray-50 rounded-xl">
+            <div className="text-[15px] text-gray-600 mb-1">
+              Available for Withdrawal
+            </div>
+            <div className="text-2xl font-semibold text-green-700 font-mono">
+              {Math.max(
+                0,
+                parseFloat(paymentStatus.accountFunds) -
+                  parseFloat(paymentStatus.lockedFunds.current)
+              ).toFixed(5)}{" "}
+              USDFC
+            </div>
+          </div>
+
+          <div className="h-px bg-gray-100 my-2" />
+
+          {/* Action Buttons */}
           <div className="space-y-3">
             <button
               onClick={() => {
@@ -167,7 +219,7 @@ export const TokenBalanceCard = () => {
                 setShowSetAllowance(false);
                 setShowAddFunds(false);
               }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-[15px] font-medium text-red-600 hover:text-red-700 bg-red-50/50 hover:bg-red-50 rounded-lg transition-colors"
+              className="w-full flex items-center gap-2.5 px-6 py-3 text-[15px] font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
             >
               <ArrowDownLeft className="w-5 h-5" strokeWidth={2} />
               Withdraw
@@ -178,7 +230,7 @@ export const TokenBalanceCard = () => {
                 setShowAddFunds(false);
                 setShowWithdraw(false);
               }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-[15px] font-medium text-purple-600 hover:text-purple-700 bg-purple-50/50 hover:bg-purple-50 rounded-lg transition-colors"
+              className="w-full flex items-center gap-2.5 px-6 py-3 text-[15px] font-medium text-purple-600 hover:text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors"
             >
               <Shield className="w-5 h-5" strokeWidth={2} />
               Set Allowance
@@ -189,15 +241,16 @@ export const TokenBalanceCard = () => {
                 setShowSetAllowance(false);
                 setShowWithdraw(false);
               }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-[15px] font-medium text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 rounded-lg transition-colors"
+              className="w-full flex items-center gap-2.5 px-6 py-3 text-[15px] font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
             >
               <Plus className="w-5 h-5" strokeWidth={2} />
               Add Funds
             </button>
           </div>
 
+          {/* Action Forms */}
           {showAddFunds && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100 animate-fadeIn">
+            <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 animate-fadeIn">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-medium text-blue-900">Add Funds</h4>
                 <button
@@ -237,7 +290,7 @@ export const TokenBalanceCard = () => {
           )}
 
           {showSetAllowance && (
-            <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-100 animate-fadeIn">
+            <div className="mt-4 p-4 bg-purple-50 rounded-xl border border-purple-100 animate-fadeIn">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-medium text-purple-900">
                   Set Allowance
@@ -284,7 +337,7 @@ export const TokenBalanceCard = () => {
           )}
 
           {showWithdraw && (
-            <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-100 animate-fadeIn">
+            <div className="mt-4 p-4 bg-red-50 rounded-xl border border-red-100 animate-fadeIn">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-medium text-red-900">
                   Withdraw Funds
@@ -351,63 +404,6 @@ export const TokenBalanceCard = () => {
               </div>
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="h-px bg-gray-100" />
-
-      <div className="px-6 py-6 space-y-4">
-        <div className="p-4 bg-blue-50 rounded-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <Wallet className="w-5 h-5 text-blue-500" />
-            <div className="text-[15px] font-medium text-blue-700">
-              Wallet Balance
-            </div>
-          </div>
-          <div className="text-2xl font-semibold text-blue-900">
-            {formatCurrency(paymentStatus.usdcBalance)} USDFC
-          </div>
-          <div className="text-[15px] text-blue-600 mt-1">
-            Available in your connected wallet
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <div className="text-[15px] text-gray-600 mb-1">
-              Total FWS Funds
-            </div>
-            <div className="text-2xl font-semibold">
-              {formatCurrency(paymentStatus.accountFunds)} USDFC
-            </div>
-          </div>
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <div className="text-[15px] text-gray-600 mb-1">Locked Funds</div>
-            <div className="text-2xl font-semibold overflow-hidden text-ellipsis">
-              <span className="font-mono tracking-tight break-all">
-                {formatCurrencyPrecise(
-                  parseFloat(paymentStatus.lockedFunds.current).toFixed(5)
-                )}
-              </span>
-              <span className="ml-1">USDFC</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 bg-green-50 rounded-xl">
-          <div className="text-[15px] text-gray-700 mb-1">
-            Available for Withdrawal
-          </div>
-          <div className="text-2xl font-semibold text-green-700 flex items-baseline">
-            <span className="font-mono tracking-tight">
-              {Math.max(
-                0,
-                parseFloat(paymentStatus.accountFunds) -
-                  parseFloat(paymentStatus.lockedFunds.current)
-              ).toFixed(5)}
-            </span>
-            <span className="ml-1">USDFC</span>
-          </div>
         </div>
       </div>
     </div>
