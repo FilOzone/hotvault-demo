@@ -2,24 +2,47 @@
 
 ## Prerequisites
 
-- Docker must be pre-configured and running
-- Go installed
-- Node.js and npm installed
+Before setting up Hot Vault, ensure you have the following installed and configured:
+
+### Required Software
+
+- Docker Desktop (latest version)
+- Go 1.21 or later
+- Node.js 18.x or later
+- npm 9.x or later
+- MetaMask browser extension
+- PostgreSQL 15.x or later (if not using Docker)
+- PDP Tool (must be installed and configured)
+
+### Required Tokens
+
+- USDFC tokens in your MetaMask wallet for Filecoin Calibration Net
+  - Contract Address: `0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0`
+
+## Setup Guide
 
 **Important:** The server and client applications must be run simultaneously in separate terminal instances.
 
-## Setup Steps
-
-1. **Server Setup**
+1. **Clone the Repository**
 
    ```bash
+   git clone https://github.com/FilOzone/fws-demo-app.git
+   cd fws-demo-app
+   ```
+
+2. **Server Setup**
+
+   ```bash
+   # Navigate to server directory
    cd server
+
+   # Install Go dependencies
    go mod tidy
    ```
 
-   Create .env file with these settings:
+   Create a `.env` file in the server directory:
 
-   ```
+   ```env
    PORT=8080
    ENV=development
    DB_HOST=localhost
@@ -30,34 +53,37 @@
    DB_SSL_MODE=disable
    JWT_SECRET=fws_secret_key_change_in_production
    JWT_EXPIRATION=24h
-   PDPTOOL_PATH=/path/to/pdptool
+   PDPTOOL_PATH=/absolute/path/to/pdptool  # Update this with your pdptool path
    SERVICE_NAME=pdp-service-name
    SERVICE_URL=https://yablu.net
    RECORD_KEEPER=0xdbE4bEF3F313dAC36257b0621e4a3BC8Dc9679a1
    ```
 
-   Start PostgreSQL:
+   Start the database and server:
 
    ```bash
+   # Start PostgreSQL in Docker
    make postgres-start
-   ```
 
-   Start the server:
+   # Wait for about 10 seconds for PostgreSQL to fully start
 
-   ```bash
+   # Start the server
    make run
    ```
 
-2. **Client Setup**
+3. **Client Setup**
 
    ```bash
+   # Open a new terminal
    cd client
+
+   # Install dependencies
    npm install --legacy-peer-deps
    ```
 
-   Create .env file with these settings:
+   Create a `.env.local` file in the client directory:
 
-   ```
+   ```env
    NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
    NEXT_PUBLIC_USDFC_TOKEN_ADDRESS=0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0
    NEXT_PUBLIC_PAYMENT_PROXY_ADDRESS=0x0E690D3e60B0576D01352AB03b258115eb84A047
@@ -70,12 +96,6 @@
    npm run dev
    ```
 
-   **Note:** Both the server and client should be running simultaneously in separate terminal instances.
+4. **Open [http://localhost:3000](http://localhost:3000) in your browser**
 
-3. **Access the Application**
-
-   - Open your browser to http://localhost:3000
-
-4. **Wallet Requirements**
-   - Ensure your connected wallet has USDFC tokens for transactions
-   - USDFC contract address: `0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0`
+For additional help or to report issues, please open a GitHub issue.
