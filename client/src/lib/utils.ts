@@ -126,3 +126,33 @@ export const formatCurrency = (
   // Optionally trim trailing zeros after the decimal point
   return trimZeros ? formatted.replace(/\.?0+$/, "") : formatted;
 };
+
+/**
+ * Formats a currency amount showing full precision with no rounding
+ * @param amount - Amount as a string or number
+ * @param maxDecimals - Maximum number of decimal places to display (default: 18)
+ * @returns Formatted string with full precision
+ */
+export const formatCurrencyPrecise = (
+  amount: string | number,
+  maxDecimals: number = 18
+): string => {
+  // Convert to string if it's a number
+  const strAmount = typeof amount === "string" ? amount : amount.toString();
+
+  // Parse the string to handle potential scientific notation
+  const numAmount = parseFloat(strAmount);
+
+  // Format the number with maximum precision
+  let formatted = numAmount.toFixed(maxDecimals);
+
+  // Remove trailing zeros after the decimal point, but keep at least one digit after decimal
+  formatted = formatted.replace(/\.?0+$/, "");
+
+  // If we accidentally removed the entire decimal part, add .0
+  if (!formatted.includes(".")) {
+    formatted = `${formatted}.0`;
+  }
+
+  return formatted;
+};

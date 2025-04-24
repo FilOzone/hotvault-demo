@@ -577,28 +577,6 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         window.ethereum as ethers.Eip1193Provider
       );
 
-      // Check USDFC balance before proceeding
-      const balanceResult = await getUSDFCBalance(
-        provider,
-        Constants.USDFC_TOKEN_ADDRESS,
-        account
-      );
-
-      // Convert amount to number for comparison
-      const withdrawAmount = parseFloat(amount);
-      const currentBalance = parseFloat(balanceResult.formattedBalance);
-
-      // Check if user has enough balance to receive the withdrawn funds
-      if (currentBalance < withdrawAmount) {
-        setPaymentStatus((prev) => ({
-          ...prev,
-          error:
-            "Insufficient USDFC balance in wallet to receive withdrawn funds",
-          isLoading: false,
-        }));
-        return false;
-      }
-
       // Create transaction record
       const txId = addTransaction({
         type: "withdraw",

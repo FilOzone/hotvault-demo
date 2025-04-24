@@ -1,20 +1,19 @@
 "use client";
 
 import { usePayment } from "@/contexts/PaymentContext";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatCurrencyPrecise } from "@/lib/utils";
 import { Plus, Loader, Shield, ChevronDown, Wallet } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { UPLOAD_COMPLETED_EVENT } from "@/components/ui/global-upload-progress";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
 
-const formatTokenAmount = (value: string): string => {
-  if (!value || value === "0") return "0";
-
+// Helper function to format contract values with full precision
+const formatContractValue = (value: string): string => {
   const numValue = Number(value) / 1e18;
-  if (numValue === 0) return "0";
 
-  return numValue.toFixed(2).replace(/\.?0+$/, "");
+  // Show the exact value as a string with all decimal places
+  return numValue.toString();
 };
 
 const toContractValue = (value: string): string => {
@@ -169,19 +168,29 @@ export const PaymentBalanceHeader = () => {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Locked Funds:</span>
-                  <span className="font-medium">
-                    {formatCurrency(paymentStatus.lockedFunds.current)} USDFC
+                  <span className="font-medium font-mono overflow-hidden text-ellipsis max-w-[150px]">
+                    {parseFloat(paymentStatus.lockedFunds.current) < 0.001
+                      ? "0 USDFC"
+                      : formatCurrencyPrecise(
+                          paymentStatus.lockedFunds.current
+                        ) + " USDFC"}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">
                     Available for Withdrawal:
                   </span>
-                  <span className="font-medium">
-                    {formatCurrency(
-                      (
-                        parseFloat(paymentStatus.accountFunds) -
-                        parseFloat(paymentStatus.lockedFunds.current)
+                  <span className="font-medium font-mono overflow-hidden text-ellipsis max-w-[150px]">
+                    {formatCurrencyPrecise(
+                      Math.max(
+                        0,
+                        parseFloat(
+                          (
+                            parseFloat(paymentStatus.accountFunds) -
+                            parseFloat(paymentStatus.lockedFunds.current) -
+                            0.0001
+                          ).toFixed(6)
+                        )
                       ).toString()
                     )}{" "}
                     USDFC
@@ -198,12 +207,12 @@ export const PaymentBalanceHeader = () => {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Rate Usage:</span>
-                    <span className="font-mono text-xs">
-                      {formatTokenAmount(
+                    <span className="font-mono text-xs overflow-hidden text-ellipsis max-w-[150px]">
+                      {formatContractValue(
                         paymentStatus.operatorApproval.rateUsage
                       )}
                       /
-                      {formatTokenAmount(
+                      {formatContractValue(
                         paymentStatus.operatorApproval.rateAllowance
                       )}{" "}
                       USDFC
@@ -211,12 +220,12 @@ export const PaymentBalanceHeader = () => {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Lockup Usage:</span>
-                    <span className="font-mono text-xs">
-                      {formatTokenAmount(
+                    <span className="font-mono text-xs overflow-hidden text-ellipsis max-w-[150px]">
+                      {formatContractValue(
                         paymentStatus.operatorApproval.lockupUsage
                       )}
                       /
-                      {formatTokenAmount(
+                      {formatContractValue(
                         paymentStatus.operatorApproval.lockupAllowance
                       )}{" "}
                       USDFC

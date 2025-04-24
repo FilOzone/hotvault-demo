@@ -2,10 +2,23 @@
 
 import { usePayment } from "@/contexts/PaymentContext";
 import { Wallet, Plus, Shield, Loader, X, ArrowDownLeft } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatCurrencyPrecise } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
 import * as Constants from "@/lib/constants";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ProgressBar } from "@/components/ui/progress-bar";
+import { useEthersSigner } from "@/lib/hooks/useEthersSigner";
+import useWallet from "@/lib/hooks/useWallet";
+import { CHAIN_MAPPING, TOKEN_MAPPING } from "@/lib/constants";
+import { formatBigInt } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 export const TokenBalanceCard = () => {
   const { paymentStatus, depositFunds, approveToken, withdrawFunds } =
@@ -17,6 +30,9 @@ export const TokenBalanceCard = () => {
   const [allowanceAmount, setAllowanceAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [withdrawAmountDisplay, setWithdrawAmountDisplay] = useState("");
+  const [isLoadingBalance, setIsLoadingBalance] = useState(true);
+  const [isLoadingLockedFunds, setIsLoadingLockedFunds] = useState(true);
 
   const handleAddFunds = async () => {
     if (!depositAmount || parseFloat(depositAmount) <= 0) {
@@ -78,20 +94,29 @@ export const TokenBalanceCard = () => {
     }
 
     const withdrawAmountNum = parseFloat(withdrawAmount);
-    const availableFunds =
-      parseFloat(paymentStatus.accountFunds) -
-      parseFloat(paymentStatus.lockedFunds.current);
-    const walletBalance = parseFloat(paymentStatus.usdcBalance);
+    const lockedAmount = parseFloat(paymentStatus.lockedFunds.current);
+    const totalFunds = parseFloat(paymentStatus.accountFunds);
+
+    // Calculate available funds with precision handling
+    const availableFunds = Math.max(
+      0,
+      parseFloat((totalFunds - lockedAmount).toFixed(6))
+    );
 
     console.log("Withdrawal validation:", {
       withdrawAmount: withdrawAmountNum,
       accountFunds: paymentStatus.accountFunds,
       lockedFunds: paymentStatus.lockedFunds,
       availableFunds,
-      walletBalance,
+      precision: {
+        totalFunds,
+        lockedAmount,
+        difference: totalFunds - lockedAmount,
+      },
     });
 
-    if (withdrawAmountNum > availableFunds) {
+    // Use a small buffer (0.001) to account for precision errors
+    if (withdrawAmountNum > availableFunds + 0.001) {
       const errorMsg = `Cannot withdraw more than available unlocked funds (${formatCurrency(
         availableFunds.toString()
       )} USDFC)`;
@@ -100,13 +125,13 @@ export const TokenBalanceCard = () => {
       return;
     }
 
-    if (withdrawAmountNum > walletBalance) {
-      const errorMsg = `Insufficient USDFC balance in wallet to receive withdrawn funds. Current balance: ${formatCurrency(
-        paymentStatus.usdcBalance
-      )} USDFC`;
-      console.error("Wallet balance validation failed:", errorMsg);
-      toast.error(errorMsg);
-      return;
+    // If the user is trying to withdraw all funds, adjust to the exact available amount
+    if (Math.abs(withdrawAmountNum - totalFunds) < 0.01) {
+      console.log(
+        "Adjusting withdrawal amount to maximum available:",
+        availableFunds
+      );
+      setWithdrawAmount(availableFunds.toString());
     }
 
     setIsProcessing(true);
@@ -132,6 +157,20 @@ export const TokenBalanceCard = () => {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const setMaxWithdrawal = () => {
+    const availableFunds = Math.max(
+      0,
+      parseFloat(
+        (
+          parseFloat(paymentStatus.accountFunds) -
+          parseFloat(paymentStatus.lockedFunds.current) -
+          0.0001
+        ).toFixed(6)
+      )
+    );
+    setWithdrawAmount(availableFunds.toString());
   };
 
   return (
@@ -283,22 +322,37 @@ export const TokenBalanceCard = () => {
               </div>
               <div className="space-y-3">
                 <div>
-                  <input
-                    type="number"
-                    value={withdrawAmount}
-                    onChange={(e) => setWithdrawAmount(e.target.value)}
-                    className="w-full rounded-lg border border-red-200 px-3 py-2 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500 bg-white"
-                    placeholder="Amount to withdraw"
-                    min="0.01"
-                    step="0.01"
-                    disabled={isProcessing}
-                  />
+                  <div className="flex relative">
+                    <input
+                      type="number"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      className="w-full rounded-lg border border-red-200 px-3 py-2 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500 bg-white pr-16"
+                      placeholder="Amount to withdraw"
+                      min="0.01"
+                      step="0.01"
+                      disabled={isProcessing}
+                    />
+                    <button
+                      type="button"
+                      onClick={setMaxWithdrawal}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded hover:bg-red-200"
+                    >
+                      Max
+                    </button>
+                  </div>
                   <p className="mt-1.5 text-xs text-red-600">
                     Available:{" "}
-                    {formatCurrency(
-                      (
-                        parseFloat(paymentStatus.accountFunds) -
-                        parseFloat(paymentStatus.lockedFunds.current)
+                    {formatCurrencyPrecise(
+                      Math.max(
+                        0,
+                        parseFloat(
+                          (
+                            parseFloat(paymentStatus.accountFunds) -
+                            parseFloat(paymentStatus.lockedFunds.current) -
+                            0.0001
+                          ).toFixed(6)
+                        )
                       ).toString()
                     )}{" "}
                     USDFC
@@ -353,8 +407,11 @@ export const TokenBalanceCard = () => {
           </div>
           <div className="p-4 bg-gray-50 rounded-xl">
             <div className="text-[15px] text-gray-600 mb-1">Locked Funds</div>
-            <div className="text-2xl font-semibold">
-              {formatCurrency(paymentStatus.lockedFunds.current)} USDFC
+            <div className="text-2xl font-semibold overflow-hidden text-ellipsis">
+              <span className="font-mono tracking-tight break-all">
+                {formatCurrencyPrecise(paymentStatus.lockedFunds.current)}
+              </span>
+              <span className="ml-1">USDFC</span>
             </div>
           </div>
         </div>
@@ -363,14 +420,22 @@ export const TokenBalanceCard = () => {
           <div className="text-[15px] text-gray-700 mb-1">
             Available for Withdrawal
           </div>
-          <div className="text-2xl font-semibold text-green-700">
-            {formatCurrency(
-              (
-                parseFloat(paymentStatus.accountFunds) -
-                parseFloat(paymentStatus.lockedFunds.current)
-              ).toString()
-            )}{" "}
-            USDFC
+          <div className="text-2xl font-semibold text-green-700 flex items-baseline">
+            <span className="font-mono tracking-tight">
+              {formatCurrencyPrecise(
+                Math.max(
+                  0,
+                  parseFloat(
+                    (
+                      parseFloat(paymentStatus.accountFunds) -
+                      parseFloat(paymentStatus.lockedFunds.current) -
+                      0.0001
+                    ).toFixed(6)
+                  )
+                ).toString()
+              )}
+            </span>
+            <span className="ml-1">USDFC</span>
           </div>
         </div>
       </div>
