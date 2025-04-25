@@ -457,7 +457,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
 	})
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	var uploadOutput bytes.Buffer
 	var uploadError bytes.Buffer
@@ -633,14 +633,14 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	}
 
 	verifyMaxRetries := 100
-	verifyBackoff := 5 * time.Second
-	verifyMaxBackoff := 5 * time.Second
+	verifyBackoff := 30 * time.Second
+	verifyMaxBackoff := 30 * time.Second
 	verifySuccess := false
 
 	for verifyAttempt := 1; verifyAttempt <= verifyMaxRetries; verifyAttempt++ {
 		if verifyAttempt > 1 {
-			log.Info("Applying fixed 5-second delay before verification attempt")
-			time.Sleep(5 * time.Second)
+			log.Info("Applying fixed 30-second delay before verification attempt")
+			time.Sleep(30 * time.Second)
 		}
 
 		log.WithField("attempt", verifyAttempt).
@@ -756,8 +756,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	}
 
 	maxRetries := 100
-	backoff := 5 * time.Second
-	maxBackoff := 5 * time.Second
+	backoff := 30 * time.Second
+	maxBackoff := 30 * time.Second
 	success := false
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
@@ -929,8 +929,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	})
 
 	var extractedIntegerRootID string
-	pollInterval := 5 * time.Second
-	maxPollInterval := 5 * time.Second
+	pollInterval := 30 * time.Second
+	maxPollInterval := 30 * time.Second
 	maxPollAttempts := 100
 	pollAttempt := 0
 	foundRootInPoll := false
@@ -939,8 +939,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 	for pollAttempt < maxPollAttempts {
 		if pollAttempt > 0 {
-			log.Info("Applying fixed 5-second delay before poll attempt")
-			time.Sleep(5 * time.Second)
+			log.Info("Applying fixed 30-second delay before poll attempt")
+			time.Sleep(30 * time.Second)
 		}
 
 		pollAttempt++
@@ -1067,8 +1067,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		}
 
 		if sawAnyRootID {
-			log.Info("Proof set has roots, but none matching our CID yet. Reducing poll interval.")
-			pollInterval = 5 * time.Second
+			log.Info("Proof set has roots, but none matching our CID yet. Polling again.")
+			pollInterval = 30 * time.Second
 		}
 
 		log.Debug(fmt.Sprintf("Root CID %s not found in get-proof-set output on attempt %d. Waiting %v...", baseCID, pollAttempt, pollInterval))

@@ -293,6 +293,7 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           isOperatorApproved: operatorStatus.isApproved,
           accountFunds: accountStatus.funds,
           lockedFunds: {
+            ...prev.lockedFunds,
             current: accountStatus.lockupCurrent,
             rate: accountStatus.lockupRate,
             lastSettledAt: accountStatus.lockupLastSettledAt,
@@ -314,6 +315,16 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
           },
           isOperatorApproved: operatorStatus.isApproved,
         });
+
+        // Notify any listening components of the updated balance
+        window.dispatchEvent(
+          new CustomEvent(BALANCE_UPDATED_EVENT, {
+            detail: {
+              newBalance: accountStatus.funds,
+              newLockedFunds: accountStatus.lockupCurrent,
+            },
+          })
+        );
       } catch (error) {
         console.error("Error fetching account status:", error);
         console.log("User hasn't interacted with the Payments contract yet");
@@ -394,6 +405,30 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
       }));
     }
   }, [account, startPolling, pollingInterval]);
+
+  // Function to aggressively refresh status after a transaction
+  const refreshAfterTransaction = async () => {
+    // Try multiple refreshes to account for blockchain lag
+    try {
+      // First immediate refresh
+      await refreshBalance();
+      await refreshPaymentSetupStatus();
+
+      // Then retry after short delays
+      setTimeout(async () => {
+        await refreshBalance();
+        await refreshPaymentSetupStatus();
+
+        // Final refresh after a longer delay
+        setTimeout(async () => {
+          await refreshBalance();
+          await refreshPaymentSetupStatus();
+        }, 3000);
+      }, 1000);
+    } catch (error) {
+      console.error("Error during refresh sequence:", error);
+    }
+  };
 
   const approveToken = async (amount: string): Promise<boolean> => {
     if (!account) return false;
@@ -561,18 +596,43 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         error: "Waiting for blockchain confirmation...",
       }));
 
-      // Wait 5 seconds for blockchain to sync before showing success
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-
-      // Update balance immediately
+      // Immediately update UI with anticipated new values
       const newBalance = (
         parseFloat(paymentStatus.accountFunds) + parseFloat(amount)
       ).toString();
-      updateBalanceAndNotify({ newBalance });
 
-      // Refresh in background
-      await refreshPaymentSetupStatus();
+      // Also update wallet balance
+      const newWalletBalance = Math.max(
+        0,
+        parseFloat(paymentStatus.usdcBalance) - parseFloat(amount)
+      ).toFixed(6);
 
+      setPaymentStatus((prev) => ({
+        ...prev,
+        accountFunds: newBalance,
+        usdcBalance: newWalletBalance,
+        isDeposited:
+          parseFloat(newBalance) >= parseFloat(Constants.PROOF_SET_FEE),
+        isLoading: true,
+      }));
+
+      // Notify all components about the balance update
+      window.dispatchEvent(
+        new CustomEvent(BALANCE_UPDATED_EVENT, {
+          detail: {
+            newBalance,
+            newWalletBalance,
+          },
+        })
+      );
+
+      // Wait a bit for the transaction to propagate
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Start aggressive refresh sequence
+      refreshAfterTransaction();
+
+      setPaymentStatus((prev) => ({ ...prev, isLoading: false }));
       return true;
     } catch (error) {
       console.error("Error depositing funds:", error);

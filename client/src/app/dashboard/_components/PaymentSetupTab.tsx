@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Files,
   ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import * as Constants from "@/lib/constants";
 import { toast } from "react-hot-toast";
@@ -96,11 +97,23 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
   const [lockupAllowance, setLockupAllowance] = useState("");
   const [isUpdatingAllowances, setIsUpdatingAllowances] = useState(false);
   const [isProofSetClicked, setIsProofSetClicked] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     const handleBalanceUpdate = (event: CustomEvent) => {
       console.log("[PaymentSetupTab] Balance updated:", event.detail);
-      // Force a re-render of the component
+      if (event.detail) {
+        if (currentStep === PaymentStep.DEPOSIT) {
+          if (
+            event.detail.newBalance &&
+            parseFloat(event.detail.newBalance) >=
+              parseFloat(Constants.PROOF_SET_FEE)
+          ) {
+            setCurrentStep(PaymentStep.APPROVE_OPERATOR);
+          }
+        }
+      }
+
       setIsProcessing(false);
     };
 
@@ -115,7 +128,7 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
         handleBalanceUpdate as EventListener
       );
     };
-  }, []);
+  }, [currentStep]);
 
   useEffect(() => {
     if (paymentStatus.isOperatorApproved && !isUpdatingAllowances) {
@@ -210,7 +223,9 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
     try {
       const result = await depositFunds(depositAmount);
       if (result) {
-        toast.success(`Successfully deposited ${depositAmount} USDFC`);
+        toast.success(
+          `Successfully deposited ${depositAmount} USDFC to FWS funds`
+        );
         await refreshPaymentSetupStatus();
       } else {
         toast.error("Failed to deposit USDFC");
@@ -289,6 +304,18 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
       console.error("Error creating Hot Vault space:", error);
       toast.error("Error creating Hot Vault space. Please try again.");
       setIsProofSetClicked(false);
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshPaymentSetupStatus();
+      toast.success("Balances refreshed", { duration: 2000 });
+    } catch (error) {
+      console.error("Error refreshing balances:", error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -939,29 +966,43 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
       <div className="px-6 py-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h1 className="text-xl font-semibold text-gray-900">Payment Setup</h1>
-          {paymentStatus.proofSetReady && userProofSetId && (
-            <a
-              href={`http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+          <div className="flex gap-2">
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 gap-2 border border-gray-200 hover:bg-gray-50 text-gray-700"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-4 w-4"
+              {isRefreshing ? (
+                <Loader className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              Refresh Balances
+            </button>
+            {paymentStatus.proofSetReady && userProofSetId && (
+              <a
+                href={`http://explore-pdp.xyz:5173/proofsets/${userProofSetId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border bg-background hover:text-accent-foreground h-10 px-4 py-2 gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
               >
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-              </svg>
-              View Your Vault
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                View Your Vault
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
