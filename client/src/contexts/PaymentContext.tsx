@@ -432,10 +432,21 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
 
       const now = Date.now();
 
+      // Update state to indicate we're waiting for blockchain confirmation
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: "Waiting for blockchain confirmation...",
+      }));
+
+      // Wait 5 seconds for blockchain to sync before showing success
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
       setPaymentStatus((prev) => ({
         ...prev,
         isTokenApproved: true,
         isLoading: false,
+        error: null,
         lastApprovalTimestamp: now,
       }));
 
@@ -543,6 +554,16 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         status: "success",
       });
 
+      // Update state to indicate we're waiting for blockchain confirmation
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: "Waiting for blockchain confirmation...",
+      }));
+
+      // Wait 5 seconds for blockchain to sync before showing success
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
       // Update balance immediately
       const newBalance = (
         parseFloat(paymentStatus.accountFunds) + parseFloat(amount)
@@ -605,6 +626,16 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         txHash: txResponse.hash,
         status: "success",
       });
+
+      // Update state to indicate we're waiting for blockchain confirmation
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: "Waiting for blockchain confirmation..",
+      }));
+
+      // Wait 5 seconds for blockchain to sync before showing success
+      await new Promise((resolve) => setTimeout(resolve, 5000));
 
       // Update balance immediately
       const newBalance = (
@@ -680,10 +711,21 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
         status: "success",
       });
 
+      // Update state to indicate we're waiting for blockchain confirmation
+      setPaymentStatus((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: "Waiting for blockchain confirmation...",
+      }));
+
+      // Wait 5 seconds for blockchain to sync before showing success
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
       setPaymentStatus((prev) => ({
         ...prev,
         isOperatorApproved: true,
         isLoading: false,
+        error: null,
       }));
 
       return true;

@@ -373,7 +373,12 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                     {isProcessing ? (
                       <>
                         <Loader className="w-4 h-4 animate-spin" />
-                        Processing...
+                        {paymentStatus.error &&
+                        paymentStatus.error.includes(
+                          "Waiting for blockchain confirmation"
+                        )
+                          ? paymentStatus.error
+                          : "Processing..."}
                       </>
                     ) : (
                       "Approve Token"
@@ -475,18 +480,11 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                   >
                     {isProcessing ? (
                       <>
+                        <Loader size={14} className="animate-spin mr-1" />
                         {paymentStatus.error &&
-                        paymentStatus.error.includes("Waiting") ? (
-                          <>
-                            <Loader size={14} className="animate-spin mr-1" />
-                            {paymentStatus.error}
-                          </>
-                        ) : (
-                          <>
-                            <Loader className="w-4 h-4 animate-spin" />
-                            Processing...
-                          </>
-                        )}
+                        paymentStatus.error.includes("Waiting")
+                          ? paymentStatus.error
+                          : "Processing..."}
                       </>
                     ) : (
                       "Deposit Funds"
@@ -670,7 +668,12 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                       {isProcessing ? (
                         <>
                           <Loader className="w-4 h-4 animate-spin" />
-                          Processing...
+                          {paymentStatus.error &&
+                          paymentStatus.error.includes(
+                            "Waiting for blockchain confirmation"
+                          )
+                            ? paymentStatus.error
+                            : "Processing..."}
                         </>
                       ) : isUpdating ? (
                         "Update Settings"

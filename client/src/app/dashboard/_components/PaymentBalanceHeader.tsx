@@ -312,6 +312,7 @@ export const PaymentBalanceHeader = () => {
                       placeholder="Amount to deposit"
                       min="0.01"
                       step="0.01"
+                      disabled={isProcessing}
                     />
                     <button
                       onClick={handleAddFunds}
@@ -321,7 +322,10 @@ export const PaymentBalanceHeader = () => {
                       {isProcessing ? (
                         <>
                           <Loader size={14} className="animate-spin mr-1" />
-                          Processing...
+                          {paymentStatus.error &&
+                          paymentStatus.error.includes("Waiting")
+                            ? paymentStatus.error
+                            : "Processing..."}
                         </>
                       ) : (
                         "Deposit"
@@ -340,6 +344,7 @@ export const PaymentBalanceHeader = () => {
                       placeholder="Allowance amount"
                       min={Constants.PROOF_SET_FEE}
                       step="0.01"
+                      disabled={isProcessing}
                     />
                     <button
                       onClick={handleSetAllowance}
@@ -349,7 +354,10 @@ export const PaymentBalanceHeader = () => {
                       {isProcessing ? (
                         <>
                           <Loader size={14} className="animate-spin mr-1" />
-                          Processing...
+                          {paymentStatus.error &&
+                          paymentStatus.error.includes("Waiting")
+                            ? paymentStatus.error
+                            : "Processing..."}
                         </>
                       ) : (
                         "Approve"
