@@ -1239,11 +1239,10 @@ export const FilesTab = ({
           animate={{ opacity: 1, y: 0 }}
         >
           <div className="flex-1">
-            <p className="font-medium mb-1">Proof Set Required</p>
+            <p className="font-medium mb-1">Please Setup a Vault</p>
             <p className="text-sm">
-              You need to create a proof set in the Payment Setup tab before you
-              can upload files. This is a one-time setup to onboard you to Hot
-              Vault.
+              You need to setup a Vault in the Payment setup tab before you can
+              upload files. This is a one time setup to onboard you to HotVault.
             </p>
             <Button
               variant="outline"
@@ -1253,7 +1252,7 @@ export const FilesTab = ({
                 onTabChange?.("payment");
               }}
             >
-              Go to Payment Setup
+              Go to Vault Setup
             </Button>
           </div>
         </motion.div>
