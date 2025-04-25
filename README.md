@@ -62,14 +62,14 @@ Before setting up Hot Vault, ensure you have the following installed and configu
    DB_PASSWORD=postgres
    DB_NAME=fws_db
    DB_SSL_MODE=disable
-   JWT_SECRET=secret_key_change_in_production
+   JWT_SECRET=secret_key
    JWT_EXPIRATION=24h
    PDPTOOL_PATH=/absolute/path/to/pdptool  # Update this with your pdptool path
 
    # The following values are specific to Calibnet PDP Service Provider
-   SERVICE_NAME=pdp-service-name           # Service Should be registered in the PDP Tool
+   SERVICE_NAME=pdp-service-name           # Service Should be registered in the PDP Tool with the provider
    SERVICE_URL=https://yablu.net           # Service URL where the service is registered
-   RECORD_KEEPER=0xdbE4bEF3F313dAC36257b0621e4a3BC8Dc9679a1  # Calibnet-specific
+   RECORD_KEEPER=0xdbE4bEF3F313dAC36257b0621e4a3BC8Dc9679a1  # Calibnet-specific PDP service provider Address
    ```
 
    Start the database and server:
