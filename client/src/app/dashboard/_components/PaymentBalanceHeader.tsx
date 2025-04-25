@@ -24,7 +24,21 @@ export const PaymentBalanceHeader = () => {
   const [depositAmount, setDepositAmount] = useState("");
   const [allowanceAmount, setAllowanceAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
+
+  const lastRefreshTimeRef = useRef<number>(0);
+  const DEBOUNCE_INTERVAL = 1500; // 1.5 seconds
+
+  // Create a wrapper function that shows the loading state
+  const refreshPaymentWithIndicator = async () => {
+    try {
+      setIsRefreshing(true);
+      await refreshPaymentSetupStatus();
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500); // Add small delay to ensure UI shows the change
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -47,19 +61,44 @@ export const PaymentBalanceHeader = () => {
       console.log(
         "[PaymentBalanceHeader] File upload completed, refreshing balance"
       );
-      refreshPaymentSetupStatus();
+      refreshPaymentWithIndicator();
     };
 
     const handleRootRemoved = () => {
       console.log("[PaymentBalanceHeader] Root removed, refreshing balance");
-      refreshPaymentSetupStatus();
+      refreshPaymentWithIndicator();
     };
 
     const handleBalanceUpdate = (event: CustomEvent) => {
       console.log("[PaymentBalanceHeader] Balance updated:", event.detail);
-      // The balance and locked funds are already updated in the context
-      // Just trigger a re-render and close dropdown if open
-      setShowDetails(false);
+
+      // Implement debounce to prevent multiple refreshes in quick succession
+      const now = Date.now();
+      if (now - lastRefreshTimeRef.current < DEBOUNCE_INTERVAL) {
+        console.log("[PaymentBalanceHeader] Skipping refresh due to debounce", {
+          timeSinceLastRefresh: now - lastRefreshTimeRef.current,
+          debounceInterval: DEBOUNCE_INTERVAL,
+        });
+        return;
+      }
+
+      lastRefreshTimeRef.current = now;
+
+      // Use the wrapper function that shows loading indicator
+      refreshPaymentWithIndicator()
+        .then(() => {
+          console.log(
+            "[PaymentBalanceHeader] Payment status refreshed after balance update"
+          );
+          // Close dropdown if open
+          setShowDetails(false);
+        })
+        .catch((error) => {
+          console.error(
+            "[PaymentBalanceHeader] Error refreshing payment status:",
+            error
+          );
+        });
     };
 
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadComplete);
@@ -149,8 +188,16 @@ export const PaymentBalanceHeader = () => {
           className="flex items-center gap-3 px-3 py-1.5 text-sm bg-white hover:bg-gray-50 rounded-md border border-gray-200 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-gray-500" />
-            <span>{formatCurrency(paymentStatus.accountFunds)} USDFC</span>
+            <Wallet
+              className={`w-4 h-4 ${
+                isRefreshing ? "text-blue-500 animate-pulse" : "text-gray-500"
+              }`}
+            />
+            <span>
+              {isRefreshing
+                ? "Updating..."
+                : formatCurrency(paymentStatus.accountFunds) + " USDFC"}
+            </span>
           </div>
           <ChevronDown className="w-4 h-4 text-gray-500" />
         </button>

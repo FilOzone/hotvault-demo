@@ -95,6 +95,10 @@ export const FilesTab = ({
     [cid: string]: boolean;
   }>({});
   const [fileSizeGB, setFileSizeGB] = useState<number>(0);
+  // Add a timestamp to trigger re-renders when payment status is refreshed
+  const [lastPaymentRefresh, setLastPaymentRefresh] = useState<number>(
+    Date.now()
+  );
 
   const { disconnectWallet, userProofSetId, updateUserProofSetId } = useAuth();
   const { refreshPaymentSetupStatus } = usePayment();
@@ -281,6 +285,31 @@ export const FilesTab = ({
 
       const data = await response.json();
       setPieces(data);
+
+      // Refresh payment status after successfully fetching pieces
+      try {
+        await refreshPaymentSetupStatus();
+        // Update last payment refresh timestamp to trigger re-renders
+        setLastPaymentRefresh(Date.now());
+        // Dispatch custom event to update balance in other components
+        window.dispatchEvent(
+          new CustomEvent(BALANCE_UPDATED_EVENT, {
+            detail: {
+              timestamp: Date.now(),
+              action: "pieces_refreshed",
+            },
+          })
+        );
+        console.log(
+          "[FilesTab.tsx:fetchPieces] Payment status refreshed successfully"
+        );
+      } catch (paymentError) {
+        console.error(
+          "[FilesTab.tsx:fetchPieces] Error refreshing payment status:",
+          paymentError
+        );
+      }
+
       return data;
     } catch (error) {
       console.error(
@@ -291,7 +320,7 @@ export const FilesTab = ({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [refreshPaymentSetupStatus]);
 
   const {
     uploadFile,
@@ -322,60 +351,72 @@ export const FilesTab = ({
 
     loadData();
 
+    // Handler for upload completion
     const handleUploadCompleted = () => {
-      // const detail = (event as CustomEvent).detail;
-      // console.log(
-      //   "[FilesTab] Detected upload completion, refreshing file list",
-      //   detail
-      // );
+      console.log(
+        "[FilesTab] Detected upload completion, refreshing file list and payment status"
+      );
+
+      if (!isMounted) return;
 
       setIsLoading(true);
-      // window.location.reload();
 
-      // Update the payment status and balance information
-      refreshPaymentSetupStatus().then(() => {
-        // Dispatch custom event to update balance in other components
-        window.dispatchEvent(
-          new CustomEvent(BALANCE_UPDATED_EVENT, {
-            detail: {
-              timestamp: Date.now(),
-              action: "upload_completed",
-            },
-          })
-        );
-      });
+      // Use our enhanced fetchPieces which now includes payment status refresh
+      fetchPieces()
+        .then(() => {
+          if (!isMounted) return;
 
-      window.location.reload();
-      const refreshNow = () => {
-        fetchPieces()
-          .then(() => {
-            console.log(
-              "[FilesTab] File list refreshed successfully after upload"
+          console.log(
+            "[FilesTab] File list and payment status refreshed successfully after upload"
+          );
+          setIsLoading(false);
+
+          // Update last payment refresh timestamp to trigger re-renders
+          setLastPaymentRefresh(Date.now());
+
+          // Display success message to user
+          toast.success(
+            "File uploaded successfully and payment information updated",
+            {
+              duration: 3000,
+            }
+          );
+        })
+        .catch((error: Error) => {
+          if (!isMounted) return;
+
+          console.error(
+            "[FilesTab] Error refreshing data after upload:",
+            error
+          );
+          setIsLoading(false);
+
+          // Still try to refresh payment status separately if fetchPieces failed
+          refreshPaymentSetupStatus()
+            .then(() => {
+              setLastPaymentRefresh(Date.now());
+            })
+            .catch((e: Error) =>
+              console.error("[FilesTab] Failed to refresh payment status:", e)
             );
-            window.location.reload();
-            handleUploadCompleted();
-
-            setIsLoading(false);
-          })
-          .catch((error: Error) => {
-            console.error(
-              "[FilesTab] Error refreshing file list after upload:",
-              error
-            );
-            setIsLoading(false);
-          });
-      };
-
-      refreshNow();
-
-      setTimeout(refreshNow, 500);
-
-      setTimeout(refreshNow, 2000);
+        });
     };
+
+    // Add listener for balance updates from other components
+    const handleBalanceUpdated = () => {
+      console.log("[FilesTab] Balance updated detected, triggering re-render");
+      // Update timestamp to trigger re-renders of payment-dependent components
+      setLastPaymentRefresh(Date.now());
+    };
+
+    // Register event listeners
+    window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
+    window.addEventListener(BALANCE_UPDATED_EVENT, handleBalanceUpdated);
 
     return () => {
       isMounted = false;
       window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
+      window.removeEventListener(BALANCE_UPDATED_EVENT, handleBalanceUpdated);
     };
   }, [authError, fetchPieces, fetchProofs, refreshPaymentSetupStatus]);
 
@@ -721,8 +762,32 @@ export const FilesTab = ({
       // Dispatch the ROOT_REMOVED_EVENT to trigger balance refresh
       window.dispatchEvent(new Event(ROOT_REMOVED_EVENT));
 
-      // Directly refresh payment data
-      refreshPaymentSetupStatus();
+      // Refresh payment data and notify components
+      try {
+        await refreshPaymentSetupStatus();
+
+        // Update the timestamp to force re-renders
+        setLastPaymentRefresh(Date.now());
+
+        // Dispatch custom event to update balance in other components
+        window.dispatchEvent(
+          new CustomEvent(BALANCE_UPDATED_EVENT, {
+            detail: {
+              timestamp: Date.now(),
+              action: "root_removed",
+            },
+          })
+        );
+
+        console.log(
+          "[FilesTab.tsx:submitRemoveRoot] Payment status refreshed successfully"
+        );
+      } catch (paymentError) {
+        console.error(
+          "[FilesTab.tsx:submitRemoveRoot] Error refreshing payment status:",
+          paymentError
+        );
+      }
 
       // Close dialog
       setIsRemoveDialogOpen(false);
@@ -1288,6 +1353,7 @@ export const FilesTab = ({
             filename: piece.filename,
             size: piece.size,
           }))}
+          key={`cost-banner-${lastPaymentRefresh}`} // Add this key to force re-rendering
         />
       )}
 
