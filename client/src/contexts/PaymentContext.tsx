@@ -750,6 +750,16 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     if (!account) return false;
 
     try {
+      // Check if the account has sufficient funds for creating a proof set
+      if (
+        parseFloat(paymentStatus.accountFunds) <
+        parseFloat(Constants.PROOF_SET_FEE)
+      ) {
+        throw new Error(
+          `Insufficient funds in FWS. You need at least ${Constants.PROOF_SET_FEE} USDFC in your FWS funds.`
+        );
+      }
+
       setPaymentStatus((prev) => ({
         ...prev,
         isCreatingProofSet: true,

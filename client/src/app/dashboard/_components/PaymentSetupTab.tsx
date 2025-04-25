@@ -273,7 +273,7 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
       parseFloat(Constants.PROOF_SET_FEE)
     ) {
       toast.error(
-        `You need at least ${Constants.PROOF_SET_FEE} USDFC in your FWS funds to create a proof set`
+        `Insufficient funds in FWS. You need at least ${Constants.PROOF_SET_FEE} USDFC in your FWS funds to create a proof set.`
       );
       return;
     }
@@ -774,12 +774,19 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                     </p>
                     <p className="text-sm text-blue-700 mt-1">
                       <span className="font-medium">Cost:</span>{" "}
-                      {Constants.PROOF_SET_FEE} USDFC
+                      {Constants.PROOF_SET_FEE} USDFC from your FWS funds
                       <span className="ml-2 font-medium">
-                        Available funds:
+                        Available in FWS:
                       </span>{" "}
                       {paymentStatus.accountFunds} USDFC
                     </p>
+                    {parseFloat(paymentStatus.accountFunds) <
+                      parseFloat(Constants.PROOF_SET_FEE) && (
+                      <p className="text-sm text-amber-600 mt-2 font-medium">
+                        ⚠️ You need at least {Constants.PROOF_SET_FEE} USDFC in
+                        your FWS funds to proceed.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1003,7 +1010,8 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
               {renderCompletionStep()}
 
               {!paymentStatus.hasMinimumBalance &&
-                !paymentStatus.proofSetReady && (
+                !paymentStatus.proofSetReady &&
+                currentStep < PaymentStep.CREATE_PROOF_SET && (
                   <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
                     <div>
@@ -1012,10 +1020,29 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
                       </p>
                       <p className="text-sm text-amber-700 mt-1">
                         You need at least {Constants.MINIMUM_USDFC_BALANCE}{" "}
-                        USDFC in your contract to complete the setup.
+                        USDFC in your wallet to complete the setup.
                         {paymentStatus.isDeposited
                           ? " Please deposit more funds before proceeding."
                           : " Please complete the token approval step and deposit funds."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+              {parseFloat(paymentStatus.accountFunds) <
+                parseFloat(Constants.PROOF_SET_FEE) &&
+                !paymentStatus.proofSetReady &&
+                currentStep === PaymentStep.CREATE_PROOF_SET && (
+                  <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium text-amber-800">
+                        Insufficient FWS Funds
+                      </p>
+                      <p className="text-sm text-amber-700 mt-1">
+                        You need at least {Constants.PROOF_SET_FEE} USDFC in
+                        your FWS funds to create a proof set. Please deposit
+                        more funds before proceeding.
                       </p>
                     </div>
                   </div>
