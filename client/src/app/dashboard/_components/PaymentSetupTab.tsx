@@ -1036,7 +1036,8 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
 
               {!paymentStatus.hasMinimumBalance &&
                 !paymentStatus.proofSetReady &&
-                currentStep < PaymentStep.CREATE_PROOF_SET && (
+                (currentStep === PaymentStep.APPROVE_TOKEN ||
+                  currentStep === PaymentStep.DEPOSIT) && (
                   <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
                     <div>
