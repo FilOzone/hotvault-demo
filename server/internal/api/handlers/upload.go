@@ -949,7 +949,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 			updateStatus(UploadProgress{
 				Status:     currentStage,
 				Progress:   currentProgress,
-				Message:    fmt.Sprintf("Waiting for blockchain confirmation (attempt %d/%d)...", pollAttempt, maxPollAttempts),
+				Message:    "Waiting for blockchain confirmation...",
 				CID:        compoundCID,
 				ProofSetID: proofSet.ProofSetID,
 			})

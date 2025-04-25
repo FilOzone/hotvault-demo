@@ -987,22 +987,6 @@ export const PaymentSetupTab = ({ setActiveTab }: PaymentSetupTabProps) => {
             </div>
 
             <div className="p-5 space-y-4">
-              <div className="flex flex-col space-y-4">
-                <div className="p-4 bg-white rounded-lg border border-gray-200">
-                  <div className="text-gray-600">Total FWS Funds</div>
-                  <div className="text-2xl font-semibold mt-1">
-                    {parseFloat(paymentStatus.accountFunds).toFixed(5)} USDFC
-                  </div>
-                </div>
-                <div className="p-4 bg-white rounded-lg border border-gray-200">
-                  <div className="text-gray-600">Locked Funds</div>
-                  <div className="text-2xl font-semibold mt-1">
-                    {parseFloat(paymentStatus.lockedFunds.current).toFixed(5)}{" "}
-                    USDFC
-                  </div>
-                </div>
-              </div>
-
               {renderTokenApprovalStep()}
               {renderDepositStep()}
               {renderOperatorApprovalStep()}
