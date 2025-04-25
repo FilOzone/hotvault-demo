@@ -34,8 +34,8 @@ Before setting up Hot Vault, ensure you have the following installed and configu
 1. **Clone the Repository**
 
    ```bash
-   git clone https://github.com/FilOzone/fws-demo-app.git
-   cd fws-demo-app
+   git clone https://github.com/FilOzone/hotvault-demo.git
+   cd hotvault-demo
    ```
 
 2. **Server Setup**
