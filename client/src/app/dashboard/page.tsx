@@ -2,14 +2,16 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DASHBOARD_SECTIONS, DashboardSection } from "@/types/dashboard";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { FilesTab } from "./_components/FilesTab";
 import { PaymentSetupTab } from "./_components/PaymentSetupTab";
+import { usePayment } from "@/contexts/PaymentContext";
 
 export default function Dashboard() {
   const { account, handleAccountSwitch, disconnectWallet } = useAuth();
+  const { refreshPaymentSetupStatus } = usePayment();
   const [activeTab, setActiveTab] = useState<DashboardSection>(
     DASHBOARD_SECTIONS.FILES
   );
@@ -23,6 +25,34 @@ export default function Dashboard() {
       setActiveTab(DASHBOARD_SECTIONS.FILES);
     }
   };
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && account) {
+        console.log(
+          "[Dashboard] Tab became visible, refreshing payment status"
+        );
+        refreshPaymentSetupStatus()
+          .then(() => {
+            console.log(
+              "[Dashboard] Payment status refreshed after visibility change"
+            );
+          })
+          .catch((error) => {
+            console.error(
+              "[Dashboard] Error refreshing payment status on visibility change:",
+              error
+            );
+          });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [account, refreshPaymentSetupStatus]);
 
   if (!account) {
     return null;

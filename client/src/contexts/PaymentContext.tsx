@@ -868,6 +868,71 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     refreshPaymentSetupStatus();
   }, [account, refreshBalance, refreshPaymentSetupStatus]);
 
+  // Add visibility change handler to refresh data when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && account) {
+        console.log(
+          "[PaymentContext] Tab became visible, refreshing payment status and balance"
+        );
+
+        // Create a sequence of refreshes to ensure data is up-to-date
+        Promise.all([refreshBalance(), refreshPaymentSetupStatus()])
+          .then(() => {
+            console.log(
+              "[PaymentContext] Initial refresh after visibility change completed"
+            );
+
+            // Dispatch event to notify components
+            window.dispatchEvent(
+              new CustomEvent(BALANCE_UPDATED_EVENT, {
+                detail: {
+                  timestamp: Date.now(),
+                  action: "visibility_change",
+                },
+              })
+            );
+
+            // Do a follow-up refresh after a short delay
+            setTimeout(() => {
+              Promise.all([refreshBalance(), refreshPaymentSetupStatus()])
+                .then(() => {
+                  console.log("[PaymentContext] Follow-up refresh completed");
+
+                  // Dispatch another event
+                  window.dispatchEvent(
+                    new CustomEvent(BALANCE_UPDATED_EVENT, {
+                      detail: {
+                        timestamp: Date.now(),
+                        action: "visibility_change_followup",
+                      },
+                    })
+                  );
+                })
+                .catch((error) => {
+                  console.error(
+                    "[PaymentContext] Error in follow-up refresh:",
+                    error
+                  );
+                });
+            }, 1500);
+          })
+          .catch((error) => {
+            console.error(
+              "[PaymentContext] Error refreshing on visibility change:",
+              error
+            );
+          });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [account, refreshBalance, refreshPaymentSetupStatus]);
+
   return (
     <PaymentContext.Provider
       value={{

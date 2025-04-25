@@ -438,13 +438,52 @@ export const FilesTab = ({
       setLastPaymentRefresh(Date.now());
     };
 
+    // Add visibility change handler to refresh data when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        console.log(
+          "[FilesTab] Tab became visible, refreshing balance and file data"
+        );
+
+        // Refresh payment status first
+        refreshPaymentSetupStatus()
+          .then(() => {
+            // Then refresh pieces data
+            return fetchPieces();
+          })
+          .then(() => {
+            // Update the timestamp to trigger re-renders
+            setLastPaymentRefresh(Date.now());
+
+            // Dispatch custom event to update balance in other components
+            window.dispatchEvent(
+              new CustomEvent(BALANCE_UPDATED_EVENT, {
+                detail: {
+                  timestamp: Date.now(),
+                  action: "visibility_change",
+                },
+              })
+            );
+            console.log("[FilesTab] Data refreshed after tab became visible");
+          })
+          .catch((error) => {
+            console.error(
+              "[FilesTab] Error refreshing data on visibility change:",
+              error
+            );
+          });
+      }
+    };
+
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
     window.addEventListener(BALANCE_UPDATED_EVENT, handleBalanceUpdated);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       isMounted = false;
       window.removeEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
       window.removeEventListener(BALANCE_UPDATED_EVENT, handleBalanceUpdated);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [authError, fetchPieces, fetchProofs, refreshPaymentSetupStatus]);
 
