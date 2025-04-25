@@ -342,9 +342,15 @@ func (h *AuthHandler) createProofSetForUser(user *models.User) error {
 	authLog.WithField("command", pdptoolPath+" "+strings.Join(createProofSetArgs, " ")).Info("[Goroutine Create] Executing create-proof-set command for user ", user.ID)
 
 	if err := createProofSetCmd.Run(); err != nil {
-		errMsg := fmt.Sprintf("[Goroutine Create] Failed to run create-proof-set command for user %d: %v, stderr: %s", user.ID, err, createProofSetError.String())
-		authLog.Error(errMsg)
-		return errors.New(errMsg)
+		errMsg := fmt.Sprintf("[Goroutine Create] Failed to run create-proof-set command for user %d: %v", user.ID, err)
+		authLog.WithFields(logrus.Fields{
+			"userID":  user.ID,
+			"error":   err.Error(),
+			"stderr":  createProofSetError.String(),
+			"stdout":  createProofSetOutput.String(),
+			"command": pdptoolPath + " " + strings.Join(createProofSetArgs, " "),
+		}).Error(errMsg)
+		return errors.New(errMsg + ", stderr: " + createProofSetError.String())
 	}
 
 	outputStr := createProofSetOutput.String()
@@ -438,19 +444,33 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 		getStatusCmd.Stdout = &getStatusOutput
 		getStatusCmd.Stderr = &getStatusError
 
-		authLog.Debugf("[Goroutine Polling] Attempt %d: Executing %s", attemptCounter, getStatusCmd.String())
+		cmdString := fmt.Sprintf("%s %s", pdptoolPath, strings.Join(getStatusCmd.Args[1:], " "))
+		authLog.WithField("command", cmdString).
+			WithField("attempt", attemptCounter).
+			WithField("txHash", txHash).
+			WithField("userID", user.ID).
+			Info("[Goroutine Polling] Executing get-proof-set-create-status command")
 
 		err := getStatusCmd.Run()
 		statusOutput := getStatusOutput.String()
 		statusStderr := getStatusError.String()
 
 		if err != nil {
-			authLog.WithField("error", err.Error()).WithField("stderr", statusStderr).Warnf("[Goroutine Polling] Attempt %d: Failed to run get proof set status command, retrying in %v...", attemptCounter, sleepDuration)
+			authLog.WithField("error", err.Error()).
+				WithField("stderr", statusStderr).
+				WithField("command", cmdString).
+				WithField("attempt", attemptCounter).
+				WithField("userID", user.ID).
+				Warnf("[Goroutine Polling] Failed to run get-proof-set-create-status command, retrying in %v...", sleepDuration)
 			time.Sleep(sleepDuration)
 			continue
 		}
 
-		authLog.WithField("statusOutput", statusOutput).Debugf("[Goroutine Polling] Attempt %d: Proof set status output for user %d", attemptCounter, user.ID)
+		authLog.WithField("statusOutput", statusOutput).
+			WithField("attempt", attemptCounter).
+			WithField("userID", user.ID).
+			WithField("txHash", txHash).
+			Info("[Goroutine Polling] get-proof-set-create-status command output")
 
 		txStatusMatch := txStatusRegex.FindStringSubmatch(statusOutput)
 		txSuccessMatch := txSuccessRegex.FindStringSubmatch(statusOutput)
@@ -467,6 +487,25 @@ func (h *AuthHandler) pollForProofSetID(pdptoolPath, serviceURL, serviceName, tx
 		if len(createdMatch) > 1 {
 			createdStatus = createdMatch[1]
 		}
+
+		// Log the status details for each polling attempt
+		var idMatchValue string
+		if len(idMatch) > 1 {
+			idMatchValue = idMatch[1]
+		} else {
+			idMatchValue = "none"
+		}
+
+		authLog.WithFields(logrus.Fields{
+			"userID":        user.ID,
+			"txHash":        txHash,
+			"attempt":       attemptCounter,
+			"txStatus":      txStatus,
+			"txSuccess":     txSuccess,
+			"createdStatus": createdStatus,
+			"idFound":       len(idMatch) > 1,
+			"idMatch":       idMatchValue,
+		}).Info("[Goroutine Polling] Current proof set creation status")
 
 		if txStatus == "confirmed" && txSuccess == "true" && createdStatus == "true" && len(idMatch) > 1 {
 			proofSetIDStr := idMatch[1]

@@ -632,7 +632,7 @@ func assembleAndProcessFile(uploadInfo *ChunkedUploadInfo, jobID string, userID 
 				Info("Upload still in progress, will clean up later")
 
 			go func() {
-				cleanupTicker := time.NewTicker(30 * time.Second)
+				cleanupTicker := time.NewTicker(10 * time.Second)
 				defer cleanupTicker.Stop()
 
 				for range cleanupTicker.C {

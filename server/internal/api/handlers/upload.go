@@ -243,7 +243,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		baseDelay = 2 * time.Second
 	}
 	if baseDelay > 30*time.Second {
-		baseDelay = 30 * time.Second
+		baseDelay = 10 * time.Second
 	}
 
 	prepareTimeout := time.Duration(30+int(fileSizeMB*2)) * time.Second
@@ -457,7 +457,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		Message:  fmt.Sprintf("Uploading file... (%.1f MB)", fileSizeMB),
 	})
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	var uploadOutput bytes.Buffer
 	var uploadError bytes.Buffer
@@ -650,8 +650,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	}
 
 	maxRetries := 100
-	backoff := 30 * time.Second
-	maxBackoff := 30 * time.Second
+	backoff := 10 * time.Second
+	maxBackoff := 10 * time.Second
 	success := false
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
@@ -823,8 +823,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	})
 
 	var extractedIntegerRootID string
-	pollInterval := 30 * time.Second
-	maxPollInterval := 30 * time.Second
+	pollInterval := 10 * time.Second
+	maxPollInterval := 10 * time.Second
 	maxPollAttempts := 100
 	pollAttempt := 0
 	foundRootInPoll := false
@@ -834,7 +834,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	for pollAttempt < maxPollAttempts {
 		if pollAttempt > 0 {
 			log.Info("Applying fixed 30-second delay before poll attempt")
-			time.Sleep(30 * time.Second)
+			time.Sleep(10 * time.Second)
 		}
 
 		pollAttempt++
@@ -962,7 +962,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 
 		if sawAnyRootID {
 			log.Info("Proof set has roots, but none matching our CID yet. Polling again.")
-			pollInterval = 30 * time.Second
+			pollInterval = 10 * time.Second
 		}
 
 		log.Debug(fmt.Sprintf("Root CID %s not found in get-proof-set output on attempt %d. Waiting %v...", baseCID, pollAttempt, pollInterval))
