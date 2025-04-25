@@ -580,7 +580,8 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 		CID:      compoundCID,
 	})
 
-	preAddRootDelay := 10 * time.Second
+	// Reduced delay before adding root
+	preAddRootDelay := 1 * time.Second
 	log.Info(fmt.Sprintf("Waiting %v before adding root to allow service registration...", preAddRootDelay))
 	time.Sleep(preAddRootDelay)
 
@@ -620,114 +621,7 @@ func processUpload(jobID string, file *multipart.FileHeader, userID uint, pdptoo
 	updateStatus(UploadProgress{
 		Status:     currentStage,
 		Progress:   currentProgress,
-		Message:    fmt.Sprintf("Verifying proof set %s exists...", proofSet.ProofSetID),
-		CID:        compoundCID,
-		ProofSetID: proofSet.ProofSetID,
-	})
-
-	verifyProofSetArgs := []string{
-		"get-proof-set",
-		"--service-url", cfg.ServiceURL,
-		"--service-name", cfg.ServiceName,
-		proofSet.ProofSetID,
-	}
-
-	verifyMaxRetries := 100
-	verifyBackoff := 30 * time.Second
-	verifyMaxBackoff := 30 * time.Second
-	verifySuccess := false
-
-	for verifyAttempt := 1; verifyAttempt <= verifyMaxRetries; verifyAttempt++ {
-		if verifyAttempt > 1 {
-			log.Info("Applying fixed 30-second delay before verification attempt")
-			time.Sleep(30 * time.Second)
-		}
-
-		log.WithField("attempt", verifyAttempt).
-			WithField("maxRetries", verifyMaxRetries).
-			WithField("proofSetID", proofSet.ProofSetID).
-			Info("Verifying proof set")
-
-		if verifyAttempt > 1 {
-			updateStatus(UploadProgress{
-				Status:     currentStage,
-				Progress:   currentProgress,
-				Message:    "Verifying proof set",
-				CID:        compoundCID,
-				ProofSetID: proofSet.ProofSetID,
-			})
-		}
-
-		verifyCmd := exec.Command(pdptoolPath, verifyProofSetArgs...)
-		var verifyOutput bytes.Buffer
-		var verifyError bytes.Buffer
-		verifyCmd.Stdout = &verifyOutput
-		verifyCmd.Stderr = &verifyError
-
-		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		verifyCmdWithTimeout := exec.CommandContext(verifyCtx, pdptoolPath, verifyProofSetArgs...)
-		verifyCmdWithTimeout.Dir = pdptoolDir
-		verifyCmdWithTimeout.Stdout = &verifyOutput
-		verifyCmdWithTimeout.Stderr = &verifyError
-
-		verifyErr := verifyCmdWithTimeout.Run()
-		verifyCancel()
-
-		if verifyErr != nil {
-			stderrStr := verifyError.String()
-			log.WithField("error", verifyErr.Error()).
-				WithField("stderr", stderrStr).
-				WithField("proofSetID", proofSet.ProofSetID).
-				WithField("attempt", verifyAttempt).
-				Warning("Proof set verification attempt failed")
-
-			isRetryableError := false
-
-			if verifyCtx.Err() == context.DeadlineExceeded {
-				isRetryableError = true
-			}
-
-			if isRetryableError && verifyAttempt < verifyMaxRetries {
-				retryDelay := verifyBackoff + time.Duration(rand.Int63n(int64(verifyBackoff/2)))
-				log.WithField("retryDelay", retryDelay.String()).Info("Waiting before retry")
-				time.Sleep(retryDelay)
-				verifyBackoff *= 2
-				if verifyBackoff > verifyMaxBackoff {
-					verifyBackoff = verifyMaxBackoff
-				}
-				continue
-			}
-
-			if verifyAttempt >= verifyMaxRetries {
-				log.WithField("proofSetID", proofSet.ProofSetID).
-					Warning("Proof set verification failed after max retries, proceeding anyway")
-
-				updateStatus(UploadProgress{
-					Status:     currentStage,
-					Progress:   currentProgress,
-					Message:    "Proceeding to add root despite verification issues...",
-					CID:        compoundCID,
-					ProofSetID: proofSet.ProofSetID,
-				})
-				break
-			}
-		} else {
-			verifySuccess = true
-			log.WithField("proofSetID", proofSet.ProofSetID).Info("Proof set verification successful")
-			break
-		}
-	}
-
-	if verifySuccess {
-		log.WithField("proofSetID", proofSet.ProofSetID).Info("Proof set verification successful")
-	} else {
-		log.WithField("proofSetID", proofSet.ProofSetID).Warning("Proceeding without successful verification")
-	}
-
-	updateStatus(UploadProgress{
-		Status:     currentStage,
-		Progress:   currentProgress,
-		Message:    "Adding root to proof...",
+		Message:    fmt.Sprintf("Adding root to proof set %s...", proofSet.ProofSetID),
 		CID:        compoundCID,
 		ProofSetID: proofSet.ProofSetID,
 	})
