@@ -108,6 +108,15 @@ func DownloadFile(c *gin.Context) {
 		"--output-file", outputFile,
 	)
 
+	log.WithField("command", "download-file").
+		WithField("serviceURL", piece.ServiceURL).
+		WithField("chunkFile", chunkFile).
+		WithField("outputFile", outputFile).
+		WithField("cid", cid).
+		WithField("processCid", processCid).
+		WithField("filename", piece.Filename).
+		Info("Executing download-file command")
+
 	var errOutput bytes.Buffer
 	downloadCmd.Stderr = &errOutput
 
