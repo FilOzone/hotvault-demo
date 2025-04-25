@@ -1,5 +1,9 @@
 # Hot Vault
 
+This project demonstrates a prototype for a data storage drive application that leverages Filecoin’s verifiable storage, powered by Proof of Data Possession (PDP), payable with FIL-backed Stablecoin.
+
+More details on PDP [here]([url](https://github.com/FilOzone/pdp)).
+
 ## Prerequisites
 
 Before setting up Hot Vault, ensure you have the following installed and configured:
