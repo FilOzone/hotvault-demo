@@ -28,15 +28,14 @@ export const PaymentBalanceHeader = () => {
   const detailsRef = useRef<HTMLDivElement>(null);
 
   const lastRefreshTimeRef = useRef<number>(0);
-  const DEBOUNCE_INTERVAL = 1500; // 1.5 seconds
+  const DEBOUNCE_INTERVAL = 1500;
 
-  // Create a wrapper function that shows the loading state
   const refreshPaymentWithIndicator = async () => {
     try {
       setIsRefreshing(true);
       await refreshPaymentSetupStatus();
     } finally {
-      setTimeout(() => setIsRefreshing(false), 500); // Add small delay to ensure UI shows the change
+      setTimeout(() => setIsRefreshing(false), 500);
     }
   };
 
@@ -72,7 +71,6 @@ export const PaymentBalanceHeader = () => {
     const handleBalanceUpdate = (event: CustomEvent) => {
       console.log("[PaymentBalanceHeader] Balance updated:", event.detail);
 
-      // Implement debounce to prevent multiple refreshes in quick succession
       const now = Date.now();
       if (now - lastRefreshTimeRef.current < DEBOUNCE_INTERVAL) {
         console.log("[PaymentBalanceHeader] Skipping refresh due to debounce", {
@@ -84,13 +82,11 @@ export const PaymentBalanceHeader = () => {
 
       lastRefreshTimeRef.current = now;
 
-      // Use the wrapper function that shows loading indicator
       refreshPaymentWithIndicator()
         .then(() => {
           console.log(
             "[PaymentBalanceHeader] Payment status refreshed after balance update"
           );
-          // Close dropdown if open
           setShowDetails(false);
         })
         .catch((error) => {
