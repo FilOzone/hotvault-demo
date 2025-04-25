@@ -406,25 +406,25 @@ export const PaymentProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [account, startPolling, pollingInterval]);
 
-  // Function to aggressively refresh status after a transaction
   const refreshAfterTransaction = async () => {
-    // Try multiple refreshes to account for blockchain lag
     try {
-      // First immediate refresh
       await refreshBalance();
       await refreshPaymentSetupStatus();
 
-      // Then retry after short delays
       setTimeout(async () => {
         await refreshBalance();
         await refreshPaymentSetupStatus();
 
-        // Final refresh after a longer delay
         setTimeout(async () => {
           await refreshBalance();
           await refreshPaymentSetupStatus();
-        }, 3000);
-      }, 1000);
+
+          setTimeout(async () => {
+            await refreshBalance();
+            await refreshPaymentSetupStatus();
+          }, 1500);
+        }, 1000);
+      }, 500);
     } catch (error) {
       console.error("Error during refresh sequence:", error);
     }

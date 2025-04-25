@@ -361,7 +361,6 @@ export const FilesTab = ({
 
       setIsLoading(true);
 
-      // Use our enhanced fetchPieces which now includes payment status refresh
       fetchPieces()
         .then(() => {
           if (!isMounted) return;
@@ -381,6 +380,30 @@ export const FilesTab = ({
               duration: 3000,
             }
           );
+
+          setTimeout(() => {
+            if (!isMounted) return;
+            refreshPaymentSetupStatus()
+              .then(() => {
+                setLastPaymentRefresh(Date.now());
+                console.log("[FilesTab] Second balance refresh completed");
+
+                setTimeout(() => {
+                  if (!isMounted) return;
+                  refreshPaymentSetupStatus()
+                    .then(() => {
+                      setLastPaymentRefresh(Date.now());
+                      console.log("[FilesTab] Third balance refresh completed");
+                    })
+                    .catch((e) =>
+                      console.log("[FilesTab] Error in third refresh:", e)
+                    );
+                }, 2000);
+              })
+              .catch((e) =>
+                console.log("[FilesTab] Error in second refresh:", e)
+              );
+          }, 1000);
         })
         .catch((error: Error) => {
           if (!isMounted) return;
@@ -391,10 +414,18 @@ export const FilesTab = ({
           );
           setIsLoading(false);
 
-          // Still try to refresh payment status separately if fetchPieces failed
           refreshPaymentSetupStatus()
             .then(() => {
               setLastPaymentRefresh(Date.now());
+
+              setTimeout(() => {
+                if (!isMounted) return;
+                refreshPaymentSetupStatus()
+                  .then(() => setLastPaymentRefresh(Date.now()))
+                  .catch((e) =>
+                    console.error("[FilesTab] Error in fallback refresh:", e)
+                  );
+              }, 2000);
             })
             .catch((e: Error) =>
               console.error("[FilesTab] Failed to refresh payment status:", e)
@@ -402,14 +433,11 @@ export const FilesTab = ({
         });
     };
 
-    // Add listener for balance updates from other components
     const handleBalanceUpdated = () => {
       console.log("[FilesTab] Balance updated detected, triggering re-render");
-      // Update timestamp to trigger re-renders of payment-dependent components
       setLastPaymentRefresh(Date.now());
     };
 
-    // Register event listeners
     window.addEventListener(UPLOAD_COMPLETED_EVENT, handleUploadCompleted);
     window.addEventListener(BALANCE_UPDATED_EVENT, handleBalanceUpdated);
 

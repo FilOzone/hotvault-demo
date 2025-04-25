@@ -50,7 +50,7 @@ Before setting up Hot Vault, ensure you have the following installed and configu
    DB_PASSWORD=postgres
    DB_NAME=fws_db
    DB_SSL_MODE=disable
-   JWT_SECRET=fws_secret_key_change_in_production
+   JWT_SECRET=secret_key_change_in_production
    JWT_EXPIRATION=24h
    PDPTOOL_PATH=/absolute/path/to/pdptool  # Update this with your pdptool path
    SERVICE_NAME=pdp-service-name
