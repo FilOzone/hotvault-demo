@@ -15,7 +15,7 @@ Before setting up Hot Vault, ensure you have the following installed and configu
 - [Node.js 18.x or later](https://nodejs.org/)
 - [npm 9.x or later](https://www.npmjs.com/get-npm)
 - [MetaMask browser extension](https://metamask.io/download.html)
-- [PDP Tool](https://github.com/filecoin-project/curio/tree/feat/pdp) - Must be installed and configured
+- [PDP Tool](https://docs.curiostorage.org/experimental-features/enable-pdp#pdp-client) - Must be installed and configured
 
 ### Browser Requirements
 
